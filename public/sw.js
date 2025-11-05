@@ -1,7 +1,8 @@
 // Service Worker for NOTIFICA IA
 // Minimal PWA implementation with basic caching strategies
 
-const CACHE_NAME = 'notifica-ia-cache-v1'
+const CACHE_VERSION = 'v1.0.1'
+const CACHE_NAME = `notifica-ia-cache-${CACHE_VERSION}`
 const urlsToCache = [
   '/',
   '/login',
@@ -44,16 +45,27 @@ self.addEventListener('fetch', (event) => {
   const { request } = event
   const url = new URL(request.url)
 
+  // Skip caching for non-GET requests (POST, PUT, DELETE)
+  if (['POST', 'PUT', 'DELETE'].includes(request.method)) {
+    return
+  }
+
   // Network-first strategy for API routes
   if (url.pathname.startsWith('/api/')) {
     event.respondWith(
       fetch(request)
         .then((response) => {
-          // Cache successful API responses
-          if (response.ok) {
+          // Cache successful API responses (only GET requests)
+          if (response.ok && request.method === 'GET') {
             const responseClone = response.clone()
             caches.open(CACHE_NAME).then((cache) => {
-              cache.put(request, responseClone)
+              try {
+                cache.put(request, responseClone).catch((err) => {
+                  console.warn('Service Worker: Failed to cache API response', err)
+                })
+              } catch (err) {
+                console.warn('Service Worker: Error caching API response', err)
+              }
             })
           }
           return response
@@ -79,10 +91,16 @@ self.addEventListener('fetch', (event) => {
           return response
         }
 
-        // Cache the response
+        // Cache the response with error handling
         const responseClone = response.clone()
         caches.open(CACHE_NAME).then((cache) => {
-          cache.put(request, responseClone)
+          try {
+            cache.put(request, responseClone).catch((err) => {
+              console.warn('Service Worker: Failed to cache response', err)
+            })
+          } catch (err) {
+            console.warn('Service Worker: Error caching response', err)
+          }
         })
 
         return response

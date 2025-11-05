@@ -33,9 +33,11 @@ export default function Navbar() {
   }, [])
 
   const handleLogout = async () => {
+    // Update state immediately for better UX
+    setIsAuthenticated(false)
+    // Call logout endpoint for server-side logging
     await fetch('/logout', { method: 'POST' })
-    router.push('/login')
-    router.refresh()
+    // Navigation handled by logout route redirect
   }
 
   return (

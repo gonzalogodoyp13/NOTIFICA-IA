@@ -10,11 +10,14 @@ export const dynamic = 'force-dynamic'
 
 export async function GET() {
   try {
-    // Require authentication
-    await requireSession()
+    // Require authentication and get user email
+    const session = await requireSession()
 
-    // Get last 10 audit logs in descending order (most recent first)
+    // Get last 10 audit logs for the current user in descending order (most recent first)
     const logs = await prisma.auditLog.findMany({
+      where: {
+        userEmail: session.email,
+      },
       take: 10,
       orderBy: {
         createdAt: 'desc',
@@ -34,6 +37,7 @@ export async function GET() {
     })
   } catch (error) {
     console.error('Error fetching audit logs:', error)
+    // If requireSession throws, it redirects, but handle other errors
     return NextResponse.json(
       { success: false, error: 'Error al obtener los logs de auditoría' },
       { status: 500 }
