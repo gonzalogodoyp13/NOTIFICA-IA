@@ -27,6 +27,20 @@ export default function LoginPage() {
       const result = await signIn(email, password)
 
       if (result.success) {
+        // Log the login event
+        try {
+          await fetch('/api/log', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ action: 'login' }),
+          })
+        } catch (logError) {
+          // Log error but don't block login
+          console.error('Error logging login event:', logError)
+        }
+
         // Redirect to dashboard on successful login
         router.push('/dashboard')
         router.refresh()

@@ -22,3 +22,15 @@ model User {
   @@map("users") // Maps to "users" table in database
 }
 
+// AuditLog model: records login/logout events per user
+model AuditLog {
+  id        String   @id @default(cuid()) // Unique ID using CUID
+  userEmail String   // Email of the user who performed the action
+  action    String   // Action type: "login" or "logout"
+  createdAt DateTime @default(now()) // Auto-set when created
+
+  @@map("audit_logs") // Maps to "audit_logs" table in database
+  @@index([userEmail]) // Index for faster queries by user email
+  @@index([createdAt]) // Index for faster queries by date (descending order)
+}
+
