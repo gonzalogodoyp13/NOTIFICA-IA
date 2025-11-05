@@ -1,9 +1,12 @@
 // Dashboard page component
 // Protected route that requires authentication via requireSession()
-import { requireSession } from '@/lib/auth'
+import { requireSession } from '@/lib/auth-server'
+
+// Force dynamic rendering since we use cookies for authentication
+export const dynamic = 'force-dynamic'
 
 export default async function DashboardPage() {
-  // Require authentication - redirects to /signin if not logged in
+  // Require authentication - redirects to /login if not logged in
   const session = await requireSession()
 
   return (

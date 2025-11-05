@@ -1,12 +1,12 @@
-// Sign-in page component
+// Login page component
 // Allows users to authenticate with email and password via Supabase Auth
 'use client'
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { signIn } from '@/lib/auth'
+import { signIn } from '@/lib/auth-client'
 
-export default function SignInPage() {
+export default function LoginPage() {
   const router = useRouter()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -112,7 +112,7 @@ export default function SignInPage() {
               disabled={loading || !hasSupabaseKeys}
               className="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {loading ? 'Iniciando sesión...' : 'Iniciar Sesión'}
+              {loading ? 'Iniciando sesión...' : 'Ingresar'}
             </button>
           </div>
         </form>
@@ -120,5 +120,4 @@ export default function SignInPage() {
     </div>
   )
 }
-
 

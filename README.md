@@ -82,13 +82,13 @@ Visita [http://localhost:3000/api/ping](http://localhost:3000/api/ping) - deber�
 
 ### Probar Autenticación
 
-1. Visita [http://localhost:3000/signin](http://localhost:3000/signin)
+1. Visita [http://localhost:3000/login](http://localhost:3000/login)
 2. Crea un usuario en Supabase:
    - Ve a tu proyecto en Supabase Dashboard
    - Ve a **Authentication** → **Users**
    - Haz clic en **Add user** → **Create new user**
    - Ingresa un email y contraseña
-3. Inicia sesión con esas credenciales en `/signin`
+3. Inicia sesión con esas credenciales en `/login`
 4. Serás redirigido a `/dashboard` después del login exitoso
 
 ## 📁 Project Structure
@@ -97,7 +97,7 @@ Visita [http://localhost:3000/api/ping](http://localhost:3000/api/ping) - deber�
 ├── app/                 # Next.js App Router
 │   ├── api/            # API routes
 │   │   └── ping/       # Health check endpoint
-│   ├── signin/         # Sign-in page (authentication)
+│   ├── login/          # Login page (authentication)
 │   ├── dashboard/      # Protected dashboard (requires authentication)
 │   ├── layout.tsx      # Root layout
 │   └── page.tsx        # Homepage
@@ -152,7 +152,7 @@ The project uses **Supabase Auth** for user authentication:
 ### Authentication Functions
 
 - `getSession()`: Gets the current user session (returns `{ email }` or `null`)
-- `requireSession()`: Requires authentication, redirects to `/signin` if not authenticated
+- `requireSession()`: Requires authentication, redirects to `/login` if not authenticated
 - `signIn(email, password)`: Signs in with email and password
 - `signOut()`: Signs out the current user
 
