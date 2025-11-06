@@ -17,7 +17,9 @@ export const AbogadoSchema = z.object({
   direccion: z.string().optional(),
   comuna: z.string().optional(),
   telefono: z.string().optional(),
-  email: z.string().email().optional(),
+  email: z
+    .union([z.string().email('Email inválido'), z.literal('')])
+    .optional(),
   bancoId: z.number().optional(),
 });
 

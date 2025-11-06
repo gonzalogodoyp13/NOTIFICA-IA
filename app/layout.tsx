@@ -5,6 +5,7 @@ import { Inter } from 'next/font/google'
 import './globals.css'
 import Navbar from '@/components/Navbar'
 import ServiceWorkerRegister from '@/components/ServiceWorkerRegister'
+import Toaster from '@/components/Toaster'
 
 const inter = Inter({ subsets: ['latin'] })
 
@@ -32,6 +33,7 @@ export default function RootLayout({
       <body className={inter.className}>
         <Navbar />
         <ServiceWorkerRegister />
+        <Toaster position="top-right" />
         <main>{children}</main>
       </body>
     </html>
