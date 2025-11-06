@@ -1,0 +1,12 @@
+# OneDrive Sync Ignore
+# This file helps prevent OneDrive from syncing build artifacts and temporary files
+# which can cause EBUSY errors during development
+
+.next/
+node_modules/
+out/
+build/
+.vercel/
+*.tsbuildinfo
+.DS_Store
+

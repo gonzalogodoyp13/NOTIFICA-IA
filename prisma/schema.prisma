@@ -1,0 +1,117 @@
+// Prisma schema for NOTIFICA IA
+// This file defines the database structure
+// Generator: creates the Prisma Client library
+generator client {
+  provider = "prisma-client-js"
+}
+
+// Datasource: PostgreSQL database on Railway
+// DATABASE_URL environment variable contains the connection string
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// User model: represents one "Oficina de Receptor" account
+model User {
+  id         String   @id @default(cuid()) // Unique ID using CUID
+  email      String   @unique // Email address (must be unique)
+  officeName String   // Name of the office ("Oficina de Receptor")
+  officeId   Int?     // Office ID for scoping queries (nullable, defaults to 1 if not set)
+  createdAt  DateTime @default(now()) // Auto-set when created
+
+  @@map("users") // Maps to "users" table in database
+}
+
+// AuditLog model: records login/logout events per user
+model AuditLog {
+  id        String   @id @default(cuid()) // Unique ID using CUID
+  userEmail String   // Email of the user who performed the action
+  action    String   // Action type: "login" or "logout"
+  createdAt DateTime @default(now()) // Auto-set when created
+
+  @@map("audit_logs") // Maps to "audit_logs" table in database
+  @@index([userEmail]) // Index for faster queries by user email
+  @@index([createdAt]) // Index for faster queries by date (descending order)
+}
+
+// Materia model: legal subjects/categories scoped by office
+model Materia {
+  id        Int      @id @default(autoincrement())
+  officeId  Int
+  nombre    String
+  createdAt DateTime @default(now())
+
+  @@index([officeId]) // Index for faster queries by office
+  @@map("materias")
+}
+
+// Banco model: banks scoped by office
+model Banco {
+  id        Int       @id @default(autoincrement())
+  officeId  Int
+  nombre    String
+  cuenta    String?
+  createdAt DateTime  @default(now())
+  abogados  Abogado[] @relation("BancoAbogados")
+
+  @@index([officeId]) // Index for faster queries by office
+  @@map("bancos")
+}
+
+// Abogado model: lawyers scoped by office
+model Abogado {
+  id         Int       @id @default(autoincrement())
+  officeId   Int
+  nombre     String?
+  rut        String?
+  direccion  String?
+  comuna     String?
+  telefono   String?
+  email      String?
+  bancoId    Int?
+  banco      Banco?    @relation("BancoAbogados", fields: [bancoId], references: [id])
+  createdAt  DateTime  @default(now())
+
+  @@index([officeId]) // Index for faster queries by office
+  @@index([bancoId]) // Index for foreign key relationship
+  @@map("abogados")
+}
+
+// Tribunal model: courts scoped by office
+model Tribunal {
+  id        Int      @id @default(autoincrement())
+  officeId  Int
+  nombre    String
+  direccion String?
+  comuna    String?
+  createdAt DateTime @default(now())
+
+  @@index([officeId]) // Index for faster queries by office
+  @@map("tribunales")
+}
+
+// DiligenciaTipo model: diligence types scoped by office
+model DiligenciaTipo {
+  id          Int      @id @default(autoincrement())
+  officeId    Int
+  nombre      String
+  descripcion String?
+  createdAt   DateTime @default(now())
+
+  @@index([officeId]) // Index for faster queries by office
+  @@map("diligencias_tipos")
+}
+
+// Comuna model: communes/administrative divisions scoped by office
+model Comuna {
+  id        Int      @id @default(autoincrement())
+  officeId  Int
+  nombre    String
+  region    String?
+  createdAt DateTime @default(now())
+
+  @@index([officeId]) // Index for faster queries by office
+  @@map("comunas")
+}
+
