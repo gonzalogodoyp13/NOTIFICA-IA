@@ -1,7 +1,9 @@
-// Supabase client initialization
-// This creates a singleton Supabase client instance for use throughout the app
-// Uses environment variables for URL and anonymous key (safe for client-side use)
-import { createClient } from '@supabase/supabase-js'
+// Browser-side Supabase client for Next.js 14 App Router
+// This client uses SSR-compatible cookie handling for authentication persistence
+// This file can only be imported in Client Components
+'use client'
+
+import { createBrowserClient } from '@supabase/ssr'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
@@ -12,8 +14,9 @@ if (!supabaseUrl || !supabaseAnonKey) {
   )
 }
 
-// Create and export the Supabase client
-// This client communicates with Supabase via HTTPS API (IPv4 safe, no direct DB connection)
-export const supabase = createClient(supabaseUrl, supabaseAnonKey)
+// Create and export the Supabase client for browser use
+// Uses createBrowserClient from @supabase/ssr to handle cookies correctly
+// This ensures authentication state persists across page refreshes
+export const supabase = createBrowserClient(supabaseUrl, supabaseAnonKey)
 
 

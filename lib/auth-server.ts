@@ -56,13 +56,23 @@ export async function getCurrentUser(): Promise<{
   try {
     const cookieStore = cookies()
 
+    // Debug: Log auth cookies
+    const authCookies = cookieStore.getAll().filter(cookie => 
+      cookie.name.includes('sb-') || cookie.name.includes('supabase')
+    )
+    console.log('[getCurrentUser] Auth cookies found:', authCookies.map(c => c.name))
+
     const supabase = createServerClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
       {
         cookies: {
           get(name: string) {
-            return cookieStore.get(name)?.value
+            const value = cookieStore.get(name)?.value
+            if (name.includes('sb-') || name.includes('supabase')) {
+              console.log(`[getCurrentUser] Cookie ${name}:`, value ? 'present' : 'missing')
+            }
+            return value
           },
           set() {},
           remove() {},
@@ -72,17 +82,24 @@ export async function getCurrentUser(): Promise<{
 
     const { data, error } = await supabase.auth.getUser()
 
-    if (error || !data?.user) {
+    if (error) {
+      console.log('[getCurrentUser] Supabase auth error:', error.message)
       return null
     }
 
+    if (!data?.user) {
+      console.log('[getCurrentUser] No user data returned from Supabase')
+      return null
+    }
+
+    console.log('[getCurrentUser] User found:', { id: data.user.id, email: data.user.email })
     return {
       id: data.user.id,
       email: data.user.email || '',
       metadata: data.user.user_metadata || {},
     }
   } catch (error) {
-    console.error('Error getting current user:', error)
+    console.error('[getCurrentUser] Exception:', error)
     return null
   }
 }

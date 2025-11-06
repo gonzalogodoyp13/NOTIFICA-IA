@@ -4,7 +4,7 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { signIn } from '@/lib/auth'
+import { signIn } from '@/lib/auth-client'
 
 export default function SignInPage() {
   const router = useRouter()

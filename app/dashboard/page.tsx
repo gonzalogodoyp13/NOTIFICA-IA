@@ -1,6 +1,6 @@
 // Dashboard page component
 // Protected route that requires authentication via requireSession()
-import { requireSession } from '@/lib/auth'
+import { requireSession } from '@/lib/auth-server'
 
 export default async function DashboardPage() {
   // Require authentication - redirects to /signin if not logged in
