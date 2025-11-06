@@ -60,7 +60,7 @@ export default async function DashboardPage() {
 
             {/* Card 3: Ajustes de Oficina */}
             <Link
-              href="/dashboard/ajustes"
+              href="/ajustes"
               className="bg-white rounded-lg shadow-md hover:shadow-lg transition-all duration-200 hover:scale-105 cursor-pointer border border-gray-200 p-8 text-center group"
             >
               <div className="text-5xl mb-4">⚙️</div>
@@ -77,4 +77,3 @@ export default async function DashboardPage() {
     </div>
   )
 }
-

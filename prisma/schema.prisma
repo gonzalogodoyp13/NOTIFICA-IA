@@ -16,7 +16,7 @@ datasource db {
 model User {
   id         String   @id @default(cuid()) // Unique ID using CUID
   email      String   @unique // Email address (must be unique)
-  officeName String   // Name of the office ("Oficina de Receptor")
+  officeName String // Name of the office ("Oficina de Receptor")
   createdAt  DateTime @default(now()) // Auto-set when created
 
   @@map("users") // Maps to "users" table in database
@@ -25,12 +25,95 @@ model User {
 // AuditLog model: records login/logout events per user
 model AuditLog {
   id        String   @id @default(cuid()) // Unique ID using CUID
-  userEmail String   // Email of the user who performed the action
-  action    String   // Action type: "login" or "logout"
+  userEmail String // Email of the user who performed the action
+  action    String // Action type: "login" or "logout"
   createdAt DateTime @default(now()) // Auto-set when created
 
-  @@map("audit_logs") // Maps to "audit_logs" table in database
   @@index([userEmail]) // Index for faster queries by user email
   @@index([createdAt]) // Index for faster queries by date (descending order)
+  @@map("audit_logs") // Maps to "audit_logs" table in database
 }
 
+// Materia model: legal matter types
+model Materia {
+  id        Int      @id @default(autoincrement())
+  nombre    String // Name of the legal matter
+  officeId  Int // Office ID (scoped to user's office)
+  createdAt DateTime @default(now()) // Auto-set when created
+
+  @@index([officeId]) // Index for faster queries by office
+  @@map("materias") // Maps to "materias" table in database
+}
+
+// Tribunal model: court information
+model Tribunal {
+  id        Int      @id @default(autoincrement())
+  nombre    String // Court name
+  direccion String? // Court address (optional)
+  comuna    String? // Municipality (optional)
+  officeId  Int // Office ID (scoped to user's office)
+  createdAt DateTime @default(now()) // Auto-set when created
+
+  @@index([officeId]) // Index for faster queries by office
+  @@map("tribunales") // Maps to "tribunales" table in database
+}
+
+// Banco model: bank information
+model Banco {
+  id        Int      @id @default(autoincrement())
+  nombre    String // Bank name
+  cuenta    String? // Account number (optional)
+  officeId  Int // Office ID (scoped to user's office)
+  createdAt DateTime @default(now()) // Auto-set when created
+
+  // Relations
+  abogados Abogado[] // Abogados associated with this bank
+
+  @@index([officeId]) // Index for faster queries by office
+  @@map("bancos") // Maps to "bancos" table in database
+}
+
+// Abogado model: lawyer information
+model Abogado {
+  id        Int      @id @default(autoincrement())
+  nombre    String? // Lawyer name (optional)
+  rut       String? // RUT/ID number (optional)
+  direccion String? // Address (optional)
+  comuna    String? // Municipality (optional)
+  telefono  String? // Phone number (optional)
+  email     String? // Email address (optional)
+  bancoId   Int? // Bank ID (optional, relation to Banco)
+  officeId  Int // Office ID (scoped to user's office)
+  createdAt DateTime @default(now()) // Auto-set when created
+
+  // Relations
+  banco Banco? @relation(fields: [bancoId], references: [id], onDelete: SetNull)
+
+  @@index([officeId]) // Index for faster queries by office
+  @@index([bancoId]) // Index for faster queries by bank
+  @@map("abogados") // Maps to "abogados" table in database
+}
+
+// Comuna model: municipality information
+model Comuna {
+  id        Int      @id @default(autoincrement())
+  nombre    String // Municipality name
+  region    String? // Region name (optional)
+  officeId  Int // Office ID (scoped to user's office)
+  createdAt DateTime @default(now()) // Auto-set when created
+
+  @@index([officeId]) // Index for faster queries by office
+  @@map("comunas") // Maps to "comunas" table in database
+}
+
+// DiligenciaTipo model: diligence type information
+model DiligenciaTipo {
+  id          Int      @id @default(autoincrement())
+  nombre      String // Diligence type name
+  descripcion String? // Description (optional)
+  officeId    Int // Office ID (scoped to user's office)
+  createdAt   DateTime @default(now()) // Auto-set when created
+
+  @@index([officeId]) // Index for faster queries by office
+  @@map("diligencia_tipos") // Maps to "diligencia_tipos" table in database
+}

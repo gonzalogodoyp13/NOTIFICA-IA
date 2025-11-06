@@ -1,0 +1,137 @@
+// API route: /api/bancos/[id]
+// PUT: Update a banco
+// DELETE: Delete a banco
+import { NextRequest, NextResponse } from 'next/server'
+import { getCurrentUserWithOffice } from '@/lib/auth-server'
+import { prisma } from '@/lib/prisma'
+import { BancoSchema } from '@/lib/zodSchemas'
+
+export const dynamic = 'force-dynamic'
+
+export async function PUT(
+  req: NextRequest,
+  { params }: { params: { id: string } }
+) {
+  try {
+    const user = await getCurrentUserWithOffice()
+
+    if (!user) {
+      return NextResponse.json(
+        { ok: false, error: 'No autorizado' },
+        { status: 401 }
+      )
+    }
+
+    const id = parseInt(params.id)
+    if (isNaN(id)) {
+      return NextResponse.json(
+        { ok: false, error: 'ID inválido' },
+        { status: 400 }
+      )
+    }
+
+    // Verify banco exists and belongs to user's office
+    const existingBanco = await prisma.banco.findFirst({
+      where: {
+        id,
+        officeId: user.officeId,
+      },
+    })
+
+    if (!existingBanco) {
+      return NextResponse.json(
+        { ok: false, error: 'Banco no encontrado' },
+        { status: 404 }
+      )
+    }
+
+    const body = await req.json()
+    const parsed = BancoSchema.safeParse(body)
+
+    if (!parsed.success) {
+      return NextResponse.json(
+        { ok: false, error: parsed.error.errors },
+        { status: 400 }
+      )
+    }
+
+    const banco = await prisma.banco.update({
+      where: { id },
+      data: parsed.data,
+    })
+
+    await prisma.auditLog.create({
+      data: {
+        userEmail: user.email,
+        action: `Actualizó Banco: ${banco.nombre}`,
+      },
+    })
+
+    return NextResponse.json({ ok: true, data: banco })
+  } catch (error) {
+    console.error('Error updating banco:', error)
+    return NextResponse.json(
+      { ok: false, error: 'Error al actualizar el banco' },
+      { status: 500 }
+    )
+  }
+}
+
+export async function DELETE(
+  req: NextRequest,
+  { params }: { params: { id: string } }
+) {
+  try {
+    const user = await getCurrentUserWithOffice()
+
+    if (!user) {
+      return NextResponse.json(
+        { ok: false, error: 'No autorizado' },
+        { status: 401 }
+      )
+    }
+
+    const id = parseInt(params.id)
+    if (isNaN(id)) {
+      return NextResponse.json(
+        { ok: false, error: 'ID inválido' },
+        { status: 400 }
+      )
+    }
+
+    // Verify banco exists and belongs to user's office
+    const existingBanco = await prisma.banco.findFirst({
+      where: {
+        id,
+        officeId: user.officeId,
+      },
+    })
+
+    if (!existingBanco) {
+      return NextResponse.json(
+        { ok: false, error: 'Banco no encontrado' },
+        { status: 404 }
+      )
+    }
+
+    await prisma.banco.delete({
+      where: { id },
+    })
+
+    await prisma.auditLog.create({
+      data: {
+        userEmail: user.email,
+        action: `Eliminó Banco: ${existingBanco.nombre}`,
+      },
+    })
+
+    return NextResponse.json({ ok: true, message: 'Banco eliminado correctamente' })
+  } catch (error) {
+    console.error('Error deleting banco:', error)
+    return NextResponse.json(
+      { ok: false, error: 'Error al eliminar el banco' },
+      { status: 500 }
+    )
+  }
+}
+
