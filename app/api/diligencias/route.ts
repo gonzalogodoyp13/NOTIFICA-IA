@@ -19,7 +19,7 @@ export async function GET() {
       )
     }
 
-    const diligencias = await prisma.diligenciaTipo.findMany({
+    const diligencias = await prisma.diligenciaTipos.findMany({
       where: { officeId: user.officeId },
       orderBy: { createdAt: 'desc' },
     })
@@ -55,7 +55,7 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    const diligencia = await prisma.diligenciaTipo.create({
+    const diligencia = await prisma.diligenciaTipos.create({
       data: {
         ...parsed.data,
         officeId: user.officeId,

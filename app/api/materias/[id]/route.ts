@@ -31,7 +31,7 @@ export async function PUT(
     }
 
     // Verify materia exists and belongs to user's office
-    const existingMateria = await prisma.materia.findFirst({
+    const existingMateria = await prisma.materias.findFirst({
       where: {
         id,
         officeId: user.officeId,
@@ -55,7 +55,7 @@ export async function PUT(
       )
     }
 
-    const materia = await prisma.materia.update({
+    const materia = await prisma.materias.update({
       where: { id },
       data: parsed.data,
     })
@@ -100,7 +100,7 @@ export async function DELETE(
     }
 
     // Verify materia exists and belongs to user's office
-    const existingMateria = await prisma.materia.findFirst({
+    const existingMateria = await prisma.materias.findFirst({
       where: {
         id,
         officeId: user.officeId,
@@ -114,7 +114,7 @@ export async function DELETE(
       )
     }
 
-    await prisma.materia.delete({
+    await prisma.materias.delete({
       where: { id },
     })
 

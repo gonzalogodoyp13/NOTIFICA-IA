@@ -37,3 +37,20 @@ export const ComunaSchema = z.object({
   region: z.string().optional(),
 });
 
+export const EjecutadoSchema = z.object({
+  nombre: z.string().min(1, "Nombre requerido"),
+  rut: z.string().min(1, "RUT requerido"),
+  direccion: z.string().optional(),
+  comunaId: z.number().optional(),
+  rvm: z.any().optional(), // JSON field
+});
+
+export const DemandaSchema = z.object({
+  rol: z.string().min(1, "ROL requerido"),
+  tribunalId: z.number().int().positive("Tribunal ID inválido"),
+  caratula: z.string().min(1, "Carátula requerida"),
+  cuantia: z.number().nonnegative("Cuantía debe ser un número positivo"),
+  abogadoId: z.number().int().positive("Abogado ID inválido"),
+  ejecutados: z.array(EjecutadoSchema).optional(),
+});
+

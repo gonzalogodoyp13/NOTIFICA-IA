@@ -19,7 +19,7 @@ export async function GET() {
       )
     }
 
-    const materias = await prisma.materia.findMany({
+    const materias = await prisma.materias.findMany({
       where: { officeId: user.officeId },
       orderBy: { createdAt: 'desc' },
     })
@@ -55,7 +55,7 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    const materia = await prisma.materia.create({
+    const materia = await prisma.materias.create({
       data: {
         ...parsed.data,
         officeId: user.officeId,

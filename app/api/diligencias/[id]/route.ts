@@ -31,7 +31,7 @@ export async function PUT(
     }
 
     // Verify diligencia exists and belongs to user's office
-    const existingDiligencia = await prisma.diligenciaTipo.findFirst({
+    const existingDiligencia = await prisma.diligenciaTipos.findFirst({
       where: {
         id,
         officeId: user.officeId,
@@ -55,7 +55,7 @@ export async function PUT(
       )
     }
 
-    const diligencia = await prisma.diligenciaTipo.update({
+    const diligencia = await prisma.diligenciaTipos.update({
       where: { id },
       data: parsed.data,
     })
@@ -100,7 +100,7 @@ export async function DELETE(
     }
 
     // Verify diligencia exists and belongs to user's office
-    const existingDiligencia = await prisma.diligenciaTipo.findFirst({
+    const existingDiligencia = await prisma.diligenciaTipos.findFirst({
       where: {
         id,
         officeId: user.officeId,
@@ -114,7 +114,7 @@ export async function DELETE(
       )
     }
 
-    await prisma.diligenciaTipo.delete({
+    await prisma.diligenciaTipos.delete({
       where: { id },
     })
 
