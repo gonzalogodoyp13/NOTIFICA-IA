@@ -66,30 +66,71 @@ export async function GET() {
 
 export async function POST(req: NextRequest) {
   try {
+    console.log('[POST /api/demandas] Request received')
+    
     const user = await getCurrentUserWithOffice()
 
     if (!user) {
+      console.log('[POST /api/demandas] Unauthorized - no user')
       return NextResponse.json(
         { ok: false, error: 'No autorizado' },
         { status: 401 }
       )
     }
 
+    console.log('[POST /api/demandas] User authenticated:', { id: user.id, email: user.email, officeId: user.officeId })
+
     const body = await req.json()
+    console.log('[POST /api/demandas] Request body:', JSON.stringify(body, null, 2))
+    
     const parsed = DemandaSchema.safeParse(body)
 
     if (!parsed.success) {
+      console.log('[POST /api/demandas] Validation failed:', parsed.error.errors)
+      const errorMessages = parsed.error.errors.map((err) => `${err.path.join('.')}: ${err.message}`).join(', ')
       return NextResponse.json(
-        { ok: false, error: parsed.error.errors },
+        { ok: false, error: errorMessages },
         { status: 400 }
       )
+    }
+
+    console.log('[POST /api/demandas] Validation passed:', parsed.data)
+
+    // Ensure the user's office exists (auto-create if missing)
+    // This must happen BEFORE verifying tribunal/abogado since they depend on officeId
+    let officeId = user.officeId
+    const office = await prisma.office.findUnique({
+      where: { id: officeId },
+    })
+
+    if (!office) {
+      // Office doesn't exist - create it automatically
+      if (process.env.NODE_ENV === 'development') {
+        console.log(`[POST /api/demandas] Office ID ${officeId} not found, creating default office...`)
+      }
+      
+      const newOffice = await prisma.office.create({
+        data: {
+          nombre: 'Oficina Principal',
+        },
+      })
+      
+      officeId = newOffice.id
+      
+      if (process.env.NODE_ENV === 'development') {
+        console.log(`[POST /api/demandas] ✅ Created default office with ID: ${officeId}`)
+      }
+    } else {
+      if (process.env.NODE_ENV === 'development') {
+        console.log(`[POST /api/demandas] Using existing office ID: ${officeId} (${office.nombre})`)
+      }
     }
 
     // Verify tribunalId belongs to user's office
     const tribunal = await prisma.tribunal.findFirst({
       where: {
         id: parsed.data.tribunalId,
-        officeId: user.officeId,
+        officeId: officeId,
       },
     })
 
@@ -104,7 +145,7 @@ export async function POST(req: NextRequest) {
     const abogado = await prisma.abogado.findFirst({
       where: {
         id: parsed.data.abogadoId,
-        officeId: user.officeId,
+        officeId: officeId,
       },
     })
 
@@ -128,6 +169,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Create demanda with ejecutados if provided
+    console.log('[POST /api/demandas] Creating demanda...')
     const demanda = await prisma.demanda.create({
       data: {
         rol: parsed.data.rol,
@@ -135,7 +177,7 @@ export async function POST(req: NextRequest) {
         caratula: parsed.data.caratula,
         cuantia: parsed.data.cuantia,
         abogadoId: parsed.data.abogadoId,
-        officeId: user.officeId,
+        officeId: officeId,
         userId: user.id,
         ejecutados: parsed.data.ejecutados
           ? {
@@ -181,19 +223,42 @@ export async function POST(req: NextRequest) {
       },
     })
 
+    if (process.env.NODE_ENV === 'development') {
+      console.log(`[POST /api/demandas] ✅ Demanda created successfully:`, {
+        id: demanda.id,
+        rol: demanda.rol,
+        officeId: demanda.officeId,
+      })
+    } else {
+      console.log('[POST /api/demandas] Demanda created successfully:', demanda.id)
+    }
+
     // Log CREATE_DEMANDA action
-    await prisma.auditLog.create({
-      data: {
-        userEmail: user.email,
-        action: `CREATE_DEMANDA: ROL ${demanda.rol} - ${demanda.caratula}`,
-      },
-    })
+    try {
+      await prisma.auditLog.create({
+        data: {
+          userEmail: user.email,
+          action: `CREATE_DEMANDA: ROL ${demanda.rol} - ${demanda.caratula}`,
+        },
+      })
+    } catch (auditError) {
+      console.error('[POST /api/demandas] Error creating audit log:', auditError)
+      // Don't fail the request if audit log fails
+    }
 
     return NextResponse.json({ ok: true, data: demanda })
-  } catch (error) {
-    console.error('Error creating demanda:', error)
+  } catch (error: any) {
+    console.error('[POST /api/demandas] Error creating demanda:', error)
+    console.error('[POST /api/demandas] Error details:', {
+      message: error?.message,
+      code: error?.code,
+      meta: error?.meta,
+    })
+    
+    // Return more detailed error message
+    const errorMessage = error?.message || 'Error al crear la demanda'
     return NextResponse.json(
-      { ok: false, error: 'Error al crear la demanda' },
+      { ok: false, error: errorMessage },
       { status: 500 }
     )
   }
