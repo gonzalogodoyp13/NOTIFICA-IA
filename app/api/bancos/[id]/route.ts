@@ -60,18 +60,25 @@ export async function PUT(
       data: parsed.data,
     })
 
-    await prisma.auditLog.create({
-      data: {
-        userEmail: user.email,
-        action: `Actualizó Banco: ${banco.nombre}`,
-      },
-    })
+    // Create audit log (non-blocking)
+    try {
+      await prisma.auditLog.create({
+        data: {
+          userEmail: user.email,
+          action: `Actualizó Banco: ${banco.nombre}`,
+        },
+      })
+    } catch (auditError) {
+      console.error('Error creating audit log:', auditError)
+      // Don't fail the request if audit log fails
+    }
 
     return NextResponse.json({ ok: true, data: banco })
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error updating banco:', error)
+    const errorMessage = error?.message || 'Error al actualizar el banco'
     return NextResponse.json(
-      { ok: false, error: 'Error al actualizar el banco' },
+      { ok: false, error: errorMessage },
       { status: 500 }
     )
   }
@@ -118,18 +125,25 @@ export async function DELETE(
       where: { id },
     })
 
-    await prisma.auditLog.create({
-      data: {
-        userEmail: user.email,
-        action: `Eliminó Banco: ${existingBanco.nombre}`,
-      },
-    })
+    // Create audit log (non-blocking)
+    try {
+      await prisma.auditLog.create({
+        data: {
+          userEmail: user.email,
+          action: `Eliminó Banco: ${existingBanco.nombre}`,
+        },
+      })
+    } catch (auditError) {
+      console.error('Error creating audit log:', auditError)
+      // Don't fail the request if audit log fails
+    }
 
     return NextResponse.json({ ok: true, message: 'Banco eliminado correctamente' })
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error deleting banco:', error)
+    const errorMessage = error?.message || 'Error al eliminar el banco'
     return NextResponse.json(
-      { ok: false, error: 'Error al eliminar el banco' },
+      { ok: false, error: errorMessage },
       { status: 500 }
     )
   }

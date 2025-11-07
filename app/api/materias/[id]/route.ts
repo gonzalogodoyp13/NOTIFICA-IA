@@ -60,18 +60,25 @@ export async function PUT(
       data: parsed.data,
     })
 
-    await prisma.auditLog.create({
-      data: {
-        userEmail: user.email,
-        action: `Actualizó Materia: ${materia.nombre}`,
-      },
-    })
+    // Create audit log (non-blocking)
+    try {
+      await prisma.auditLog.create({
+        data: {
+          userEmail: user.email,
+          action: `Actualizó Materia: ${materia.nombre}`,
+        },
+      })
+    } catch (auditError) {
+      console.error('Error creating audit log:', auditError)
+      // Don't fail the request if audit log fails
+    }
 
     return NextResponse.json({ ok: true, data: materia })
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error updating materia:', error)
+    const errorMessage = error?.message || 'Error al actualizar la materia'
     return NextResponse.json(
-      { ok: false, error: 'Error al actualizar la materia' },
+      { ok: false, error: errorMessage },
       { status: 500 }
     )
   }
@@ -118,18 +125,25 @@ export async function DELETE(
       where: { id },
     })
 
-    await prisma.auditLog.create({
-      data: {
-        userEmail: user.email,
-        action: `Eliminó Materia: ${existingMateria.nombre}`,
-      },
-    })
+    // Create audit log (non-blocking)
+    try {
+      await prisma.auditLog.create({
+        data: {
+          userEmail: user.email,
+          action: `Eliminó Materia: ${existingMateria.nombre}`,
+        },
+      })
+    } catch (auditError) {
+      console.error('Error creating audit log:', auditError)
+      // Don't fail the request if audit log fails
+    }
 
     return NextResponse.json({ ok: true, message: 'Materia eliminada correctamente' })
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error deleting materia:', error)
+    const errorMessage = error?.message || 'Error al eliminar la materia'
     return NextResponse.json(
-      { ok: false, error: 'Error al eliminar la materia' },
+      { ok: false, error: errorMessage },
       { status: 500 }
     )
   }

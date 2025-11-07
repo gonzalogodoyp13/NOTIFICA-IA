@@ -62,18 +62,28 @@ export async function POST(req: NextRequest) {
       },
     })
 
-    await prisma.auditLog.create({
-      data: {
-        userEmail: user.email,
-        action: `Creó nueva Materia: ${materia.nombre}`,
-      },
-    })
+    // Create audit log (non-blocking)
+    try {
+      await prisma.auditLog.create({
+        data: {
+          userEmail: user.email,
+          action: `Creó nueva Materia: ${materia.nombre}`,
+        },
+      })
+    } catch (auditError) {
+      console.error('Error creating audit log:', auditError)
+      // Don't fail the request if audit log fails
+    }
 
-    return NextResponse.json({ ok: true, data: materia })
-  } catch (error) {
-    console.error('Error creating materia:', error)
     return NextResponse.json(
-      { ok: false, error: 'Error al crear la materia' },
+      { ok: true, data: materia, id: materia.id },
+      { status: 201 }
+    )
+  } catch (error: any) {
+    console.error('Error creating materia:', error)
+    const errorMessage = error?.message || 'Error al crear la materia'
+    return NextResponse.json(
+      { ok: false, error: errorMessage },
       { status: 500 }
     )
   }

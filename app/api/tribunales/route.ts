@@ -62,18 +62,28 @@ export async function POST(req: NextRequest) {
       },
     })
 
-    await prisma.auditLog.create({
-      data: {
-        userEmail: user.email,
-        action: `Creó nuevo Tribunal: ${tribunal.nombre}`,
-      },
-    })
+    // Create audit log (non-blocking)
+    try {
+      await prisma.auditLog.create({
+        data: {
+          userEmail: user.email,
+          action: `Creó nuevo Tribunal: ${tribunal.nombre}`,
+        },
+      })
+    } catch (auditError) {
+      console.error('Error creating audit log:', auditError)
+      // Don't fail the request if audit log fails
+    }
 
-    return NextResponse.json({ ok: true, data: tribunal })
-  } catch (error) {
-    console.error('Error creating tribunal:', error)
     return NextResponse.json(
-      { ok: false, error: 'Error al crear el tribunal' },
+      { ok: true, data: tribunal, id: tribunal.id },
+      { status: 201 }
+    )
+  } catch (error: any) {
+    console.error('Error creating tribunal:', error)
+    const errorMessage = error?.message || 'Error al crear el tribunal'
+    return NextResponse.json(
+      { ok: false, error: errorMessage },
       { status: 500 }
     )
   }

@@ -60,18 +60,25 @@ export async function PUT(
       data: parsed.data,
     })
 
-    await prisma.auditLog.create({
-      data: {
-        userEmail: user.email,
-        action: `Actualizó Tipo de Diligencia: ${diligencia.nombre}`,
-      },
-    })
+    // Create audit log (non-blocking)
+    try {
+      await prisma.auditLog.create({
+        data: {
+          userEmail: user.email,
+          action: `Actualizó Tipo de Diligencia: ${diligencia.nombre}`,
+        },
+      })
+    } catch (auditError) {
+      console.error('Error creating audit log:', auditError)
+      // Don't fail the request if audit log fails
+    }
 
     return NextResponse.json({ ok: true, data: diligencia })
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error updating diligencia:', error)
+    const errorMessage = error?.message || 'Error al actualizar el tipo de diligencia'
     return NextResponse.json(
-      { ok: false, error: 'Error al actualizar el tipo de diligencia' },
+      { ok: false, error: errorMessage },
       { status: 500 }
     )
   }
@@ -118,18 +125,25 @@ export async function DELETE(
       where: { id },
     })
 
-    await prisma.auditLog.create({
-      data: {
-        userEmail: user.email,
-        action: `Eliminó Tipo de Diligencia: ${existingDiligencia.nombre}`,
-      },
-    })
+    // Create audit log (non-blocking)
+    try {
+      await prisma.auditLog.create({
+        data: {
+          userEmail: user.email,
+          action: `Eliminó Tipo de Diligencia: ${existingDiligencia.nombre}`,
+        },
+      })
+    } catch (auditError) {
+      console.error('Error creating audit log:', auditError)
+      // Don't fail the request if audit log fails
+    }
 
     return NextResponse.json({ ok: true, message: 'Tipo de diligencia eliminado correctamente' })
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error deleting diligencia:', error)
+    const errorMessage = error?.message || 'Error al eliminar el tipo de diligencia'
     return NextResponse.json(
-      { ok: false, error: 'Error al eliminar el tipo de diligencia' },
+      { ok: false, error: errorMessage },
       { status: 500 }
     )
   }

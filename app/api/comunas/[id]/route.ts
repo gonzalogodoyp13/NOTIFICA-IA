@@ -60,18 +60,25 @@ export async function PUT(
       data: parsed.data,
     })
 
-    await prisma.auditLog.create({
-      data: {
-        userEmail: user.email,
-        action: `Actualizó Comuna: ${comuna.nombre}`,
-      },
-    })
+    // Create audit log (non-blocking)
+    try {
+      await prisma.auditLog.create({
+        data: {
+          userEmail: user.email,
+          action: `Actualizó Comuna: ${comuna.nombre}`,
+        },
+      })
+    } catch (auditError) {
+      console.error('Error creating audit log:', auditError)
+      // Don't fail the request if audit log fails
+    }
 
     return NextResponse.json({ ok: true, data: comuna })
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error updating comuna:', error)
+    const errorMessage = error?.message || 'Error al actualizar la comuna'
     return NextResponse.json(
-      { ok: false, error: 'Error al actualizar la comuna' },
+      { ok: false, error: errorMessage },
       { status: 500 }
     )
   }
@@ -118,18 +125,25 @@ export async function DELETE(
       where: { id },
     })
 
-    await prisma.auditLog.create({
-      data: {
-        userEmail: user.email,
-        action: `Eliminó Comuna: ${existingComuna.nombre}`,
-      },
-    })
+    // Create audit log (non-blocking)
+    try {
+      await prisma.auditLog.create({
+        data: {
+          userEmail: user.email,
+          action: `Eliminó Comuna: ${existingComuna.nombre}`,
+        },
+      })
+    } catch (auditError) {
+      console.error('Error creating audit log:', auditError)
+      // Don't fail the request if audit log fails
+    }
 
     return NextResponse.json({ ok: true, message: 'Comuna eliminada correctamente' })
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error deleting comuna:', error)
+    const errorMessage = error?.message || 'Error al eliminar la comuna'
     return NextResponse.json(
-      { ok: false, error: 'Error al eliminar la comuna' },
+      { ok: false, error: errorMessage },
       { status: 500 }
     )
   }

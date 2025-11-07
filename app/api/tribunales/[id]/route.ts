@@ -60,18 +60,25 @@ export async function PUT(
       data: parsed.data,
     })
 
-    await prisma.auditLog.create({
-      data: {
-        userEmail: user.email,
-        action: `Actualizó Tribunal: ${tribunal.nombre}`,
-      },
-    })
+    // Create audit log (non-blocking)
+    try {
+      await prisma.auditLog.create({
+        data: {
+          userEmail: user.email,
+          action: `Actualizó Tribunal: ${tribunal.nombre}`,
+        },
+      })
+    } catch (auditError) {
+      console.error('Error creating audit log:', auditError)
+      // Don't fail the request if audit log fails
+    }
 
     return NextResponse.json({ ok: true, data: tribunal })
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error updating tribunal:', error)
+    const errorMessage = error?.message || 'Error al actualizar el tribunal'
     return NextResponse.json(
-      { ok: false, error: 'Error al actualizar el tribunal' },
+      { ok: false, error: errorMessage },
       { status: 500 }
     )
   }
@@ -118,18 +125,25 @@ export async function DELETE(
       where: { id },
     })
 
-    await prisma.auditLog.create({
-      data: {
-        userEmail: user.email,
-        action: `Eliminó Tribunal: ${existingTribunal.nombre}`,
-      },
-    })
+    // Create audit log (non-blocking)
+    try {
+      await prisma.auditLog.create({
+        data: {
+          userEmail: user.email,
+          action: `Eliminó Tribunal: ${existingTribunal.nombre}`,
+        },
+      })
+    } catch (auditError) {
+      console.error('Error creating audit log:', auditError)
+      // Don't fail the request if audit log fails
+    }
 
     return NextResponse.json({ ok: true, message: 'Tribunal eliminado correctamente' })
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error deleting tribunal:', error)
+    const errorMessage = error?.message || 'Error al eliminar el tribunal'
     return NextResponse.json(
-      { ok: false, error: 'Error al eliminar el tribunal' },
+      { ok: false, error: errorMessage },
       { status: 500 }
     )
   }

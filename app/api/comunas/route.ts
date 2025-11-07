@@ -62,18 +62,28 @@ export async function POST(req: NextRequest) {
       },
     })
 
-    await prisma.auditLog.create({
-      data: {
-        userEmail: user.email,
-        action: `Creó nueva Comuna: ${comuna.nombre}`,
-      },
-    })
+    // Create audit log (non-blocking)
+    try {
+      await prisma.auditLog.create({
+        data: {
+          userEmail: user.email,
+          action: `Creó nueva Comuna: ${comuna.nombre}`,
+        },
+      })
+    } catch (auditError) {
+      console.error('Error creating audit log:', auditError)
+      // Don't fail the request if audit log fails
+    }
 
-    return NextResponse.json({ ok: true, data: comuna })
-  } catch (error) {
-    console.error('Error creating comuna:', error)
     return NextResponse.json(
-      { ok: false, error: 'Error al crear la comuna' },
+      { ok: true, data: comuna, id: comuna.id },
+      { status: 201 }
+    )
+  } catch (error: any) {
+    console.error('Error creating comuna:', error)
+    const errorMessage = error?.message || 'Error al crear la comuna'
+    return NextResponse.json(
+      { ok: false, error: errorMessage },
       { status: 500 }
     )
   }

@@ -84,18 +84,25 @@ export async function PUT(
       },
     })
 
-    await prisma.auditLog.create({
-      data: {
-        userEmail: user.email,
-        action: `Actualizó Abogado: ${abogado.nombre || 'Sin nombre'}`,
-      },
-    })
+    // Create audit log (non-blocking)
+    try {
+      await prisma.auditLog.create({
+        data: {
+          userEmail: user.email,
+          action: `Actualizó Abogado: ${abogado.nombre || 'Sin nombre'}`,
+        },
+      })
+    } catch (auditError) {
+      console.error('Error creating audit log:', auditError)
+      // Don't fail the request if audit log fails
+    }
 
     return NextResponse.json({ ok: true, data: abogado })
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error updating abogado:', error)
+    const errorMessage = error?.message || 'Error al actualizar el abogado'
     return NextResponse.json(
-      { ok: false, error: 'Error al actualizar el abogado' },
+      { ok: false, error: errorMessage },
       { status: 500 }
     )
   }
@@ -142,18 +149,25 @@ export async function DELETE(
       where: { id },
     })
 
-    await prisma.auditLog.create({
-      data: {
-        userEmail: user.email,
-        action: `Eliminó Abogado: ${existingAbogado.nombre || 'Sin nombre'}`,
-      },
-    })
+    // Create audit log (non-blocking)
+    try {
+      await prisma.auditLog.create({
+        data: {
+          userEmail: user.email,
+          action: `Eliminó Abogado: ${existingAbogado.nombre || 'Sin nombre'}`,
+        },
+      })
+    } catch (auditError) {
+      console.error('Error creating audit log:', auditError)
+      // Don't fail the request if audit log fails
+    }
 
     return NextResponse.json({ ok: true, message: 'Abogado eliminado correctamente' })
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error deleting abogado:', error)
+    const errorMessage = error?.message || 'Error al eliminar el abogado'
     return NextResponse.json(
-      { ok: false, error: 'Error al eliminar el abogado' },
+      { ok: false, error: errorMessage },
       { status: 500 }
     )
   }

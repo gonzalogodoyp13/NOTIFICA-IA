@@ -62,18 +62,28 @@ export async function POST(req: NextRequest) {
       },
     })
 
-    await prisma.auditLog.create({
-      data: {
-        userEmail: user.email,
-        action: `Creó nuevo Banco: ${banco.nombre}`,
-      },
-    })
+    // Create audit log (non-blocking)
+    try {
+      await prisma.auditLog.create({
+        data: {
+          userEmail: user.email,
+          action: `Creó nuevo Banco: ${banco.nombre}`,
+        },
+      })
+    } catch (auditError) {
+      console.error('Error creating audit log:', auditError)
+      // Don't fail the request if audit log fails
+    }
 
-    return NextResponse.json({ ok: true, data: banco })
-  } catch (error) {
-    console.error('Error creating banco:', error)
     return NextResponse.json(
-      { ok: false, error: 'Error al crear el banco' },
+      { ok: true, data: banco, id: banco.id },
+      { status: 201 }
+    )
+  } catch (error: any) {
+    console.error('Error creating banco:', error)
+    const errorMessage = error?.message || 'Error al crear el banco'
+    return NextResponse.json(
+      { ok: false, error: errorMessage },
       { status: 500 }
     )
   }
