@@ -135,8 +135,13 @@ export default function RolesPage() {
                     <tbody className="bg-white divide-y divide-gray-200">
                       {roles.map((rol) => (
                         <tr key={rol.id} className="hover:bg-gray-50">
-                          <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                            {rol.rol}
+                          <td className="px-6 py-4 whitespace-nowrap text-sm font-semibold text-blue-600">
+                            <Link
+                              href={`/roles/${rol.id}`}
+                              className="hover:underline"
+                            >
+                              {rol.rol}
+                            </Link>
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
                             {rol.demanda?.caratula || 'Sin carátula'}
