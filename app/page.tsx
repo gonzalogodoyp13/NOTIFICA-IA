@@ -1,6 +1,20 @@
 // Homepage component
-// Landing page for NOTIFICA IA
-export default function Home() {
+// Redirects authenticated users to /dashboard, shows landing page for guests
+import { redirect } from 'next/navigation'
+import { getSession } from '@/lib/auth-server'
+
+export const dynamic = 'force-dynamic'
+
+export default async function Home() {
+  // Check if user is authenticated
+  const session = await getSession()
+  
+  // Redirect authenticated users to dashboard
+  if (session) {
+    redirect('/dashboard')
+  }
+
+  // Show landing page for non-authenticated users
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
@@ -36,7 +50,7 @@ export default function Home() {
 
           {/* Instructions */}
           <div className="mt-8 text-sm text-gray-500 dark:text-gray-400">
-            <p>Phase 0 - Esqueleto inicial listo para desarrollo</p>
+            <p>Phase 4 - Backend APIs implementadas</p>
           </div>
         </div>
       </div>

@@ -1,10 +1,10 @@
-// API route: /api/tribunales/[id]
-// PUT: Update a tribunal
-// DELETE: Delete a tribunal
+// API route: /api/diligencia-tipos/[id]
+// PUT: Update a diligencia tipo
+// DELETE: Delete a diligencia tipo
 import { NextRequest, NextResponse } from 'next/server'
 import { getCurrentUserWithOffice } from '@/lib/auth-server'
 import { prisma } from '@/lib/prisma'
-import { TribunalSchema } from '@/lib/zodSchemas'
+import { DiligenciaTipoSchema } from '@/lib/zodSchemas'
 
 export const dynamic = 'force-dynamic'
 
@@ -22,26 +22,26 @@ export async function PUT(
       )
     }
 
-    const id = params.id
     const officeIdStr = String(user.officeId)
+    const id = params.id
 
-    // Verify tribunal exists and belongs to user's office (Phase 4 Tribunal model uses String IDs)
-    const existingTribunal = await prisma.tribunal.findFirst({
+    // Verify diligencia exists and belongs to user's office
+    const existingDiligencia = await prisma.diligenciaTipo.findFirst({
       where: {
         id,
         officeId: officeIdStr,
       },
     })
 
-    if (!existingTribunal) {
+    if (!existingDiligencia) {
       return NextResponse.json(
-        { ok: false, error: 'Tribunal no encontrado' },
+        { ok: false, error: 'Tipo de diligencia no encontrado' },
         { status: 404 }
       )
     }
 
     const body = await req.json()
-    const parsed = TribunalSchema.safeParse(body)
+    const parsed = DiligenciaTipoSchema.safeParse(body)
 
     if (!parsed.success) {
       return NextResponse.json(
@@ -50,7 +50,7 @@ export async function PUT(
       )
     }
 
-    const tribunal = await prisma.tribunal.update({
+    const diligencia = await prisma.diligenciaTipo.update({
       where: { id },
       data: parsed.data,
     })
@@ -58,15 +58,15 @@ export async function PUT(
     await prisma.auditLog.create({
       data: {
         userEmail: user.email,
-        action: `Actualizó Tribunal: ${tribunal.nombre}`,
+        action: `Actualizó Tipo de Diligencia: ${diligencia.nombre}`,
       },
     })
 
-    return NextResponse.json({ ok: true, data: tribunal })
+    return NextResponse.json({ ok: true, data: diligencia })
   } catch (error) {
-    console.error('Error updating tribunal:', error)
+    console.error('Error updating diligencia tipo:', error)
     return NextResponse.json(
-      { ok: false, error: 'Error al actualizar el tribunal' },
+      { ok: false, error: 'Error al actualizar el tipo de diligencia' },
       { status: 500 }
     )
   }
@@ -86,40 +86,40 @@ export async function DELETE(
       )
     }
 
-    const id = params.id
     const officeIdStr = String(user.officeId)
+    const id = params.id
 
-    // Verify tribunal exists and belongs to user's office (Phase 4 Tribunal model uses String IDs)
-    const existingTribunal = await prisma.tribunal.findFirst({
+    // Verify diligencia exists and belongs to user's office
+    const existingDiligencia = await prisma.diligenciaTipo.findFirst({
       where: {
         id,
         officeId: officeIdStr,
       },
     })
 
-    if (!existingTribunal) {
+    if (!existingDiligencia) {
       return NextResponse.json(
-        { ok: false, error: 'Tribunal no encontrado' },
+        { ok: false, error: 'Tipo de diligencia no encontrado' },
         { status: 404 }
       )
     }
 
-    await prisma.tribunal.delete({
+    await prisma.diligenciaTipo.delete({
       where: { id },
     })
 
     await prisma.auditLog.create({
       data: {
         userEmail: user.email,
-        action: `Eliminó Tribunal: ${existingTribunal.nombre}`,
+        action: `Eliminó Tipo de Diligencia: ${existingDiligencia.nombre}`,
       },
     })
 
-    return NextResponse.json({ ok: true, message: 'Tribunal eliminado correctamente' })
+    return NextResponse.json({ ok: true, message: 'Tipo de diligencia eliminado correctamente' })
   } catch (error) {
-    console.error('Error deleting tribunal:', error)
+    console.error('Error deleting diligencia tipo:', error)
     return NextResponse.json(
-      { ok: false, error: 'Error al eliminar el tribunal' },
+      { ok: false, error: 'Error al eliminar el tipo de diligencia' },
       { status: 500 }
     )
   }
