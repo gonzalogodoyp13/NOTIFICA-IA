@@ -1,24 +1,272 @@
-// Prisma schema for NOTIFICA IA
-// This file defines the database structure
-// Generator: creates the Prisma Client library
 generator client {
   provider = "prisma-client-js"
 }
 
-// Datasource: PostgreSQL database on Railway
-// DATABASE_URL environment variable contains the connection string
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
-// User model: represents one "Oficina de Receptor" account
 model User {
-  id         String   @id @default(cuid()) // Unique ID using CUID
-  email      String   @unique // Email address (must be unique)
-  officeName String   // Name of the office ("Oficina de Receptor")
-  createdAt  DateTime @default(now()) // Auto-set when created
+  id         String    @id @default(cuid())
+  email      String    @unique
+  officeName String
+  createdAt  DateTime  @default(now())
+  demandas   Demanda[]
 
-  @@map("users") // Maps to "users" table in database
+  @@map("users")
 }
 
+model Office {
+  id        Int       @id @default(autoincrement())
+  nombre    String
+  createdAt DateTime  @default(now())
+  demandas  Demanda[]
+
+  @@map("offices")
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  userEmail String
+  action    String
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([userEmail])
+  @@map("audit_logs")
+}
+
+model Abogado {
+  id        Int       @id @default(autoincrement())
+  officeId  Int
+  nombre    String?
+  rut       String?
+  direccion String?
+  comuna    String?
+  telefono  String?
+  email     String?
+  bancoId   Int?
+  createdAt DateTime  @default(now())
+  banco     Banco?    @relation(fields: [bancoId], references: [id])
+  demandas  Demanda[]
+
+  @@index([bancoId])
+  @@index([officeId])
+  @@map("abogados")
+}
+
+model Banco {
+  id        Int       @id @default(autoincrement())
+  officeId  Int
+  nombre    String
+  cuenta    String?
+  createdAt DateTime  @default(now())
+  abogados  Abogado[]
+
+  @@index([officeId])
+  @@map("bancos")
+}
+
+model Comuna {
+  id         Int         @id @default(autoincrement())
+  officeId   Int
+  nombre     String
+  region     String?
+  createdAt  DateTime    @default(now())
+  ejecutados Ejecutado[]
+
+  @@index([officeId])
+  @@map("comunas")
+}
+
+model Materia {
+  id        Int      @id @default(autoincrement())
+  officeId  Int
+  nombre    String
+  createdAt DateTime @default(now())
+
+  @@index([officeId])
+  @@map("materias")
+}
+
+model Demanda {
+  id         String      @id
+  rol        String      @unique
+  tribunalId Int
+  caratula   String
+  cuantia    Float
+  abogadoId  Int
+  officeId   Int
+  userId     String
+  createdAt  DateTime    @default(now())
+  abogados   Abogado     @relation(fields: [abogadoId], references: [id])
+  offices    Office      @relation(fields: [officeId], references: [id])
+  tribunales tribunales  @relation(fields: [tribunalId], references: [id])
+  users      User        @relation(fields: [userId], references: [id])
+  ejecutados Ejecutado[]
+  roles      RolCausa[]
+
+  @@map("demandas")
+}
+
+model Ejecutado {
+  id        String  @id
+  demandaId String
+  nombre    String
+  rut       String
+  direccion String?
+  comunaId  Int?
+  rvm       Json?
+  comunas   Comuna? @relation(fields: [comunaId], references: [id])
+  demandas  Demanda @relation(fields: [demandaId], references: [id])
+
+  @@map("ejecutados")
+}
+
+model diligencia_tipos {
+  id          Int      @id @default(autoincrement())
+  nombre      String
+  descripcion String?
+  officeId    Int
+  createdAt   DateTime @default(now())
+
+  @@index([officeId])
+}
+
+model tribunales {
+  id        Int       @id @default(autoincrement())
+  officeId  Int
+  nombre    String
+  direccion String?
+  comuna    String?
+  createdAt DateTime  @default(now())
+  demandas  Demanda[]
+
+  @@index([officeId])
+}
+
+// ---------- ENUMS (Phase 4) ----------
+
+enum EstadoRol {
+  pendiente
+  en_proceso
+  terminado
+  archivado
+}
+
+enum EstadoDiligencia {
+  pendiente
+  completada
+  fallida
+}
+
+// ---------- MODELS (Phase 4) ----------
+
+model RolCausa {
+  id          String        @id @default(cuid())
+  demandaId   String?
+  officeId    String
+  rol         String
+  tribunalId  String
+  estado      EstadoRol     @default(pendiente)
+  createdAt   DateTime      @default(now())
+
+  demanda     Demanda?      @relation(fields: [demandaId], references: [id])
+  tribunal    Tribunal      @relation(fields: [tribunalId], references: [id])
+  diligencias Diligencia[]
+  documentos  Documento[]
+  recibos     Recibo[]
+  notas       Nota[]
+
+  @@index([officeId, createdAt])
+  @@index([rol])
+}
+
+model Diligencia {
+  id          String          @id @default(cuid())
+  rolId       String
+  tipoId      String
+  estado      EstadoDiligencia @default(pendiente)
+  fecha       DateTime
+  meta        Json?
+  createdAt   DateTime        @default(now())
+
+  rol         RolCausa        @relation(fields: [rolId], references: [id])
+  tipo        DiligenciaTipo  @relation(fields: [tipoId], references: [id])
+  documentos  Documento[]
+
+  @@index([rolId, createdAt])
+}
+
+model Documento {
+  id          String      @id @default(cuid())
+  rolId       String
+  diligenciaId String?    // optional link to Diligencia
+  estampoId   String?     // optional link to Ajustes.estampo
+  nombre      String
+  tipo        String
+  pdfId       String?
+  version     Int         @default(1)
+  createdAt   DateTime    @default(now())
+
+  rol         RolCausa    @relation(fields: [rolId], references: [id])
+  diligencia  Diligencia? @relation(fields: [diligenciaId], references: [id])
+  estampo     Estampo?    @relation(fields: [estampoId], references: [id])
+
+  @@index([rolId, createdAt])
+}
+
+model Nota {
+  id          String    @id @default(cuid())
+  rolId       String
+  userId      String
+  contenido   String
+  createdAt   DateTime  @default(now())
+
+  rol         RolCausa  @relation(fields: [rolId], references: [id])
+
+  @@index([rolId, createdAt])
+}
+
+model Recibo {
+  id          String    @id @default(cuid())
+  rolId       String
+  monto       Float
+  medio       String
+  ref         String?
+  createdAt   DateTime  @default(now())
+
+  rol         RolCausa  @relation(fields: [rolId], references: [id])
+
+  @@index([rolId, createdAt])
+}
+
+// Alias models for Phase 4 compatibility
+model Tribunal {
+  id          String      @id @default(cuid())
+  officeId    String
+  nombre      String
+  direccion   String?
+  comuna      String?
+  createdAt   DateTime    @default(now())
+
+  roles       RolCausa[]
+}
+
+model DiligenciaTipo {
+  id          String        @id @default(cuid())
+  officeId    String
+  nombre      String
+  descripcion String?
+  createdAt   DateTime      @default(now())
+
+  diligencias Diligencia[]
+}
+
+model Estampo {
+  id          String      @id @default(cuid())
+  createdAt   DateTime    @default(now())
+
+  documentos  Documento[]
+}

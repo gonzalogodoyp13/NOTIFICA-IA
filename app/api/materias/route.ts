@@ -10,9 +10,12 @@ export const dynamic = 'force-dynamic'
 
 export async function GET() {
   try {
+    console.log('[API /materias] Getting user...')
     const user = await getCurrentUserWithOffice()
+    console.log('[API /materias] User result:', user ? { id: user.id, email: user.email, officeId: user.officeId } : 'null')
 
     if (!user) {
+      console.error('[API /materias] No user found - returning 401')
       return NextResponse.json(
         { ok: false, error: 'No autorizado' },
         { status: 401 }

@@ -1,12 +1,9 @@
-// API route: /api/diligencias
-// GET: List all diligencias for given rolId (ROL Phase 4)
-// POST: Create new Diligencia (validates with zDiligencia)
-// PUT: Update estado or meta
-// DELETE: Remove if role = "Receptor"
+// API route: /api/documentos
+// GET/POST/PUT/DELETE: CRUD operations for Documento (ROL Phase 4)
 import { NextRequest, NextResponse } from 'next/server'
 import { getCurrentUserWithOffice } from '@/lib/auth-server'
 import { prisma } from '@/lib/prisma'
-import { zDiligencia, zDiligenciaUpdate } from '@/lib/validations/diligencia'
+import { zDocumento, zDocumentoUpdate } from '@/lib/validations/documento'
 import { logAudit } from '@/lib/audit'
 import { ZodError } from 'zod'
 
@@ -50,27 +47,32 @@ export async function GET(req: NextRequest) {
       )
     }
 
-    // Fetch diligencias for this rol
-    const diligencias = await prisma.diligencia.findMany({
+    // Fetch documentos for this rol
+    const documentos = await prisma.documento.findMany({
       where: {
         rolId,
       },
       include: {
-        tipo: {
+        estampo: true,
+        diligencia: {
           select: {
-            nombre: true,
-            descripcion: true,
+            id: true,
+            tipo: {
+              select: {
+                nombre: true,
+              },
+            },
           },
         },
       },
       orderBy: { createdAt: 'desc' },
     })
 
-    return NextResponse.json({ ok: true, data: diligencias })
+    return NextResponse.json({ ok: true, data: documentos })
   } catch (error) {
-    console.error('Error fetching diligencias:', error)
+    console.error('Error fetching documentos:', error)
     return NextResponse.json(
-      { ok: false, error: 'Error al obtener las diligencias' },
+      { ok: false, error: 'Error al obtener los documentos' },
       { status: 500 }
     )
   }
@@ -88,7 +90,7 @@ export async function POST(req: NextRequest) {
     }
 
     const body = await req.json()
-    const parsed = zDiligencia.safeParse(body)
+    const parsed = zDocumento.safeParse(body)
 
     if (!parsed.success) {
       return NextResponse.json(
@@ -114,50 +116,80 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    // Verify tipo belongs to user's office
-    const tipo = await prisma.diligenciaTipo.findFirst({
-      where: {
-        id: parsed.data.tipoId,
-        officeId: officeIdStr,
-      },
-    })
+    // Verify diligencia belongs to the same rol if provided
+    if (parsed.data.diligenciaId) {
+      const diligencia = await prisma.diligencia.findFirst({
+        where: {
+          id: parsed.data.diligenciaId,
+          rolId: parsed.data.rolId,
+        },
+      })
 
-    if (!tipo) {
-      return NextResponse.json(
-        { ok: false, error: 'Tipo de diligencia no encontrado o no pertenece a tu oficina' },
-        { status: 404 }
-      )
+      if (!diligencia) {
+        return NextResponse.json(
+          { ok: false, error: 'Diligencia no encontrada o no pertenece a este rol' },
+          { status: 404 }
+        )
+      }
     }
 
-    // Create Diligencia
-    const diligencia = await prisma.diligencia.create({
+    // Verify estampo exists if provided
+    if (parsed.data.estampoId) {
+      const estampo = await prisma.estampo.findFirst({
+        where: {
+          id: parsed.data.estampoId,
+        },
+      })
+
+      if (!estampo) {
+        return NextResponse.json(
+          { ok: false, error: 'Estampo no encontrado' },
+          { status: 404 }
+        )
+      }
+    }
+
+    // Create Documento
+    const documento = await prisma.documento.create({
       data: {
         rolId: parsed.data.rolId,
-        tipoId: parsed.data.tipoId,
-        fecha: parsed.data.fecha,
-        estado: parsed.data.estado,
-        meta: parsed.data.meta || null,
+        diligenciaId: parsed.data.diligenciaId || null,
+        estampoId: parsed.data.estampoId || null,
+        nombre: parsed.data.nombre,
+        tipo: parsed.data.tipo,
+        pdfId: parsed.data.pdfId || null,
+        version: parsed.data.version,
       },
       include: {
-        tipo: {
+        estampo: true,
+        diligencia: {
           select: {
-            nombre: true,
-            descripcion: true,
+            id: true,
+            tipo: {
+              select: {
+                nombre: true,
+              },
+            },
           },
         },
       },
     })
 
+    // TODO: Phase 5 - If tipo === "Recibo", auto-create Recibo
+    // if (parsed.data.tipo === "Recibo") {
+    //   // Auto-create Recibo record
+    // }
+
     await logAudit({
       userEmail: user.email,
       userId: user.id,
       officeId: officeIdStr,
-      tabla: 'Diligencia',
-      accion: 'Creó nueva Diligencia',
-      diff: { id: diligencia.id, tipoId: diligencia.tipoId },
+      tabla: 'Documento',
+      accion: 'Creó nuevo Documento',
+      diff: { id: documento.id, nombre: documento.nombre, tipo: documento.tipo },
     })
 
-    return NextResponse.json({ ok: true, data: diligencia })
+    return NextResponse.json({ ok: true, data: documento })
   } catch (error) {
     if (error instanceof ZodError) {
       return NextResponse.json(
@@ -165,9 +197,9 @@ export async function POST(req: NextRequest) {
         { status: 400 }
       )
     }
-    console.error('Error creating diligencia:', error)
+    console.error('Error creating documento:', error)
     return NextResponse.json(
-      { ok: false, error: 'Error al crear la diligencia' },
+      { ok: false, error: 'Error al crear el documento' },
       { status: 500 }
     )
   }
@@ -194,7 +226,7 @@ export async function PUT(req: NextRequest) {
       )
     }
 
-    const parsed = zDiligenciaUpdate.safeParse(updateData)
+    const parsed = zDocumentoUpdate.safeParse(updateData)
 
     if (!parsed.success) {
       return NextResponse.json(
@@ -205,8 +237,8 @@ export async function PUT(req: NextRequest) {
 
     const officeIdStr = String(user.officeId)
 
-    // Verify diligencia exists and belongs to user's office (via rol)
-    const diligencia = await prisma.diligencia.findFirst({
+    // Verify documento exists and belongs to user's office (via rol)
+    const documento = await prisma.documento.findFirst({
       where: {
         id,
         rol: {
@@ -215,22 +247,27 @@ export async function PUT(req: NextRequest) {
       },
     })
 
-    if (!diligencia) {
+    if (!documento) {
       return NextResponse.json(
-        { ok: false, error: 'Diligencia no encontrada o no pertenece a tu oficina' },
+        { ok: false, error: 'Documento no encontrado o no pertenece a tu oficina' },
         { status: 404 }
       )
     }
 
-    // Update diligencia
-    const updated = await prisma.diligencia.update({
+    // Update documento
+    const updated = await prisma.documento.update({
       where: { id },
       data: parsed.data,
       include: {
-        tipo: {
+        estampo: true,
+        diligencia: {
           select: {
-            nombre: true,
-            descripcion: true,
+            id: true,
+            tipo: {
+              select: {
+                nombre: true,
+              },
+            },
           },
         },
       },
@@ -240,8 +277,8 @@ export async function PUT(req: NextRequest) {
       userEmail: user.email,
       userId: user.id,
       officeId: officeIdStr,
-      tabla: 'Diligencia',
-      accion: 'Actualizó Diligencia',
+      tabla: 'Documento',
+      accion: 'Actualizó Documento',
       diff: { id, cambios: parsed.data },
     })
 
@@ -253,9 +290,9 @@ export async function PUT(req: NextRequest) {
         { status: 400 }
       )
     }
-    console.error('Error updating diligencia:', error)
+    console.error('Error updating documento:', error)
     return NextResponse.json(
-      { ok: false, error: 'Error al actualizar la diligencia' },
+      { ok: false, error: 'Error al actualizar el documento' },
       { status: 500 }
     )
   }
@@ -284,8 +321,8 @@ export async function DELETE(req: NextRequest) {
 
     const officeIdStr = String(user.officeId)
 
-    // Verify diligencia exists and belongs to user's office (via rol)
-    const diligencia = await prisma.diligencia.findFirst({
+    // Verify documento exists and belongs to user's office (via rol)
+    const documento = await prisma.documento.findFirst({
       where: {
         id,
         rol: {
@@ -294,23 +331,14 @@ export async function DELETE(req: NextRequest) {
       },
     })
 
-    if (!diligencia) {
+    if (!documento) {
       return NextResponse.json(
-        { ok: false, error: 'Diligencia no encontrada o no pertenece a tu oficina' },
+        { ok: false, error: 'Documento no encontrado o no pertenece a tu oficina' },
         { status: 404 }
       )
     }
 
-    // TODO: Check if user role is "Receptor" - for now allow deletion
-    // const userRole = user.metadata?.role
-    // if (userRole !== 'Receptor') {
-    //   return NextResponse.json(
-    //     { ok: false, error: 'Solo los receptores pueden eliminar diligencias' },
-    //     { status: 403 }
-    //   )
-    // }
-
-    await prisma.diligencia.delete({
+    await prisma.documento.delete({
       where: { id },
     })
 
@@ -318,17 +346,18 @@ export async function DELETE(req: NextRequest) {
       userEmail: user.email,
       userId: user.id,
       officeId: officeIdStr,
-      tabla: 'Diligencia',
-      accion: 'Eliminó Diligencia',
+      tabla: 'Documento',
+      accion: 'Eliminó Documento',
       diff: { id },
     })
 
-    return NextResponse.json({ ok: true, message: 'Diligencia eliminada correctamente' })
+    return NextResponse.json({ ok: true, message: 'Documento eliminado correctamente' })
   } catch (error) {
-    console.error('Error deleting diligencia:', error)
+    console.error('Error deleting documento:', error)
     return NextResponse.json(
-      { ok: false, error: 'Error al eliminar la diligencia' },
+      { ok: false, error: 'Error al eliminar el documento' },
       { status: 500 }
     )
   }
 }
+

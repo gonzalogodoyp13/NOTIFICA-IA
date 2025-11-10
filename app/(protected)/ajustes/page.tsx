@@ -1,14 +1,19 @@
 // Ajustes de Oficina - Hub page
 // Main configuration hub with cards for each configuration area
-import { requireSession } from '@/lib/auth-server'
+// Protected route - authentication handled by (protected) layout
+import { getSession } from '@/lib/auth-server'
 import Topbar from '@/components/Topbar'
 import Link from 'next/link'
 
 export const dynamic = 'force-dynamic'
 
 export default async function AjustesPage() {
-  // Require authentication - redirects to /login if not logged in
-  const session = await requireSession()
+  // Get session (layout already verified authentication)
+  const session = await getSession()
+  
+  if (!session) {
+    return null // Layout will redirect
+  }
 
   const configAreas = [
     {

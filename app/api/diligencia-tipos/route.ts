@@ -1,40 +1,36 @@
-// API route: /api/tribunales
-// GET: List all tribunales for the current office
-// POST: Create a new tribunal
+// API route: /api/diligencia-tipos
+// GET: List all diligencia tipos for the current office
+// POST: Create a new diligencia tipo
 import { NextRequest, NextResponse } from 'next/server'
 import { getCurrentUserWithOffice } from '@/lib/auth-server'
 import { prisma } from '@/lib/prisma'
-import { TribunalSchema } from '@/lib/zodSchemas'
+import { DiligenciaTipoSchema } from '@/lib/zodSchemas'
 
 export const dynamic = 'force-dynamic'
 
 export async function GET() {
   try {
-    console.log('[API /tribunales] Getting user...')
     const user = await getCurrentUserWithOffice()
-    console.log('[API /tribunales] User result:', user ? { id: user.id, email: user.email, officeId: user.officeId } : 'null')
 
     if (!user) {
-      console.error('[API /tribunales] No user found - returning 401')
       return NextResponse.json(
         { ok: false, error: 'No autorizado' },
         { status: 401 }
       )
     }
 
-    // Use the Phase 4 Tribunal model (with String officeId)
     const officeIdStr = String(user.officeId)
-    const tribunales = await prisma.tribunal.findMany({
+
+    const diligencias = await prisma.diligenciaTipo.findMany({
       where: { officeId: officeIdStr },
       orderBy: { createdAt: 'desc' },
     })
 
-    console.log('[API /tribunales] Found tribunales:', tribunales.length)
-    return NextResponse.json({ ok: true, data: tribunales })
+    return NextResponse.json({ ok: true, data: diligencias })
   } catch (error) {
-    console.error('Error fetching tribunales:', error)
+    console.error('Error fetching diligencia tipos:', error)
     return NextResponse.json(
-      { ok: false, error: 'Error al obtener los tribunales' },
+      { ok: false, error: 'Error al obtener los tipos de diligencias' },
       { status: 500 }
     )
   }
@@ -52,7 +48,7 @@ export async function POST(req: NextRequest) {
     }
 
     const body = await req.json()
-    const parsed = TribunalSchema.safeParse(body)
+    const parsed = DiligenciaTipoSchema.safeParse(body)
 
     if (!parsed.success) {
       return NextResponse.json(
@@ -61,9 +57,9 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    // Use the Phase 4 Tribunal model (with String officeId)
     const officeIdStr = String(user.officeId)
-    const tribunal = await prisma.tribunal.create({
+
+    const diligencia = await prisma.diligenciaTipo.create({
       data: {
         ...parsed.data,
         officeId: officeIdStr,
@@ -73,15 +69,15 @@ export async function POST(req: NextRequest) {
     await prisma.auditLog.create({
       data: {
         userEmail: user.email,
-        action: `Creó nuevo Tribunal: ${tribunal.nombre}`,
+        action: `Creó nuevo Tipo de Diligencia: ${diligencia.nombre}`,
       },
     })
 
-    return NextResponse.json({ ok: true, data: tribunal })
+    return NextResponse.json({ ok: true, data: diligencia })
   } catch (error) {
-    console.error('Error creating tribunal:', error)
+    console.error('Error creating diligencia tipo:', error)
     return NextResponse.json(
-      { ok: false, error: 'Error al crear el tribunal' },
+      { ok: false, error: 'Error al crear el tipo de diligencia' },
       { status: 500 }
     )
   }
