@@ -21,7 +21,7 @@ const groups: Record<string, string[]> = {
   ],
   "Datos del abogado": ["abogado_nombre", "abogado_direccion"],
   "Datos del recibo": ["monto_ejecutado", "n_operacion"],
-  Adicionales: ["firma", "nueva_pagina"],
+  Adicionales: ["firma", "sello"],
 };
 
 export function VariableToolbar({ onInsert }: VariableToolbarProps) {
