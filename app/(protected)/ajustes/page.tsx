@@ -70,8 +70,7 @@ export default async function AjustesPage() {
       description: 'Configurar estampos (Fase 5)',
       icon: '🖨️',
       href: '/ajustes/estampos',
-      disabled: true,
-      tooltip: 'Disponible en Fase 5 – PDF y Estampos',
+      disabled: false,
     },
   ]
 
@@ -94,44 +93,21 @@ export default async function AjustesPage() {
 
           {/* Configuration cards grid */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {configAreas.map((area) => {
-              if (area.disabled) {
-                return (
-                  <div
-                    key={area.id}
-                    className="bg-white rounded-lg shadow-md border border-gray-200 p-6 text-center group relative cursor-not-allowed opacity-60"
-                    title={area.tooltip}
-                  >
-                    <div className="text-5xl mb-4">{area.icon}</div>
-                    <h3 className="text-xl font-semibold text-gray-900 mb-2">
-                      {area.title}
-                    </h3>
-                    <p className="text-gray-600 text-sm mb-2">
-                      {area.description}
-                    </p>
-                    <span className="text-xs text-gray-500 italic">
-                      {area.tooltip}
-                    </span>
-                  </div>
-                )
-              }
-
-              return (
-                <Link
-                  key={area.id}
-                  href={area.href}
-                  className="bg-white rounded-lg shadow-md hover:shadow-lg transition-all duration-200 hover:scale-105 cursor-pointer border border-gray-200 p-6 text-center group"
-                >
-                  <div className="text-5xl mb-4">{area.icon}</div>
-                  <h3 className="text-xl font-semibold text-gray-900 mb-2 group-hover:text-gray-700">
-                    {area.title}
-                  </h3>
-                  <p className="text-gray-600 text-sm">
-                    {area.description}
-                  </p>
-                </Link>
-              )
-            })}
+            {configAreas.map((area) => (
+              <Link
+                key={area.id}
+                href={area.href}
+                className="bg-white rounded-lg shadow-md hover:shadow-lg transition-all duration-200 hover:scale-105 cursor-pointer border border-gray-200 p-6 text-center group"
+              >
+                <div className="text-5xl mb-4">{area.icon}</div>
+                <h3 className="text-xl font-semibold text-gray-900 mb-2 group-hover:text-gray-700">
+                  {area.title}
+                </h3>
+                <p className="text-gray-600 text-sm">
+                  {area.description}
+                </p>
+              </Link>
+            ))}
           </div>
 
           {/* Back to dashboard link */}
