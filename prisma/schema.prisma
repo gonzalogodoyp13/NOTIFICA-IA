@@ -22,6 +22,7 @@ model Office {
   nombre    String
   createdAt DateTime  @default(now())
   demandas  Demanda[]
+  estampos  Estampo[] @relation("OfficeEstampos")
 
   @@map("offices")
 }
@@ -200,15 +201,15 @@ model Diligencia {
 }
 
 model Documento {
-  id          String      @id @default(cuid())
-  rolId       String
-  diligenciaId String?    // optional link to Diligencia
-  estampoId   String?     // optional link to Ajustes.estampo
-  nombre      String
-  tipo        String
-  pdfId       String?
-  version     Int         @default(1)
-  createdAt   DateTime    @default(now())
+  id           String      @id @default(cuid())
+  rolId        String
+  nombre       String
+  tipo         String
+  pdfId        String?     // reference to file storage (temp o nube)
+  version      Int         @default(1)
+  diligenciaId String?     // optional link to Diligencia
+  estampoId    String?     // optional link to Ajustes.estampo
+  createdAt    DateTime    @default(now())
 
   rol         RolCausa    @relation(fields: [rolId], references: [id])
   diligencia  Diligencia? @relation(fields: [diligenciaId], references: [id])
@@ -265,8 +266,14 @@ model DiligenciaTipo {
 }
 
 model Estampo {
-  id          String      @id @default(cuid())
-  createdAt   DateTime    @default(now())
+  id        String   @id @default(cuid())
+  officeId  Int
+  nombre    String
+  tipo      String              // "firma" | "sello"
+  fileUrl   String
+  activo    Boolean  @default(true)
+  createdAt DateTime @default(now())
 
+  office      Office     @relation("OfficeEstampos", fields: [officeId], references: [id])
   documentos  Documento[]
 }
