@@ -1,72 +1,90 @@
-// Gestionar Estampos page
-// Placeholder page for managing stamps (Phase 5)
-import { requireSession } from '@/lib/auth-server'
-import Topbar from '@/components/Topbar'
-import Link from 'next/link'
+"use client";
 
-export const dynamic = 'force-dynamic'
+import { useState, useEffect } from "react";
+import { EstampoTable } from "./EstampoTable";
+import { EstampoForm } from "./EstampoForm";
+import { EstampoEditor } from "./EstampoEditor";
 
-export default async function EstamposPage() {
-  // Require authentication - redirects to /login if not logged in
-  const session = await requireSession()
+type EstampoItem = {
+  id: string;
+  nombre: string;
+  tipo: string;
+  activo: boolean;
+  contenido?: string | null;
+  fileUrl?: string | null;
+};
+
+export default function EstamposPage() {
+  const [estampos, setEstampos] = useState<EstampoItem[]>([]);
+  const [open, setOpen] = useState(false);
+  const [selectedEstampo, setSelectedEstampo] = useState<EstampoItem | null>(
+    null
+  );
+
+  async function fetchEstampos() {
+    try {
+      const res = await fetch("/api/estampos");
+      const data = await res.json();
+      setEstampos(data.estampos || []);
+    } catch (err) {
+      alert("Error al cargar estampos");
+    }
+  }
+
+  useEffect(() => {
+    fetchEstampos();
+  }, []);
+
+  function handleEdit(estampo: EstampoItem) {
+    setSelectedEstampo(estampo);
+  }
+
+  function handleEditorSaved() {
+    fetchEstampos();
+    setSelectedEstampo(null);
+  }
 
   return (
-    <div className="min-h-screen bg-white">
-      <Topbar />
-      
-      {/* Main content area with padding for fixed topbar */}
-      <main className="pt-20 pb-16">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          {/* Page header */}
-          <div className="mb-8 flex items-center justify-between flex-wrap gap-4">
+    <div className="p-6 space-y-6">
+      <div className="flex justify-between items-center">
+        <h1 className="text-2xl font-semibold">Estampos de Oficina</h1>
+        <button
+          onClick={() => setOpen(true)}
+          className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition"
+        >
+          + Nuevo Estampo
+        </button>
+      </div>
+
+      <EstampoTable
+        data={estampos}
+        onRefresh={fetchEstampos}
+        onEdit={handleEdit}
+      />
+      <EstampoForm open={open} setOpen={setOpen} onSaved={fetchEstampos} />
+
+      {selectedEstampo && (
+        <div className="border border-gray-200 rounded-lg bg-white shadow-sm p-4 space-y-4">
+          <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-3xl font-semibold text-gray-900 mb-2">
-                Gestionar Estampos
-              </h1>
-              <p className="text-gray-600">
-                Configura los estampos para documentos PDF (Fase 5)
+              <h2 className="text-xl font-semibold">
+                Editar modelo: {selectedEstampo.nombre}
+              </h2>
+              <p className="text-sm text-gray-500">
+                Tipo: {selectedEstampo.tipo}
               </p>
             </div>
             <button
-              disabled
-              className="px-4 py-2 bg-gray-300 text-gray-500 rounded-lg cursor-not-allowed font-medium"
+              onClick={() => setSelectedEstampo(null)}
+              className="text-gray-500 hover:text-gray-700"
             >
-              + Agregar
+              Cerrar
             </button>
           </div>
 
-          {/* Placeholder table/empty state */}
-          <div className="bg-white rounded-lg shadow-md border border-gray-200 p-8">
-            <div className="text-center py-12">
-              <div className="text-4xl mb-4">🖨️</div>
-              <p className="text-gray-600 text-lg mb-2">
-                Funcionalidad no disponible aún.
-              </p>
-              <p className="text-gray-500 text-sm mt-2">
-                Esta funcionalidad estará disponible en <strong>Fase 5 – PDF y Estampos</strong>.
-              </p>
-            </div>
-          </div>
-
-          {/* Back links */}
-          <div className="mt-8 flex items-center gap-4 flex-wrap">
-            <Link
-              href="/ajustes"
-              className="text-blue-600 hover:text-blue-800 font-medium transition-colors inline-flex items-center gap-2"
-            >
-              ← Volver a Ajustes
-            </Link>
-            <span className="text-gray-400">•</span>
-            <Link
-              href="/dashboard"
-              className="text-blue-600 hover:text-blue-800 font-medium transition-colors inline-flex items-center gap-2"
-            >
-              ← Volver al Dashboard
-            </Link>
-          </div>
+          <EstampoEditor estampo={selectedEstampo} onSaved={handleEditorSaved} />
         </div>
-      </main>
+      )}
     </div>
-  )
+  );
 }
-

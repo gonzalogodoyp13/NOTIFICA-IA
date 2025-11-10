@@ -269,8 +269,9 @@ model Estampo {
   id        String   @id @default(cuid())
   officeId  Int
   nombre    String
-  tipo      String              // "firma" | "sello"
+  tipo      String              // "firma" | "sello" | "modelo"
   fileUrl   String
+  contenido String?
   activo    Boolean  @default(true)
   createdAt DateTime @default(now())
 
