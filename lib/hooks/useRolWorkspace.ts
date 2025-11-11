@@ -2,7 +2,12 @@ import { useMemo } from 'react'
 import { useMutation, useQuery, useQueryClient, type UseMutationResult } from '@tanstack/react-query'
 import { z } from 'zod'
 
-import { NotaCreateSchema } from '@/lib/validations/rol-workspace'
+import {
+  BoletaGenerateSchema,
+  DiligenciaCreateSchema,
+  EstampoGenerateSchema,
+  NotaCreateSchema,
+} from '@/lib/validations/rol-workspace'
 
 const estadoRolEnum = z.enum(['pendiente', 'en_proceso', 'terminado', 'archivado'])
 const estadoDiligenciaEnum = z.enum(['pendiente', 'completada', 'fallida'])
@@ -285,6 +290,107 @@ export function useChangeRolStatus(rolId: string) {
       return payload.data
     },
     onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: rolQueryKey(rolId) })
+    },
+  })
+}
+
+export function useCreateDiligencia(
+  rolId: string
+): UseMutationResult<z.infer<typeof DiligenciaItemSchema>, Error, z.infer<typeof DiligenciaCreateSchema>> {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async (payload: z.infer<typeof DiligenciaCreateSchema>) => {
+      const body = DiligenciaCreateSchema.parse(payload)
+
+      const response = await fetch(`/api/roles/${rolId}/diligencias`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+
+      const result = await response.json().catch(() => null)
+
+      if (!response.ok || result?.ok !== true) {
+        throw new Error(
+          (result && typeof result.error === 'string' && result.error) ||
+            'Error al crear diligencia'
+        )
+      }
+
+      return result.data as z.infer<typeof DiligenciaItemSchema>
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: diligenciasKey(rolId) })
+      queryClient.invalidateQueries({ queryKey: rolQueryKey(rolId) })
+    },
+  })
+}
+
+export function useGenerateBoleta(
+  rolId: string,
+  diligenciaId: string
+): UseMutationResult<unknown, Error, z.infer<typeof BoletaGenerateSchema>> {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async (input: z.infer<typeof BoletaGenerateSchema>) => {
+      const body = BoletaGenerateSchema.parse(input)
+
+      const response = await fetch(`/api/diligencias/${diligenciaId}/boleta`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+
+      const result = await response.json().catch(() => null)
+
+      if (!response.ok || result?.ok !== true) {
+        throw new Error(
+          (result && typeof result.error === 'string' && result.error) ||
+            'Error al generar boleta'
+        )
+      }
+
+      return result.data
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: documentosKey(rolId) })
+      queryClient.invalidateQueries({ queryKey: rolQueryKey(rolId) })
+    },
+  })
+}
+
+export function useGenerateEstampo(
+  rolId: string,
+  diligenciaId: string
+): UseMutationResult<unknown, Error, z.infer<typeof EstampoGenerateSchema>> {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async (input: z.infer<typeof EstampoGenerateSchema>) => {
+      const body = EstampoGenerateSchema.parse(input)
+
+      const response = await fetch(`/api/diligencias/${diligenciaId}/estampo`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+
+      const result = await response.json().catch(() => null)
+
+      if (!response.ok || result?.ok !== true) {
+        throw new Error(
+          (result && typeof result.error === 'string' && result.error) ||
+            'Error al generar estampo'
+        )
+      }
+
+      return result.data
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: documentosKey(rolId) })
       queryClient.invalidateQueries({ queryKey: rolQueryKey(rolId) })
     },
   })

@@ -1,6 +1,10 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 
 import { useDiligencias, type DiligenciaItem } from '@/lib/hooks/useRolWorkspace'
+
+import BoletaModal from './BoletaModal'
+import EstampoModal from './EstampoModal'
+import NuevaDiligenciaWizard from './NuevaDiligenciaWizard'
 
 interface DiligenciasTableProps {
   rolId: string
@@ -15,6 +19,11 @@ const estadoClases: Record<DiligenciaItem['estado'], string> = {
 export default function DiligenciasTable({ rolId }: DiligenciasTableProps) {
   const { data, isLoading, isError, error } = useDiligencias(rolId)
 
+  const [showWizard, setShowWizard] = useState(false)
+  const [boletaTarget, setBoletaTarget] = useState<DiligenciaItem | null>(null)
+  const [estampoTarget, setEstampoTarget] = useState<DiligenciaItem | null>(null)
+  const [flashMessage, setFlashMessage] = useState<string | null>(null)
+
   const sorted = useMemo(
     () =>
       (data ?? []).slice().sort((a, b) => {
@@ -25,15 +34,31 @@ export default function DiligenciasTable({ rolId }: DiligenciasTableProps) {
 
   return (
     <section className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
-      <header className="flex items-center justify-between gap-4">
-        <h2 className="text-lg font-semibold text-slate-900">Diligencias</h2>
-        {isLoading && (
-          <span className="inline-flex items-center gap-2 text-xs text-slate-500">
-            <span className="h-2 w-2 animate-ping rounded-full bg-slate-400" />
-            Cargando...
-          </span>
-        )}
+      <header className="flex flex-wrap items-center justify-between gap-4">
+        <div className="flex items-center gap-3">
+          <h2 className="text-lg font-semibold text-slate-900">Diligencias</h2>
+          {isLoading && (
+            <span className="inline-flex items-center gap-2 text-xs text-slate-500">
+              <span className="h-2 w-2 animate-ping rounded-full bg-slate-400" />
+              Cargando...
+            </span>
+          )}
+        </div>
+        <button
+          type="button"
+          onClick={() => setShowWizard(true)}
+          className="inline-flex items-center gap-2 rounded bg-blue-600 px-3 py-2 text-sm font-medium text-white shadow hover:bg-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-400"
+        >
+          <span className="text-base leading-none">＋</span>
+          Nueva diligencia
+        </button>
       </header>
+
+      {flashMessage && (
+        <div className="mt-4 rounded-md border border-emerald-200 bg-emerald-50 p-3 text-xs text-emerald-700">
+          {flashMessage}
+        </div>
+      )}
 
       {isError && (
         <p className="mt-4 rounded-md border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">
@@ -96,25 +121,15 @@ export default function DiligenciasTable({ rolId }: DiligenciasTableProps) {
                     <div className="flex justify-end gap-2 text-xs">
                       <button
                         type="button"
-                        className="cursor-not-allowed rounded border border-slate-200 px-3 py-1 text-slate-400"
-                        disabled
-                        title="Disponible en la siguiente fase"
-                      >
-                        Editar
-                      </button>
-                      <button
-                        type="button"
-                        className="cursor-not-allowed rounded border border-slate-200 px-3 py-1 text-slate-400"
-                        disabled
-                        title="Disponible en la siguiente fase"
+                        onClick={() => setBoletaTarget(diligencia)}
+                        className="rounded border border-slate-200 px-3 py-1 text-slate-600 transition hover:bg-slate-100"
                       >
                         Generar Boleta
                       </button>
                       <button
                         type="button"
-                        className="cursor-not-allowed rounded border border-slate-200 px-3 py-1 text-slate-400"
-                        disabled
-                        title="Disponible en la siguiente fase"
+                        onClick={() => setEstampoTarget(diligencia)}
+                        className="rounded border border-slate-200 px-3 py-1 text-slate-600 transition hover:bg-slate-100"
                       >
                         Generar Estampo
                       </button>
@@ -125,6 +140,34 @@ export default function DiligenciasTable({ rolId }: DiligenciasTableProps) {
           </tbody>
         </table>
       </div>
+
+      {showWizard && (
+        <NuevaDiligenciaWizard
+          rolId={rolId}
+          onClose={() => setShowWizard(false)}
+          onCreated={() => setFlashMessage('Diligencia creada correctamente.')}
+        />
+      )}
+      {boletaTarget && (
+        <BoletaModal
+          rolId={rolId}
+          diligenciaId={boletaTarget.id}
+          onClose={() => setBoletaTarget(null)}
+          onGenerated={() =>
+            setFlashMessage(`Boleta generada para la diligencia ${boletaTarget.tipo.nombre}.`)
+          }
+        />
+      )}
+      {estampoTarget && (
+        <EstampoModal
+          rolId={rolId}
+          diligenciaId={estampoTarget.id}
+          onClose={() => setEstampoTarget(null)}
+          onGenerated={() =>
+            setFlashMessage(`Estampo generado para la diligencia ${estampoTarget.tipo.nombre}.`)
+          }
+        />
+      )}
     </section>
   )
 }
