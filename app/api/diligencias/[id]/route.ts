@@ -1,12 +1,97 @@
-// API route: /api/diligencias/[id]
-// PUT: Update a diligencia tipo
-// DELETE: Delete a diligencia tipo
 import { NextRequest, NextResponse } from 'next/server'
+
+import { Prisma } from '@prisma/client'
+
 import { getCurrentUserWithOffice } from '@/lib/auth-server'
 import { prisma } from '@/lib/prisma'
-import { DiligenciaTipoSchema } from '@/lib/zodSchemas'
+import { logAudit } from '@/lib/audit'
+import { DiligenciaUpdateSchema } from '@/lib/validations/rol-workspace'
 
 export const dynamic = 'force-dynamic'
+
+async function syncRolEstado(rolId: string) {
+  const rol = await prisma.rolCausa.findUnique({
+    where: { id: rolId },
+    select: {
+      estado: true,
+      diligencias: {
+        select: { estado: true },
+      },
+    },
+  })
+
+  if (!rol || rol.estado === 'archivado') {
+    return
+  }
+
+  const total = rol.diligencias.length
+  const completadas = rol.diligencias.filter(d => d.estado === 'completada').length
+
+  let nextEstado: 'pendiente' | 'en_proceso' | 'terminado' = rol.estado
+
+  if (total === 0) {
+    nextEstado = 'pendiente'
+  } else if (completadas === total) {
+    nextEstado = 'terminado'
+  } else {
+    nextEstado = 'en_proceso'
+  }
+
+  if (nextEstado !== rol.estado) {
+    await prisma.rolCausa.update({
+      where: { id: rolId },
+      data: { estado: nextEstado },
+    })
+  }
+}
+
+export async function GET(
+  _req: NextRequest,
+  { params }: { params: { id: string } }
+) {
+  try {
+    const user = await getCurrentUserWithOffice()
+
+    if (!user) {
+      return NextResponse.json({ ok: false, error: 'No autorizado' }, { status: 401 })
+    }
+
+    const officeIdStr = String(user.officeId)
+
+    const diligencia = await prisma.diligencia.findFirst({
+      where: {
+        id: params.id,
+        rol: {
+          officeId: officeIdStr,
+        },
+      },
+      include: {
+        tipo: true,
+        rol: {
+          select: {
+            id: true,
+            estado: true,
+          },
+        },
+      },
+    })
+
+    if (!diligencia) {
+      return NextResponse.json(
+        { ok: false, error: 'Diligencia no encontrada o no pertenece a tu oficina' },
+        { status: 404 }
+      )
+    }
+
+    return NextResponse.json({ ok: true, data: diligencia })
+  } catch (error) {
+    console.error('Error obteniendo diligencia:', error)
+    return NextResponse.json(
+      { ok: false, error: 'Error al obtener la diligencia' },
+      { status: 500 }
+    )
+  }
+}
 
 export async function PUT(
   req: NextRequest,
@@ -16,120 +101,211 @@ export async function PUT(
     const user = await getCurrentUserWithOffice()
 
     if (!user) {
-      return NextResponse.json(
-        { ok: false, error: 'No autorizado' },
-        { status: 401 }
-      )
+      return NextResponse.json({ ok: false, error: 'No autorizado' }, { status: 401 })
     }
 
-    const id = parseInt(params.id)
-    if (isNaN(id)) {
-      return NextResponse.json(
-        { ok: false, error: 'ID inválido' },
-        { status: 400 }
-      )
-    }
+    const officeIdStr = String(user.officeId)
 
-    // Verify diligencia exists and belongs to user's office
-    const existingDiligencia = await prisma.diligenciaTipo.findFirst({
+    const diligencia = await prisma.diligencia.findFirst({
       where: {
-        id,
-        officeId: user.officeId,
+        id: params.id,
+        rol: {
+          officeId: officeIdStr,
+        },
+      },
+      include: {
+        rol: {
+          select: {
+            id: true,
+            demandaId: true,
+            estado: true,
+          },
+        },
+        tipo: true,
       },
     })
 
-    if (!existingDiligencia) {
+    if (!diligencia) {
       return NextResponse.json(
-        { ok: false, error: 'Tipo de diligencia no encontrado' },
+        { ok: false, error: 'Diligencia no encontrada o no pertenece a tu oficina' },
         { status: 404 }
       )
     }
 
-    const body = await req.json()
-    const parsed = DiligenciaTipoSchema.safeParse(body)
+    const parsed = DiligenciaUpdateSchema.safeParse(await req.json())
 
     if (!parsed.success) {
-      return NextResponse.json(
-        { ok: false, error: parsed.error.errors },
-        { status: 400 }
-      )
+      return NextResponse.json({ ok: false, error: parsed.error.format() }, { status: 400 })
     }
 
-    const diligencia = await prisma.diligenciaTipo.update({
-      where: { id },
-      data: parsed.data,
-    })
+    const data = parsed.data
 
-    await prisma.auditLog.create({
-      data: {
-        userEmail: user.email,
-        action: `Actualizó Tipo de Diligencia: ${diligencia.nombre}`,
+    if (data.tipoId) {
+      const tipo = await prisma.diligenciaTipo.findFirst({
+        where: {
+          id: data.tipoId,
+          officeId: officeIdStr,
+        },
+      })
+
+      if (!tipo) {
+        return NextResponse.json(
+          { ok: false, error: 'Tipo de diligencia no encontrado en tu oficina' },
+          { status: 404 }
+        )
+      }
+    }
+
+    const ejecutadoIds: string[] = []
+    if (data.ejecutadoId) {
+      ejecutadoIds.push(data.ejecutadoId)
+    }
+    if (data.direccionId) {
+      ejecutadoIds.push(data.direccionId)
+    }
+
+    if (ejecutadoIds.length > 0 && diligencia.rol.demandaId) {
+      const unique = Array.from(new Set(ejecutadoIds))
+      const validCount = await prisma.ejecutado.count({
+        where: {
+          id: { in: unique },
+          demandaId: diligencia.rol.demandaId,
+        },
+      })
+
+      if (validCount !== unique.length) {
+        return NextResponse.json(
+          { ok: false, error: 'Ejecutado o dirección no pertenecen al ROL' },
+          { status: 400 }
+        )
+      }
+    }
+
+    const metaActual = (diligencia.meta ?? {}) as Record<string, unknown>
+    const mergedMeta: Record<string, unknown> = {
+      ...metaActual,
+      ...(data.meta ?? {}),
+    }
+
+    if (typeof data.observaciones !== 'undefined') {
+      if (data.observaciones === null || data.observaciones === '') {
+        delete mergedMeta.observaciones
+      } else {
+        mergedMeta.observaciones = data.observaciones
+      }
+    }
+
+    if (typeof data.ejecutadoId !== 'undefined') {
+      mergedMeta.ejecutadoId = data.ejecutadoId
+    }
+
+    if (typeof data.direccionId !== 'undefined') {
+      mergedMeta.direccionId = data.direccionId
+    }
+
+    if (typeof data.costo !== 'undefined') {
+      mergedMeta.costo = data.costo
+    }
+
+    const updateData: Record<string, unknown> = {}
+
+    if (data.tipoId) {
+      updateData.tipoId = data.tipoId
+    }
+    if (data.fecha) {
+      updateData.fecha = new Date(data.fecha)
+    }
+    if (data.estado) {
+      updateData.estado = data.estado
+    }
+
+    updateData.meta =
+      Object.keys(mergedMeta).length > 0 ? (mergedMeta as Prisma.JsonObject) : undefined
+
+    const updated = await prisma.diligencia.update({
+      where: { id: diligencia.id },
+      data: updateData,
+      include: {
+        tipo: true,
       },
     })
 
-    return NextResponse.json({ ok: true, data: diligencia })
+    await syncRolEstado(diligencia.rol.id)
+
+    await logAudit({
+      userEmail: user.email,
+      userId: user.id,
+      officeId: officeIdStr,
+      rolId: diligencia.rol.id,
+      tabla: 'Diligencia',
+      accion: 'Actualizó diligencia',
+      diff: { diligenciaId: diligencia.id, cambios: data },
+    })
+
+    return NextResponse.json({ ok: true, data: updated })
   } catch (error) {
-    console.error('Error updating diligencia:', error)
+    console.error('Error actualizando diligencia:', error)
     return NextResponse.json(
-      { ok: false, error: 'Error al actualizar el tipo de diligencia' },
+      { ok: false, error: 'Error al actualizar la diligencia' },
       { status: 500 }
     )
   }
 }
 
 export async function DELETE(
-  req: NextRequest,
+  _req: NextRequest,
   { params }: { params: { id: string } }
 ) {
   try {
     const user = await getCurrentUserWithOffice()
 
     if (!user) {
-      return NextResponse.json(
-        { ok: false, error: 'No autorizado' },
-        { status: 401 }
-      )
+      return NextResponse.json({ ok: false, error: 'No autorizado' }, { status: 401 })
     }
 
-    const id = parseInt(params.id)
-    if (isNaN(id)) {
-      return NextResponse.json(
-        { ok: false, error: 'ID inválido' },
-        { status: 400 }
-      )
-    }
+    const officeIdStr = String(user.officeId)
 
-    // Verify diligencia exists and belongs to user's office
-    const existingDiligencia = await prisma.diligenciaTipo.findFirst({
+    const diligencia = await prisma.diligencia.findFirst({
       where: {
-        id,
-        officeId: user.officeId,
+        id: params.id,
+        rol: {
+          officeId: officeIdStr,
+        },
+      },
+      select: {
+        id: true,
+        rolId: true,
       },
     })
 
-    if (!existingDiligencia) {
+    if (!diligencia) {
       return NextResponse.json(
-        { ok: false, error: 'Tipo de diligencia no encontrado' },
+        { ok: false, error: 'Diligencia no encontrada o no pertenece a tu oficina' },
         { status: 404 }
       )
     }
 
-    await prisma.diligenciaTipo.delete({
-      where: { id },
+    await prisma.diligencia.delete({
+      where: { id: diligencia.id },
     })
 
-    await prisma.auditLog.create({
-      data: {
-        userEmail: user.email,
-        action: `Eliminó Tipo de Diligencia: ${existingDiligencia.nombre}`,
-      },
+    await syncRolEstado(diligencia.rolId)
+
+    await logAudit({
+      userEmail: user.email,
+      userId: user.id,
+      officeId: officeIdStr,
+      rolId: diligencia.rolId,
+      tabla: 'Diligencia',
+      accion: 'Eliminó diligencia',
+      diff: { diligenciaId: diligencia.id },
     })
 
-    return NextResponse.json({ ok: true, message: 'Tipo de diligencia eliminado correctamente' })
+    return NextResponse.json({ ok: true })
   } catch (error) {
-    console.error('Error deleting diligencia:', error)
+    console.error('Error eliminando diligencia:', error)
     return NextResponse.json(
-      { ok: false, error: 'Error al eliminar el tipo de diligencia' },
+      { ok: false, error: 'Error al eliminar la diligencia' },
       { status: 500 }
     )
   }

@@ -5,6 +5,7 @@ interface AuditParams {
   userEmail: string;
   userId?: string;
   officeId?: string | number;
+  rolId?: string;
   tabla: string;
   accion: string;
   diff?: Record<string, any>;
@@ -18,14 +19,16 @@ export async function logAudit({
   userEmail,
   userId,
   officeId,
+  rolId,
   tabla,
   accion,
   diff,
 }: AuditParams) {
   try {
+    const prefix = rolId ? `[ROL:${rolId}] ` : "";
     const actionMessage = diff
-      ? `${accion} en ${tabla}${diff ? ` (${JSON.stringify(diff)})` : ""}`
-      : `${accion} en ${tabla}`;
+      ? `${prefix}${accion} en ${tabla}${diff ? ` (${JSON.stringify(diff)})` : ""}`
+      : `${prefix}${accion} en ${tabla}`;
 
     await prisma.auditLog.create({
       data: {
