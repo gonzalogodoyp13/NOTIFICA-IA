@@ -175,6 +175,7 @@ export function useRolData(rolId: string) {
     queryFn: () => fetcher(`/api/roles/${rolId}`, RolDataSchema),
     enabled: !!rolId,
     retry: false,
+    refetchInterval: 5000,
   })
 }
 
@@ -259,5 +260,33 @@ export function useRolStateBadge(estado?: RolWorkspaceData['rol']['estado']) {
         return 'bg-slate-100 text-slate-600 border border-slate-200'
     }
   }, [estado])
+}
+
+export function useChangeRolStatus(rolId: string) {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async (newEstado: string) => {
+      const response = await fetch(`/api/roles/${rolId}/status`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ estado: newEstado }),
+      })
+
+      const payload = await response.json().catch(() => null)
+
+      if (!response.ok || payload?.ok !== true) {
+        throw new Error(
+          (payload && typeof payload.error === 'string' && payload.error) ||
+            'Error al cambiar el estado del ROL'
+        )
+      }
+
+      return payload.data
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: rolQueryKey(rolId) })
+    },
+  })
 }
 
