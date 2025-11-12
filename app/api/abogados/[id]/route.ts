@@ -17,7 +17,7 @@ export async function PUT(
 
     if (!user) {
       return NextResponse.json(
-        { ok: false, error: 'No autorizado' },
+        { ok: false, message: 'No autorizado', error: 'No autorizado' },
         { status: 401 }
       )
     }
@@ -25,7 +25,7 @@ export async function PUT(
     const id = parseInt(params.id)
     if (isNaN(id)) {
       return NextResponse.json(
-        { ok: false, error: 'ID inválido' },
+        { ok: false, message: 'ID inválido', error: 'ID inválido' },
         { status: 400 }
       )
     }
@@ -40,7 +40,7 @@ export async function PUT(
 
     if (!existingAbogado) {
       return NextResponse.json(
-        { ok: false, error: 'Abogado no encontrado' },
+        { ok: false, message: 'Abogado no encontrado o no pertenece a tu oficina', error: 'Abogado no encontrado o no pertenece a tu oficina' },
         { status: 404 }
       )
     }
@@ -49,8 +49,9 @@ export async function PUT(
     const parsed = AbogadoSchema.safeParse(body)
 
     if (!parsed.success) {
+      const errorMessage = parsed.error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')
       return NextResponse.json(
-        { ok: false, error: parsed.error.errors },
+        { ok: false, message: errorMessage, error: errorMessage },
         { status: 400 }
       )
     }
@@ -66,7 +67,7 @@ export async function PUT(
 
       if (!banco) {
         return NextResponse.json(
-          { ok: false, error: 'Banco no encontrado o no pertenece a tu oficina' },
+          { ok: false, message: 'Banco no encontrado o no pertenece a tu oficina', error: 'Banco no encontrado o no pertenece a tu oficina' },
           { status: 400 }
         )
       }
@@ -94,8 +95,9 @@ export async function PUT(
     return NextResponse.json({ ok: true, data: abogado })
   } catch (error) {
     console.error('Error updating abogado:', error)
+    const errorMessage = error instanceof Error ? error.message : 'Error al actualizar el abogado'
     return NextResponse.json(
-      { ok: false, error: 'Error al actualizar el abogado' },
+      { ok: false, message: errorMessage, error: errorMessage },
       { status: 500 }
     )
   }
@@ -110,7 +112,7 @@ export async function DELETE(
 
     if (!user) {
       return NextResponse.json(
-        { ok: false, error: 'No autorizado' },
+        { ok: false, message: 'No autorizado', error: 'No autorizado' },
         { status: 401 }
       )
     }
@@ -118,7 +120,7 @@ export async function DELETE(
     const id = parseInt(params.id)
     if (isNaN(id)) {
       return NextResponse.json(
-        { ok: false, error: 'ID inválido' },
+        { ok: false, message: 'ID inválido', error: 'ID inválido' },
         { status: 400 }
       )
     }
@@ -133,7 +135,7 @@ export async function DELETE(
 
     if (!existingAbogado) {
       return NextResponse.json(
-        { ok: false, error: 'Abogado no encontrado' },
+        { ok: false, message: 'Abogado no encontrado o no pertenece a tu oficina', error: 'Abogado no encontrado o no pertenece a tu oficina' },
         { status: 404 }
       )
     }
@@ -152,8 +154,9 @@ export async function DELETE(
     return NextResponse.json({ ok: true, message: 'Abogado eliminado correctamente' })
   } catch (error) {
     console.error('Error deleting abogado:', error)
+    const errorMessage = error instanceof Error ? error.message : 'Error al eliminar el abogado'
     return NextResponse.json(
-      { ok: false, error: 'Error al eliminar el abogado' },
+      { ok: false, message: errorMessage, error: errorMessage },
       { status: 500 }
     )
   }

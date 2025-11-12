@@ -14,7 +14,7 @@ export async function GET() {
 
     if (!user) {
       return NextResponse.json(
-        { ok: false, error: 'No autorizado' },
+        { ok: false, message: 'No autorizado', error: 'No autorizado' },
         { status: 401 }
       )
     }
@@ -22,13 +22,15 @@ export async function GET() {
     const comunas = await prisma.comuna.findMany({
       where: { officeId: user.officeId },
       orderBy: { createdAt: 'desc' },
+      take: 50,
     })
 
     return NextResponse.json({ ok: true, data: comunas })
   } catch (error) {
     console.error('Error fetching comunas:', error)
+    const errorMessage = error instanceof Error ? error.message : 'Error al obtener las comunas'
     return NextResponse.json(
-      { ok: false, error: 'Error al obtener las comunas' },
+      { ok: false, message: errorMessage, error: errorMessage },
       { status: 500 }
     )
   }
@@ -40,7 +42,7 @@ export async function POST(req: NextRequest) {
 
     if (!user) {
       return NextResponse.json(
-        { ok: false, error: 'No autorizado' },
+        { ok: false, message: 'No autorizado', error: 'No autorizado' },
         { status: 401 }
       )
     }
@@ -49,8 +51,9 @@ export async function POST(req: NextRequest) {
     const parsed = ComunaSchema.safeParse(body)
 
     if (!parsed.success) {
+      const errorMessage = parsed.error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')
       return NextResponse.json(
-        { ok: false, error: parsed.error.errors },
+        { ok: false, message: errorMessage, error: errorMessage },
         { status: 400 }
       )
     }
@@ -72,8 +75,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true, data: comuna })
   } catch (error) {
     console.error('Error creating comuna:', error)
+    const errorMessage = error instanceof Error ? error.message : 'Error al crear la comuna'
     return NextResponse.json(
-      { ok: false, error: 'Error al crear la comuna' },
+      { ok: false, message: errorMessage, error: errorMessage },
       { status: 500 }
     )
   }

@@ -17,7 +17,7 @@ export async function PUT(
 
     if (!user) {
       return NextResponse.json(
-        { ok: false, error: 'No autorizado' },
+        { ok: false, message: 'No autorizado', error: 'No autorizado' },
         { status: 401 }
       )
     }
@@ -25,7 +25,7 @@ export async function PUT(
     const id = parseInt(params.id)
     if (isNaN(id)) {
       return NextResponse.json(
-        { ok: false, error: 'ID inválido' },
+        { ok: false, message: 'ID inválido', error: 'ID inválido' },
         { status: 400 }
       )
     }
@@ -40,7 +40,7 @@ export async function PUT(
 
     if (!existingBanco) {
       return NextResponse.json(
-        { ok: false, error: 'Banco no encontrado' },
+        { ok: false, message: 'Banco no encontrado o no pertenece a tu oficina', error: 'Banco no encontrado o no pertenece a tu oficina' },
         { status: 404 }
       )
     }
@@ -49,8 +49,9 @@ export async function PUT(
     const parsed = BancoSchema.safeParse(body)
 
     if (!parsed.success) {
+      const errorMessage = parsed.error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')
       return NextResponse.json(
-        { ok: false, error: parsed.error.errors },
+        { ok: false, message: errorMessage, error: errorMessage },
         { status: 400 }
       )
     }
@@ -70,8 +71,9 @@ export async function PUT(
     return NextResponse.json({ ok: true, data: banco })
   } catch (error) {
     console.error('Error updating banco:', error)
+    const errorMessage = error instanceof Error ? error.message : 'Error al actualizar el banco'
     return NextResponse.json(
-      { ok: false, error: 'Error al actualizar el banco' },
+      { ok: false, message: errorMessage, error: errorMessage },
       { status: 500 }
     )
   }
@@ -86,7 +88,7 @@ export async function DELETE(
 
     if (!user) {
       return NextResponse.json(
-        { ok: false, error: 'No autorizado' },
+        { ok: false, message: 'No autorizado', error: 'No autorizado' },
         { status: 401 }
       )
     }
@@ -94,7 +96,7 @@ export async function DELETE(
     const id = parseInt(params.id)
     if (isNaN(id)) {
       return NextResponse.json(
-        { ok: false, error: 'ID inválido' },
+        { ok: false, message: 'ID inválido', error: 'ID inválido' },
         { status: 400 }
       )
     }
@@ -109,7 +111,7 @@ export async function DELETE(
 
     if (!existingBanco) {
       return NextResponse.json(
-        { ok: false, error: 'Banco no encontrado' },
+        { ok: false, message: 'Banco no encontrado o no pertenece a tu oficina', error: 'Banco no encontrado o no pertenece a tu oficina' },
         { status: 404 }
       )
     }
@@ -128,8 +130,9 @@ export async function DELETE(
     return NextResponse.json({ ok: true, message: 'Banco eliminado correctamente' })
   } catch (error) {
     console.error('Error deleting banco:', error)
+    const errorMessage = error instanceof Error ? error.message : 'Error al eliminar el banco'
     return NextResponse.json(
-      { ok: false, error: 'Error al eliminar el banco' },
+      { ok: false, message: errorMessage, error: errorMessage },
       { status: 500 }
     )
   }

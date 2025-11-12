@@ -53,7 +53,7 @@ export async function GET(
     const user = await getCurrentUserWithOffice()
 
     if (!user) {
-      return NextResponse.json({ ok: false, error: 'No autorizado' }, { status: 401 })
+      return NextResponse.json({ ok: false, message: 'No autorizado', error: 'No autorizado' }, { status: 401 })
     }
 
     const officeIdStr = String(user.officeId)
@@ -78,7 +78,7 @@ export async function GET(
 
     if (!diligencia) {
       return NextResponse.json(
-        { ok: false, error: 'Diligencia no encontrada o no pertenece a tu oficina' },
+        { ok: false, message: 'Diligencia no encontrada o no pertenece a tu oficina', error: 'Diligencia no encontrada o no pertenece a tu oficina' },
         { status: 404 }
       )
     }
@@ -86,8 +86,9 @@ export async function GET(
     return NextResponse.json({ ok: true, data: diligencia })
   } catch (error) {
     console.error('Error obteniendo diligencia:', error)
+    const errorMessage = error instanceof Error ? error.message : 'Error al obtener la diligencia'
     return NextResponse.json(
-      { ok: false, error: 'Error al obtener la diligencia' },
+      { ok: false, message: errorMessage, error: errorMessage },
       { status: 500 }
     )
   }
@@ -101,7 +102,7 @@ export async function PUT(
     const user = await getCurrentUserWithOffice()
 
     if (!user) {
-      return NextResponse.json({ ok: false, error: 'No autorizado' }, { status: 401 })
+      return NextResponse.json({ ok: false, message: 'No autorizado', error: 'No autorizado' }, { status: 401 })
     }
 
     const officeIdStr = String(user.officeId)
@@ -127,7 +128,7 @@ export async function PUT(
 
     if (!diligencia) {
       return NextResponse.json(
-        { ok: false, error: 'Diligencia no encontrada o no pertenece a tu oficina' },
+        { ok: false, message: 'Diligencia no encontrada o no pertenece a tu oficina', error: 'Diligencia no encontrada o no pertenece a tu oficina' },
         { status: 404 }
       )
     }
@@ -135,7 +136,8 @@ export async function PUT(
     const parsed = DiligenciaUpdateSchema.safeParse(await req.json())
 
     if (!parsed.success) {
-      return NextResponse.json({ ok: false, error: parsed.error.format() }, { status: 400 })
+      const errorMessage = parsed.error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')
+      return NextResponse.json({ ok: false, message: errorMessage, error: errorMessage }, { status: 400 })
     }
 
     const data = parsed.data
@@ -150,7 +152,7 @@ export async function PUT(
 
       if (!tipo) {
         return NextResponse.json(
-          { ok: false, error: 'Tipo de diligencia no encontrado en tu oficina' },
+          { ok: false, message: 'Tipo de diligencia no encontrado en tu oficina', error: 'Tipo de diligencia no encontrado en tu oficina' },
           { status: 404 }
         )
       }
@@ -175,7 +177,7 @@ export async function PUT(
 
       if (validCount !== unique.length) {
         return NextResponse.json(
-          { ok: false, error: 'Ejecutado o dirección no pertenecen al ROL' },
+          { ok: false, message: 'Ejecutado o dirección no pertenecen al ROL', error: 'Ejecutado o dirección no pertenecen al ROL' },
           { status: 400 }
         )
       }
@@ -245,8 +247,9 @@ export async function PUT(
     return NextResponse.json({ ok: true, data: updated })
   } catch (error) {
     console.error('Error actualizando diligencia:', error)
+    const errorMessage = error instanceof Error ? error.message : 'Error al actualizar la diligencia'
     return NextResponse.json(
-      { ok: false, error: 'Error al actualizar la diligencia' },
+      { ok: false, message: errorMessage, error: errorMessage },
       { status: 500 }
     )
   }
@@ -260,7 +263,7 @@ export async function DELETE(
     const user = await getCurrentUserWithOffice()
 
     if (!user) {
-      return NextResponse.json({ ok: false, error: 'No autorizado' }, { status: 401 })
+      return NextResponse.json({ ok: false, message: 'No autorizado', error: 'No autorizado' }, { status: 401 })
     }
 
     const officeIdStr = String(user.officeId)
@@ -280,7 +283,7 @@ export async function DELETE(
 
     if (!diligencia) {
       return NextResponse.json(
-        { ok: false, error: 'Diligencia no encontrada o no pertenece a tu oficina' },
+        { ok: false, message: 'Diligencia no encontrada o no pertenece a tu oficina', error: 'Diligencia no encontrada o no pertenece a tu oficina' },
         { status: 404 }
       )
     }
@@ -301,11 +304,12 @@ export async function DELETE(
       diff: { diligenciaId: diligencia.id },
     })
 
-    return NextResponse.json({ ok: true })
+    return NextResponse.json({ ok: true, message: 'Diligencia eliminada correctamente' })
   } catch (error) {
     console.error('Error eliminando diligencia:', error)
+    const errorMessage = error instanceof Error ? error.message : 'Error al eliminar la diligencia'
     return NextResponse.json(
-      { ok: false, error: 'Error al eliminar la diligencia' },
+      { ok: false, message: errorMessage, error: errorMessage },
       { status: 500 }
     )
   }
