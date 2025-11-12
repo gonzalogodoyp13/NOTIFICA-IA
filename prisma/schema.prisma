@@ -8,33 +8,39 @@ datasource db {
 }
 
 model User {
-  id         String    @id @default(cuid())
-  email      String    @unique
+  id         String     @id @default(cuid())
+  email      String     @unique
   officeName String
-  createdAt  DateTime  @default(now())
+  createdAt  DateTime   @default(now())
   demandas   Demanda[]
+  auditLogs  AuditLog[]
 
   @@map("users")
 }
 
 model Office {
-  id        Int       @id @default(autoincrement())
+  id        Int        @id @default(autoincrement())
   nombre    String
-  createdAt DateTime  @default(now())
+  createdAt DateTime   @default(now())
   demandas  Demanda[]
-  estampos  Estampo[] @relation("OfficeEstampos")
+  estampos  Estampo[]  @relation("OfficeEstampos")
+  auditLogs AuditLog[]
 
   @@map("offices")
 }
 
 model AuditLog {
-  id        String   @id @default(cuid())
-  userEmail String
-  action    String
+  id        Int      @id @default(autoincrement())
+  userId    String
+  officeId  Int
+  tabla     String
+  accion    String
+  diff      Json?
   createdAt DateTime @default(now())
 
-  @@index([createdAt])
-  @@index([userEmail])
+  user   User   @relation(fields: [userId], references: [id])
+  office Office @relation(fields: [officeId], references: [id])
+
   @@map("audit_logs")
 }
 
@@ -165,16 +171,16 @@ enum EstadoDiligencia {
 // ---------- MODELS (Phase 4) ----------
 
 model RolCausa {
-  id          String        @id @default(cuid())
-  demandaId   String?
-  officeId    String
-  rol         String
-  tribunalId  String
-  estado      EstadoRol     @default(pendiente)
-  createdAt   DateTime      @default(now())
+  id         String    @id @default(cuid())
+  demandaId  String?
+  officeId   Int
+  rol        String
+  tribunalId String
+  estado     EstadoRol @default(pendiente)
+  createdAt  DateTime  @default(now())
 
-  demanda     Demanda?      @relation(fields: [demandaId], references: [id])
-  tribunal    Tribunal      @relation(fields: [tribunalId], references: [id])
+  demanda     Demanda?     @relation(fields: [demandaId], references: [id])
+  tribunal    Tribunal     @relation(fields: [tribunalId], references: [id])
   diligencias Diligencia[]
   documentos  Documento[]
   recibos     Recibo[]
@@ -185,82 +191,82 @@ model RolCausa {
 }
 
 model Diligencia {
-  id          String          @id @default(cuid())
-  rolId       String
-  tipoId      String
-  estado      EstadoDiligencia @default(pendiente)
-  fecha       DateTime
-  meta        Json?
-  createdAt   DateTime        @default(now())
+  id        String           @id @default(cuid())
+  rolId     String
+  tipoId    String
+  estado    EstadoDiligencia @default(pendiente)
+  fecha     DateTime
+  meta      Json?
+  createdAt DateTime         @default(now())
 
-  rol         RolCausa        @relation(fields: [rolId], references: [id])
-  tipo        DiligenciaTipo  @relation(fields: [tipoId], references: [id])
-  documentos  Documento[]
+  rol        RolCausa       @relation(fields: [rolId], references: [id])
+  tipo       DiligenciaTipo @relation(fields: [tipoId], references: [id])
+  documentos Documento[]
 
   @@index([rolId, createdAt])
 }
 
 model Documento {
-  id           String      @id @default(cuid())
+  id           String   @id @default(cuid())
   rolId        String
   nombre       String
   tipo         String
-  pdfId        String?     // reference to file storage (temp o nube)
-  version      Int         @default(1)
-  diligenciaId String?     // optional link to Diligencia
-  estampoId    String?     // optional link to Ajustes.estampo
-  createdAt    DateTime    @default(now())
+  pdfId        String? // reference to file storage (temp o nube)
+  version      Int      @default(1)
+  diligenciaId String? // optional link to Diligencia
+  estampoId    String? // optional link to Ajustes.estampo
+  createdAt    DateTime @default(now())
 
-  rol         RolCausa    @relation(fields: [rolId], references: [id])
-  diligencia  Diligencia? @relation(fields: [diligenciaId], references: [id])
-  estampo     Estampo?    @relation(fields: [estampoId], references: [id])
+  rol        RolCausa    @relation(fields: [rolId], references: [id])
+  diligencia Diligencia? @relation(fields: [diligenciaId], references: [id])
+  estampo    Estampo?    @relation(fields: [estampoId], references: [id])
 
   @@index([rolId, createdAt])
 }
 
 model Nota {
-  id          String    @id @default(cuid())
-  rolId       String
-  userId      String
-  contenido   String
-  createdAt   DateTime  @default(now())
+  id        String   @id @default(cuid())
+  rolId     String
+  userId    String
+  contenido String
+  createdAt DateTime @default(now())
 
-  rol         RolCausa  @relation(fields: [rolId], references: [id])
+  rol RolCausa @relation(fields: [rolId], references: [id])
 
   @@index([rolId, createdAt])
 }
 
 model Recibo {
-  id          String    @id @default(cuid())
-  rolId       String
-  monto       Float
-  medio       String
-  ref         String?
-  createdAt   DateTime  @default(now())
+  id        String   @id @default(cuid())
+  rolId     String
+  monto     Float
+  medio     String
+  ref       String?
+  createdAt DateTime @default(now())
 
-  rol         RolCausa  @relation(fields: [rolId], references: [id])
+  rol RolCausa @relation(fields: [rolId], references: [id])
 
   @@index([rolId, createdAt])
 }
 
 // Alias models for Phase 4 compatibility
 model Tribunal {
-  id          String      @id @default(cuid())
-  officeId    String
-  nombre      String
-  direccion   String?
-  comuna      String?
-  createdAt   DateTime    @default(now())
+  id        String   @id @default(cuid())
+  officeId  Int
+  nombre    String
+  direccion String?
+  comuna    String?
+  createdAt DateTime @default(now())
 
-  roles       RolCausa[]
+  roles RolCausa[]
 }
 
 model DiligenciaTipo {
-  id          String        @id @default(cuid())
-  officeId    String
+  id          String   @id @default(cuid())
+  officeId    Int
   nombre      String
   descripcion String?
-  createdAt   DateTime      @default(now())
+  createdAt   DateTime @default(now())
 
   diligencias Diligencia[]
 }
@@ -269,12 +275,12 @@ model Estampo {
   id        String   @id @default(cuid())
   officeId  Int
   nombre    String
-  tipo      String              // "firma" | "sello" | "modelo"
+  tipo      String // "firma" | "sello" | "modelo"
   fileUrl   String
   contenido String?
   activo    Boolean  @default(true)
   createdAt DateTime @default(now())
 
-  office      Office     @relation("OfficeEstampos", fields: [officeId], references: [id])
-  documentos  Documento[]
+  office     Office      @relation("OfficeEstampos", fields: [officeId], references: [id])
+  documentos Documento[]
 }
