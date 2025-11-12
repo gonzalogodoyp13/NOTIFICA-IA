@@ -13,13 +13,13 @@ model User {
   officeName String
   createdAt  DateTime   @default(now())
   demandas   Demanda[]
-  AuditLog   AuditLog[]
+  auditLogs  AuditLog[]
 
   @@map("users")
 }
 
 model Office {
-  id        String     @id @default(cuid())
+  id        Int        @id @default(autoincrement())
   nombre    String
   createdAt DateTime   @default(now())
   demandas  Demanda[]
@@ -30,9 +30,9 @@ model Office {
 }
 
 model AuditLog {
-  id        String   @id @default(cuid())
+  id        Int      @id @default(autoincrement())
   userId    String
-  officeId  String
+  officeId  Int
   tabla     String
   accion    String
   diff      Json?
@@ -46,7 +46,7 @@ model AuditLog {
 
 model Abogado {
   id        Int       @id @default(autoincrement())
-  officeId  String
+  officeId  Int
   nombre    String?
   rut       String?
   direccion String?
@@ -65,7 +65,7 @@ model Abogado {
 
 model Banco {
   id        Int       @id @default(autoincrement())
-  officeId  String
+  officeId  Int
   nombre    String
   cuenta    String?
   createdAt DateTime  @default(now())
@@ -77,7 +77,7 @@ model Banco {
 
 model Comuna {
   id         Int         @id @default(autoincrement())
-  officeId   String
+  officeId   Int
   nombre     String
   region     String?
   createdAt  DateTime    @default(now())
@@ -89,7 +89,7 @@ model Comuna {
 
 model Materia {
   id        Int      @id @default(autoincrement())
-  officeId  String
+  officeId  Int
   nombre    String
   createdAt DateTime @default(now())
 
@@ -104,7 +104,7 @@ model Demanda {
   caratula   String
   cuantia    Float
   abogadoId  Int
-  officeId   String
+  officeId   Int
   userId     String
   createdAt  DateTime    @default(now())
   abogados   Abogado     @relation(fields: [abogadoId], references: [id])
@@ -135,7 +135,7 @@ model diligencia_tipos {
   id          Int      @id @default(autoincrement())
   nombre      String
   descripcion String?
-  officeId    String
+  officeId    Int
   createdAt   DateTime @default(now())
 
   @@index([officeId])
@@ -143,7 +143,7 @@ model diligencia_tipos {
 
 model tribunales {
   id        Int       @id @default(autoincrement())
-  officeId  String
+  officeId  Int
   nombre    String
   direccion String?
   comuna    String?
@@ -173,7 +173,7 @@ enum EstadoDiligencia {
 model RolCausa {
   id         String    @id @default(cuid())
   demandaId  String?
-  officeId   String
+  officeId   Int
   rol        String
   tribunalId String
   estado     EstadoRol @default(pendiente)
@@ -252,7 +252,7 @@ model Recibo {
 // Alias models for Phase 4 compatibility
 model Tribunal {
   id        String   @id @default(cuid())
-  officeId  String
+  officeId  Int
   nombre    String
   direccion String?
   comuna    String?
@@ -263,7 +263,7 @@ model Tribunal {
 
 model DiligenciaTipo {
   id          String   @id @default(cuid())
-  officeId    String
+  officeId    Int
   nombre      String
   descripcion String?
   createdAt   DateTime @default(now())
@@ -273,7 +273,7 @@ model DiligenciaTipo {
 
 model Estampo {
   id        String   @id @default(cuid())
-  officeId  String
+  officeId  Int
   nombre    String
   tipo      String // "firma" | "sello" | "modelo"
   fileUrl   String

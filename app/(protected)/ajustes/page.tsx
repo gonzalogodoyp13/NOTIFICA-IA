@@ -72,6 +72,14 @@ export default async function AjustesPage() {
       href: '/ajustes/estampos',
       disabled: false,
     },
+    {
+      id: 'logs',
+      title: 'Registros de Auditoría',
+      description: 'Ver historial de cambios del sistema',
+      icon: '📋',
+      href: '/ajustes/logs',
+      disabled: false,
+    },
   ]
 
   return (
