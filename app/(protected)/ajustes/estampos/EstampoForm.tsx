@@ -10,7 +10,6 @@ type EstampoFormProps = {
 
 export function EstampoForm({ open, setOpen, onSaved }: EstampoFormProps) {
   const [nombre, setNombre] = useState("");
-  const [tipo, setTipo] = useState("sello");
   const [fileUrl, setFileUrl] = useState("");
   const [contenido, setContenido] = useState("");
   const [saving, setSaving] = useState(false);
@@ -18,7 +17,6 @@ export function EstampoForm({ open, setOpen, onSaved }: EstampoFormProps) {
   useEffect(() => {
     if (!open) {
       setNombre("");
-      setTipo("sello");
       setFileUrl("");
       setContenido("");
       setSaving(false);
@@ -39,7 +37,7 @@ export function EstampoForm({ open, setOpen, onSaved }: EstampoFormProps) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           nombre,
-          tipo,
+          tipo: "modelo",
           fileUrl,
           contenido,
         }),
@@ -53,7 +51,6 @@ export function EstampoForm({ open, setOpen, onSaved }: EstampoFormProps) {
       setOpen(false);
       onSaved();
       setNombre("");
-      setTipo("sello");
       setFileUrl("");
       setContenido("");
       setSaving(false);
@@ -90,15 +87,6 @@ export function EstampoForm({ open, setOpen, onSaved }: EstampoFormProps) {
             onChange={(e) => setNombre(e.target.value)}
             className="border rounded p-2 w-full"
           />
-          <select
-            className="border rounded p-2 w-full"
-            value={tipo}
-            onChange={(e) => setTipo(e.target.value)}
-          >
-            <option value="sello">Sello</option>
-            <option value="firma">Firma</option>
-            <option value="modelo">Modelo</option>
-          </select>
           <input
             placeholder="URL del archivo (opcional)"
             value={fileUrl}

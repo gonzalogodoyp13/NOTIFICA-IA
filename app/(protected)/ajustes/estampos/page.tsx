@@ -25,8 +25,11 @@ export default function EstamposPage() {
     try {
       const res = await fetch("/api/estampos");
       const data = await res.json();
-      setEstampos(data.estampos || []);
+      console.log("API Response:", data);
+      console.log("Loaded estampos:", data.data);
+      setEstampos(data.data || []);
     } catch (err) {
+      console.error("Error fetching estampos:", err);
       alert("Error al cargar estampos");
     }
   }

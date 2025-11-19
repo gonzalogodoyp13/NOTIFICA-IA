@@ -6,21 +6,24 @@ import { useEffect, useState } from 'react'
 import Topbar from '@/components/Topbar'
 import Link from 'next/link'
 
-interface Rol {
+interface Demanda {
   id: string
   rol: string
-  estado: string
+  caratula: string
+  cuantia: number
   createdAt: string
-  tribunal: {
+  tribunales: {
+    id: number
     nombre: string
-  }
-  demanda: {
-    caratula: string
+  } | null
+  abogados: {
+    id: number
+    nombre: string | null
   } | null
 }
 
 export default function RolesPage() {
-  const [roles, setRoles] = useState<Rol[]>([])
+  const [roles, setRoles] = useState<Demanda[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -122,7 +125,7 @@ export default function RolesPage() {
                           Tribunal
                         </th>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Estado
+                          Abogado
                         </th>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                           Fecha
@@ -144,20 +147,13 @@ export default function RolesPage() {
                             </Link>
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
-                            {rol.demanda?.caratula || 'Sin carátula'}
+                            {rol.caratula || 'Sin carátula'}
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
-                            {rol.tribunal.nombre}
+                            {rol.tribunales?.nombre ?? 'Sin tribunal'}
                           </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
-                              rol.estado === 'terminado' ? 'bg-green-100 text-green-800' :
-                              rol.estado === 'en_proceso' ? 'bg-blue-100 text-blue-800' :
-                              rol.estado === 'archivado' ? 'bg-gray-100 text-gray-800' :
-                              'bg-yellow-100 text-yellow-800'
-                            }`}>
-                              {rol.estado.replace('_', ' ')}
-                            </span>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                            {rol.abogados?.nombre ?? 'Sin abogado'}
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                             {new Date(rol.createdAt).toLocaleDateString('es-CL')}

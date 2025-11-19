@@ -34,9 +34,6 @@ export default function AbogadosPage() {
   const [showModal, setShowModal] = useState(false)
   const [formData, setFormData] = useState({
     nombre: '',
-    rut: '',
-    direccion: '',
-    comuna: '',
     telefono: '',
     email: '',
     bancoId: '',
@@ -98,9 +95,6 @@ export default function AbogadosPage() {
 
     try {
       const payload: any = { nombre: formData.nombre }
-      if (formData.rut) payload.rut = formData.rut
-      if (formData.direccion) payload.direccion = formData.direccion
-      if (formData.comuna) payload.comuna = formData.comuna
       if (formData.telefono) payload.telefono = formData.telefono
       if (formData.email) payload.email = formData.email
       if (formData.bancoId) payload.bancoId = parseInt(formData.bancoId)
@@ -126,9 +120,6 @@ export default function AbogadosPage() {
       setShowModal(false)
       setFormData({
         nombre: '',
-        rut: '',
-        direccion: '',
-        comuna: '',
         telefono: '',
         email: '',
         bancoId: '',
@@ -238,7 +229,6 @@ export default function AbogadosPage() {
                 <thead className="bg-gray-50">
                   <tr>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Nombre</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">RUT</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Email</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Banco</th>
                     <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Acciones</th>
@@ -250,7 +240,6 @@ export default function AbogadosPage() {
                       <td className="px-6 py-4 text-sm font-medium text-gray-900">
                         {abogado.nombre || 'Sin nombre'}
                       </td>
-                      <td className="px-6 py-4 text-sm text-gray-600">{abogado.rut || '-'}</td>
                       <td className="px-6 py-4 text-sm text-gray-600">{abogado.email || '-'}</td>
                       <td className="px-6 py-4 text-sm text-gray-600">{abogado.banco?.nombre || '-'}</td>
                       <td className="px-6 py-4 text-right text-sm font-medium">
@@ -275,90 +264,55 @@ export default function AbogadosPage() {
                   Agregar Nuevo Abogado
                 </h2>
                 <form onSubmit={handleSubmit} className="space-y-4">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Nombre
-                      </label>
-                      <input
-                        type="text"
-                        value={formData.nombre}
-                        onChange={(e) => setFormData({ ...formData, nombre: e.target.value })}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        RUT
-                      </label>
-                      <input
-                        type="text"
-                        value={formData.rut}
-                        onChange={(e) => setFormData({ ...formData, rut: e.target.value })}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Email
-                      </label>
-                      <input
-                        type="email"
-                        value={formData.email}
-                        onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Teléfono
-                      </label>
-                      <input
-                        type="tel"
-                        value={formData.telefono}
-                        onChange={(e) => setFormData({ ...formData, telefono: e.target.value })}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Dirección
-                      </label>
-                      <input
-                        type="text"
-                        value={formData.direccion}
-                        onChange={(e) => setFormData({ ...formData, direccion: e.target.value })}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Comuna
-                      </label>
-                      <input
-                        type="text"
-                        value={formData.comuna}
-                        onChange={(e) => setFormData({ ...formData, comuna: e.target.value })}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500"
-                      />
-                    </div>
-                    <div className="md:col-span-2">
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Banco
-                      </label>
-                      <select
-                        value={formData.bancoId}
-                        onChange={(e) => setFormData({ ...formData, bancoId: e.target.value })}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500"
-                      >
-                        <option value="">Seleccionar banco (opcional)</option>
-                        {bancos.map((banco) => (
-                          <option key={banco.id} value={banco.id}>
-                            {banco.nombre}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Nombre
+                    </label>
+                    <input
+                      type="text"
+                      value={formData.nombre}
+                      onChange={(e) => setFormData({ ...formData, nombre: e.target.value })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Email
+                    </label>
+                    <input
+                      type="email"
+                      value={formData.email}
+                      onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Teléfono
+                    </label>
+                    <input
+                      type="tel"
+                      value={formData.telefono}
+                      onChange={(e) => setFormData({ ...formData, telefono: e.target.value })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Banco
+                    </label>
+                    <select
+                      value={formData.bancoId}
+                      onChange={(e) => setFormData({ ...formData, bancoId: e.target.value })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500"
+                    >
+                      <option value="">Seleccionar banco (opcional)</option>
+                      {bancos.map((banco) => (
+                        <option key={banco.id} value={banco.id}>
+                          {banco.nombre}
+                        </option>
+                      ))}
+                    </select>
                   </div>
                   <div className="flex items-center gap-4 pt-4">
                     <button
@@ -374,9 +328,6 @@ export default function AbogadosPage() {
                         setShowModal(false)
                         setFormData({
                           nombre: '',
-                          rut: '',
-                          direccion: '',
-                          comuna: '',
                           telefono: '',
                           email: '',
                           bancoId: '',

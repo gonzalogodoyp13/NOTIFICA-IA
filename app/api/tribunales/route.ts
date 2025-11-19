@@ -19,7 +19,7 @@ export async function GET() {
       )
     }
 
-    const tribunales = await prisma.tribunal.findMany({
+    const tribunales = await prisma.tribunales.findMany({
       where: { officeId: user.officeId },
       orderBy: { createdAt: 'desc' },
       take: 50,
@@ -58,7 +58,7 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    const tribunal = await prisma.tribunal.create({
+    const tribunal = await prisma.tribunales.create({
       data: {
         ...parsed.data,
         officeId: user.officeId,
