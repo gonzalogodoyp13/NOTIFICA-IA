@@ -14,23 +14,23 @@ export async function GET() {
 
     if (!user) {
       return NextResponse.json(
-        { ok: false, error: 'No autorizado' },
+        { ok: false, message: 'No autorizado', error: 'No autorizado' },
         { status: 401 }
       )
     }
 
-    const officeIdStr = String(user.officeId)
-
     const diligencias = await prisma.diligenciaTipo.findMany({
-      where: { officeId: officeIdStr },
+      where: { officeId: user.officeId },
       orderBy: { createdAt: 'desc' },
+      take: 50,
     })
 
     return NextResponse.json({ ok: true, data: diligencias })
   } catch (error) {
     console.error('Error fetching diligencia tipos:', error)
+    const errorMessage = error instanceof Error ? error.message : 'Error al obtener los tipos de diligencias'
     return NextResponse.json(
-      { ok: false, error: 'Error al obtener los tipos de diligencias' },
+      { ok: false, message: errorMessage, error: errorMessage },
       { status: 500 }
     )
   }
@@ -42,7 +42,7 @@ export async function POST(req: NextRequest) {
 
     if (!user) {
       return NextResponse.json(
-        { ok: false, error: 'No autorizado' },
+        { ok: false, message: 'No autorizado', error: 'No autorizado' },
         { status: 401 }
       )
     }
@@ -51,33 +51,26 @@ export async function POST(req: NextRequest) {
     const parsed = DiligenciaTipoSchema.safeParse(body)
 
     if (!parsed.success) {
+      const errorMessage = parsed.error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')
       return NextResponse.json(
-        { ok: false, error: parsed.error.errors },
+        { ok: false, message: errorMessage, error: errorMessage },
         { status: 400 }
       )
     }
 
-    const officeIdStr = String(user.officeId)
-
     const diligencia = await prisma.diligenciaTipo.create({
       data: {
         ...parsed.data,
-        officeId: officeIdStr,
-      },
-    })
-
-    await prisma.auditLog.create({
-      data: {
-        userEmail: user.email,
-        action: `Creó nuevo Tipo de Diligencia: ${diligencia.nombre}`,
+        officeId: user.officeId,
       },
     })
 
     return NextResponse.json({ ok: true, data: diligencia })
   } catch (error) {
     console.error('Error creating diligencia tipo:', error)
+    const errorMessage = error instanceof Error ? error.message : 'Error al crear el tipo de diligencia'
     return NextResponse.json(
-      { ok: false, error: 'Error al crear el tipo de diligencia' },
+      { ok: false, message: errorMessage, error: errorMessage },
       { status: 500 }
     )
   }

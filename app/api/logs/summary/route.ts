@@ -14,7 +14,7 @@ export async function GET(req: NextRequest) {
 
     if (!user) {
       return NextResponse.json(
-        { ok: false, error: 'No autorizado' },
+        { ok: false, message: 'No autorizado', error: 'No autorizado' },
         { status: 401 }
       )
     }
@@ -136,10 +136,12 @@ export async function GET(req: NextRequest) {
       error instanceof Prisma.PrismaClientKnownRequestError &&
       error.code === 'P1001'
     ) {
+      const errorMessage = 'No se pudieron obtener los datos. Intente nuevamente.'
       return NextResponse.json(
         {
           ok: false,
-          error: 'No se pudieron obtener los datos. Intente nuevamente.',
+          message: errorMessage,
+          error: errorMessage,
         },
         { status: 503 }
       )
@@ -147,14 +149,16 @@ export async function GET(req: NextRequest) {
 
     // Handle other Prisma errors
     if (error instanceof Prisma.PrismaClientKnownRequestError) {
+      const errorMessage = 'Error al procesar la solicitud.'
       return NextResponse.json(
-        { ok: false, error: 'Error al procesar la solicitud.' },
+        { ok: false, message: errorMessage, error: errorMessage },
         { status: 500 }
       )
     }
 
+    const errorMessage = error instanceof Error ? error.message : 'Error al obtener el resumen de actividad.'
     return NextResponse.json(
-      { ok: false, error: 'Error al obtener el resumen de actividad.' },
+      { ok: false, message: errorMessage, error: errorMessage },
       { status: 500 }
     )
   }

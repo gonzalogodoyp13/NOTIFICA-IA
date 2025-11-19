@@ -4,7 +4,6 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getCurrentUserWithOffice } from '@/lib/auth-server'
 import { prisma } from '@/lib/prisma'
 import { zDocumento, zDocumentoUpdate } from '@/lib/validations/documento'
-import { logAudit } from '@/lib/audit'
 import { ZodError } from 'zod'
 
 export const dynamic = 'force-dynamic'
@@ -180,15 +179,6 @@ export async function POST(req: NextRequest) {
     //   // Auto-create Recibo record
     // }
 
-    await logAudit({
-      userEmail: user.email,
-      userId: user.id,
-      officeId: officeIdStr,
-      tabla: 'Documento',
-      accion: 'Creó nuevo Documento',
-      diff: { id: documento.id, nombre: documento.nombre, tipo: documento.tipo },
-    })
-
     return NextResponse.json({ ok: true, data: documento })
   } catch (error) {
     if (error instanceof ZodError) {
@@ -273,15 +263,6 @@ export async function PUT(req: NextRequest) {
       },
     })
 
-    await logAudit({
-      userEmail: user.email,
-      userId: user.id,
-      officeId: officeIdStr,
-      tabla: 'Documento',
-      accion: 'Actualizó Documento',
-      diff: { id, cambios: parsed.data },
-    })
-
     return NextResponse.json({ ok: true, data: updated })
   } catch (error) {
     if (error instanceof ZodError) {
@@ -340,15 +321,6 @@ export async function DELETE(req: NextRequest) {
 
     await prisma.documento.delete({
       where: { id },
-    })
-
-    await logAudit({
-      userEmail: user.email,
-      userId: user.id,
-      officeId: officeIdStr,
-      tabla: 'Documento',
-      accion: 'Eliminó Documento',
-      diff: { id },
     })
 
     return NextResponse.json({ ok: true, message: 'Documento eliminado correctamente' })

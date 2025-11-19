@@ -7,7 +7,6 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getCurrentUserWithOffice } from '@/lib/auth-server'
 import { prisma } from '@/lib/prisma'
 import { zDiligencia, zDiligenciaUpdate } from '@/lib/validations/diligencia'
-import { logAudit } from '@/lib/audit'
 import { ZodError } from 'zod'
 
 export const dynamic = 'force-dynamic'
@@ -18,7 +17,7 @@ export async function GET(req: NextRequest) {
 
     if (!user) {
       return NextResponse.json(
-        { ok: false, error: 'No autorizado' },
+        { ok: false, message: 'No autorizado', error: 'No autorizado' },
         { status: 401 }
       )
     }
@@ -28,7 +27,7 @@ export async function GET(req: NextRequest) {
 
     if (!rolId) {
       return NextResponse.json(
-        { ok: false, error: 'rolId es requerido' },
+        { ok: false, message: 'rolId es requerido', error: 'rolId es requerido' },
         { status: 400 }
       )
     }
@@ -45,7 +44,7 @@ export async function GET(req: NextRequest) {
 
     if (!rol) {
       return NextResponse.json(
-        { ok: false, error: 'Rol no encontrado o no pertenece a tu oficina' },
+        { ok: false, message: 'Rol no encontrado o no pertenece a tu oficina', error: 'Rol no encontrado o no pertenece a tu oficina' },
         { status: 404 }
       )
     }
@@ -64,13 +63,15 @@ export async function GET(req: NextRequest) {
         },
       },
       orderBy: { createdAt: 'desc' },
+      take: 50,
     })
 
     return NextResponse.json({ ok: true, data: diligencias })
   } catch (error) {
     console.error('Error fetching diligencias:', error)
+    const errorMessage = error instanceof Error ? error.message : 'Error al obtener las diligencias'
     return NextResponse.json(
-      { ok: false, error: 'Error al obtener las diligencias' },
+      { ok: false, message: errorMessage, error: errorMessage },
       { status: 500 }
     )
   }
@@ -82,7 +83,7 @@ export async function POST(req: NextRequest) {
 
     if (!user) {
       return NextResponse.json(
-        { ok: false, error: 'No autorizado' },
+        { ok: false, message: 'No autorizado', error: 'No autorizado' },
         { status: 401 }
       )
     }
@@ -91,8 +92,9 @@ export async function POST(req: NextRequest) {
     const parsed = zDiligencia.safeParse(body)
 
     if (!parsed.success) {
+      const errorMessage = parsed.error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')
       return NextResponse.json(
-        { ok: false, error: parsed.error.errors },
+        { ok: false, message: errorMessage, error: errorMessage },
         { status: 400 }
       )
     }
@@ -109,7 +111,7 @@ export async function POST(req: NextRequest) {
 
     if (!rol) {
       return NextResponse.json(
-        { ok: false, error: 'Rol no encontrado o no pertenece a tu oficina' },
+        { ok: false, message: 'Rol no encontrado o no pertenece a tu oficina', error: 'Rol no encontrado o no pertenece a tu oficina' },
         { status: 404 }
       )
     }
@@ -124,7 +126,7 @@ export async function POST(req: NextRequest) {
 
     if (!tipo) {
       return NextResponse.json(
-        { ok: false, error: 'Tipo de diligencia no encontrado o no pertenece a tu oficina' },
+        { ok: false, message: 'Tipo de diligencia no encontrado o no pertenece a tu oficina', error: 'Tipo de diligencia no encontrado o no pertenece a tu oficina' },
         { status: 404 }
       )
     }
@@ -148,26 +150,19 @@ export async function POST(req: NextRequest) {
       },
     })
 
-    await logAudit({
-      userEmail: user.email,
-      userId: user.id,
-      officeId: officeIdStr,
-      tabla: 'Diligencia',
-      accion: 'Creó nueva Diligencia',
-      diff: { id: diligencia.id, tipoId: diligencia.tipoId },
-    })
-
     return NextResponse.json({ ok: true, data: diligencia })
   } catch (error) {
     if (error instanceof ZodError) {
+      const errorMessage = error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')
       return NextResponse.json(
-        { ok: false, error: error.errors },
+        { ok: false, message: errorMessage, error: errorMessage },
         { status: 400 }
       )
     }
     console.error('Error creating diligencia:', error)
+    const errorMessage = error instanceof Error ? error.message : 'Error al crear la diligencia'
     return NextResponse.json(
-      { ok: false, error: 'Error al crear la diligencia' },
+      { ok: false, message: errorMessage, error: errorMessage },
       { status: 500 }
     )
   }
@@ -179,7 +174,7 @@ export async function PUT(req: NextRequest) {
 
     if (!user) {
       return NextResponse.json(
-        { ok: false, error: 'No autorizado' },
+        { ok: false, message: 'No autorizado', error: 'No autorizado' },
         { status: 401 }
       )
     }
@@ -189,7 +184,7 @@ export async function PUT(req: NextRequest) {
 
     if (!id) {
       return NextResponse.json(
-        { ok: false, error: 'id es requerido' },
+        { ok: false, message: 'id es requerido', error: 'id es requerido' },
         { status: 400 }
       )
     }
@@ -197,8 +192,9 @@ export async function PUT(req: NextRequest) {
     const parsed = zDiligenciaUpdate.safeParse(updateData)
 
     if (!parsed.success) {
+      const errorMessage = parsed.error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')
       return NextResponse.json(
-        { ok: false, error: parsed.error.errors },
+        { ok: false, message: errorMessage, error: errorMessage },
         { status: 400 }
       )
     }
@@ -217,7 +213,7 @@ export async function PUT(req: NextRequest) {
 
     if (!diligencia) {
       return NextResponse.json(
-        { ok: false, error: 'Diligencia no encontrada o no pertenece a tu oficina' },
+        { ok: false, message: 'Diligencia no encontrada o no pertenece a tu oficina', error: 'Diligencia no encontrada o no pertenece a tu oficina' },
         { status: 404 }
       )
     }
@@ -236,26 +232,19 @@ export async function PUT(req: NextRequest) {
       },
     })
 
-    await logAudit({
-      userEmail: user.email,
-      userId: user.id,
-      officeId: officeIdStr,
-      tabla: 'Diligencia',
-      accion: 'Actualizó Diligencia',
-      diff: { id, cambios: parsed.data },
-    })
-
     return NextResponse.json({ ok: true, data: updated })
   } catch (error) {
     if (error instanceof ZodError) {
+      const errorMessage = error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')
       return NextResponse.json(
-        { ok: false, error: error.errors },
+        { ok: false, message: errorMessage, error: errorMessage },
         { status: 400 }
       )
     }
     console.error('Error updating diligencia:', error)
+    const errorMessage = error instanceof Error ? error.message : 'Error al actualizar la diligencia'
     return NextResponse.json(
-      { ok: false, error: 'Error al actualizar la diligencia' },
+      { ok: false, message: errorMessage, error: errorMessage },
       { status: 500 }
     )
   }
@@ -267,7 +256,7 @@ export async function DELETE(req: NextRequest) {
 
     if (!user) {
       return NextResponse.json(
-        { ok: false, error: 'No autorizado' },
+        { ok: false, message: 'No autorizado', error: 'No autorizado' },
         { status: 401 }
       )
     }
@@ -277,7 +266,7 @@ export async function DELETE(req: NextRequest) {
 
     if (!id) {
       return NextResponse.json(
-        { ok: false, error: 'id es requerido' },
+        { ok: false, message: 'id es requerido', error: 'id es requerido' },
         { status: 400 }
       )
     }
@@ -296,7 +285,7 @@ export async function DELETE(req: NextRequest) {
 
     if (!diligencia) {
       return NextResponse.json(
-        { ok: false, error: 'Diligencia no encontrada o no pertenece a tu oficina' },
+        { ok: false, message: 'Diligencia no encontrada o no pertenece a tu oficina', error: 'Diligencia no encontrada o no pertenece a tu oficina' },
         { status: 404 }
       )
     }
@@ -305,7 +294,7 @@ export async function DELETE(req: NextRequest) {
     // const userRole = user.metadata?.role
     // if (userRole !== 'Receptor') {
     //   return NextResponse.json(
-    //     { ok: false, error: 'Solo los receptores pueden eliminar diligencias' },
+    //     { ok: false, message: 'Solo los receptores pueden eliminar diligencias' },
     //     { status: 403 }
     //   )
     // }
@@ -314,20 +303,12 @@ export async function DELETE(req: NextRequest) {
       where: { id },
     })
 
-    await logAudit({
-      userEmail: user.email,
-      userId: user.id,
-      officeId: officeIdStr,
-      tabla: 'Diligencia',
-      accion: 'Eliminó Diligencia',
-      diff: { id },
-    })
-
     return NextResponse.json({ ok: true, message: 'Diligencia eliminada correctamente' })
   } catch (error) {
     console.error('Error deleting diligencia:', error)
+    const errorMessage = error instanceof Error ? error.message : 'Error al eliminar la diligencia'
     return NextResponse.json(
-      { ok: false, error: 'Error al eliminar la diligencia' },
+      { ok: false, message: errorMessage, error: errorMessage },
       { status: 500 }
     )
   }

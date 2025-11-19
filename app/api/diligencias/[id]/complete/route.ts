@@ -5,7 +5,6 @@ import { Prisma } from '@prisma/client'
 
 import { getCurrentUserWithOffice } from '@/lib/auth-server'
 import { prisma } from '@/lib/prisma'
-import { logAudit } from '@/lib/audit'
 
 export const dynamic = 'force-dynamic'
 
@@ -131,16 +130,6 @@ export async function PUT(
     })
 
     await syncRolEstado(diligencia.rol.id)
-
-    await logAudit({
-      userEmail: user.email,
-      userId: user.id,
-      officeId: officeIdStr,
-      rolId: diligencia.rol.id,
-      tabla: 'Diligencia',
-      accion: 'Completó diligencia',
-      diff: { diligenciaId: diligencia.id, fechaRealizacion: data.fechaRealizacion },
-    })
 
     return NextResponse.json({ ok: true, data: updated })
   } catch (error) {

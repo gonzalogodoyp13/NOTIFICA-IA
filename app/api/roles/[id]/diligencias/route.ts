@@ -4,7 +4,6 @@ import { Prisma } from '@prisma/client'
 
 import { getCurrentUserWithOffice } from '@/lib/auth-server'
 import { prisma } from '@/lib/prisma'
-import { logAudit } from '@/lib/audit'
 import { DiligenciaCreateSchema } from '@/lib/validations/rol-workspace'
 
 export const dynamic = 'force-dynamic'
@@ -220,16 +219,6 @@ export async function POST(
     })
 
     await syncRolEstado(rol.id)
-
-    await logAudit({
-      userEmail: user.email,
-      userId: user.id,
-      officeId: officeIdStr,
-      rolId: rol.id,
-      tabla: 'Diligencia',
-      accion: 'Creó diligencia',
-      diff: { diligenciaId: diligencia.id, tipoId: diligencia.tipoId },
-    })
 
     return NextResponse.json({ ok: true, data: diligencia })
   } catch (error) {

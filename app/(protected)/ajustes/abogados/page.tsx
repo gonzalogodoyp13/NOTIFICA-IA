@@ -53,18 +53,17 @@ export default function AbogadosPage() {
       const response = await fetch('/api/abogados', {
         credentials: 'include', // Ensure cookies are sent
       })
-      const data = await response.json().catch(() => ({}))
+      const data = await response.json().catch(() => ({ ok: false }))
 
-      if (!response.ok) {
-        throw new Error(data.error || 'Error al cargar los abogados')
+      if (!data.ok) {
+        const errorMessage = data.message || data.error || 'Error al cargar los abogados'
+        setError(errorMessage)
+        setLoading(false)
+        return
       }
 
-      if (data.ok) {
-        setAbogados(data.data || [])
-        setError(null)
-      } else {
-        setError(data.error || 'Error al cargar los abogados')
-      }
+      setAbogados(data.data || [])
+      setError(null)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error desconocido')
     } finally {
@@ -74,14 +73,19 @@ export default function AbogadosPage() {
 
   const fetchBancos = async () => {
     try {
-      const response = await fetch('/api/bancos')
-      if (response.ok) {
-        const data = await response.json()
-        if (data.ok) {
-          setBancos(data.data || [])
-        }
+      const response = await fetch('/api/bancos', {
+        credentials: 'include',
+      })
+      const data = await response.json().catch(() => ({ ok: false }))
+
+      if (!data.ok) {
+        // Silenciosamente fallar, no es crítico
+        return
       }
+
+      setBancos(data.data || [])
     } catch (err) {
+      // Silenciosamente fallar, no es crítico
       console.error('Error loading bancos:', err)
     }
   }
@@ -108,15 +112,17 @@ export default function AbogadosPage() {
         credentials: 'include',
       })
 
-      const data = await response.json().catch(() => ({}))
+      const data = await response.json().catch(() => ({ ok: false }))
 
-      if (!response.ok || !data.ok) {
-        const errorMessage = Array.isArray(data.error)
-          ? data.error.map((e: any) => e.message || JSON.stringify(e)).join(', ')
-          : (data.error || 'Error al crear el abogado')
+      if (!data.ok) {
+        const errorMessage = data.message || data.error || 'Error al crear el abogado'
         throw new Error(errorMessage)
       }
 
+      // Actualización optimista
+      if (data.data) {
+        setAbogados(prev => [data.data, ...prev])
+      }
       setShowModal(false)
       setFormData({
         nombre: '',
@@ -127,7 +133,6 @@ export default function AbogadosPage() {
         email: '',
         bancoId: '',
       })
-      fetchAbogados()
       setSuccess('Abogado creado exitosamente')
     } catch (err) {
       setSuccess(null)
@@ -142,22 +147,33 @@ export default function AbogadosPage() {
       return
     }
 
+    const previousAbogados = abogados
+
+    // Actualización optimista ANTES del fetch
+    setAbogados(prev => prev.filter(a => a.id !== id))
+
     try {
       const response = await fetch(`/api/abogados/${id}`, {
         method: 'DELETE',
         credentials: 'include',
       })
 
-      const data = await response.json()
+      const data = await response.json().catch(() => ({ ok: false }))
 
-      if (!response.ok || !data.ok) {
-        throw new Error(data.error || 'Error al eliminar el abogado')
+      if (!data.ok) {
+        // Revertir si falla
+        setAbogados(previousAbogados)
+        const errorMessage = data.message || data.error || 'Error al eliminar el abogado'
+        setSuccess(null)
+        setError(errorMessage)
+        return
       }
 
-      fetchAbogados()
       setSuccess('Abogado eliminado correctamente')
       setError(null)
     } catch (err) {
+      // Revertir si hay error de red
+      setAbogados(previousAbogados)
       setSuccess(null)
       setError(err instanceof Error ? err.message : 'Error al eliminar el abogado')
     }

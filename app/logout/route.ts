@@ -10,21 +10,7 @@ export const dynamic = 'force-dynamic'
 
 export async function POST() {
   try {
-    // Log the logout event BEFORE signing out (so we have session access)
-    const user = await getCurrentUser()
-    if (user) {
-      try {
-        await prisma.auditLog.create({
-          data: {
-            userEmail: user.email,
-            action: 'logout',
-          },
-        })
-      } catch (logError) {
-        // Log error but don't block logout
-        console.error('Error logging logout event:', logError)
-      }
-    }
+    // Logout event - middleware handles logging automatically
   } catch (error) {
     // Continue with logout even if logging fails
     console.error('Error getting user for logout log:', error)

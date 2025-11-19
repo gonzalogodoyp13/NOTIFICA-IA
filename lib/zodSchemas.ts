@@ -37,3 +37,12 @@ export const ComunaSchema = z.object({
   region: z.string().optional(),
 });
 
+export const EstampoSchema = z.object({
+  nombre: z.string().min(2, "Nombre requerido"),
+  tipo: z.enum(["firma", "sello", "modelo"], { 
+    errorMap: () => ({ message: "Tipo debe ser 'firma', 'sello' o 'modelo'" }) 
+  }),
+  contenido: z.string().optional(),
+  fileUrl: z.string().optional(),
+});
+

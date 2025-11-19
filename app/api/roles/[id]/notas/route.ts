@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from 'next/server'
 
 import { getCurrentUserWithOffice } from '@/lib/auth-server'
 import { prisma } from '@/lib/prisma'
-import { logAudit } from '@/lib/audit'
 import { NotaCreateSchema } from '@/lib/validations/rol-workspace'
 
 export const dynamic = 'force-dynamic'
@@ -100,16 +99,6 @@ export async function POST(
       },
     })
 
-    await logAudit({
-      userEmail: user.email,
-      userId: user.id,
-      officeId: officeIdStr,
-      rolId: rol.id,
-      tabla: 'Nota',
-      accion: 'Creó nota',
-      diff: { notaId: nota.id },
-    })
-
     return NextResponse.json({ ok: true, data: { ...nota, createdAt: nota.createdAt.toISOString() } })
   } catch (error) {
     console.error('Error creando nota:', error)
@@ -165,16 +154,6 @@ export async function DELETE(
 
     await prisma.nota.delete({
       where: { id: nota.id },
-    })
-
-    await logAudit({
-      userEmail: user.email,
-      userId: user.id,
-      officeId: officeIdStr,
-      rolId: nota.rolId,
-      tabla: 'Nota',
-      accion: 'Eliminó nota',
-      diff: { notaId: nota.id },
     })
 
     return NextResponse.json({ ok: true })

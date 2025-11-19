@@ -14,7 +14,7 @@ export async function GET() {
 
     if (!user) {
       return NextResponse.json(
-        { ok: false, error: 'No autorizado' },
+        { ok: false, message: 'No autorizado', error: 'No autorizado' },
         { status: 401 }
       )
     }
@@ -29,13 +29,15 @@ export async function GET() {
         },
       },
       orderBy: { createdAt: 'desc' },
+      take: 50,
     })
 
     return NextResponse.json({ ok: true, data: abogados })
   } catch (error) {
     console.error('Error fetching abogados:', error)
+    const errorMessage = error instanceof Error ? error.message : 'Error al obtener los abogados'
     return NextResponse.json(
-      { ok: false, error: 'Error al obtener los abogados' },
+      { ok: false, message: errorMessage, error: errorMessage },
       { status: 500 }
     )
   }
@@ -47,7 +49,7 @@ export async function POST(req: NextRequest) {
 
     if (!user) {
       return NextResponse.json(
-        { ok: false, error: 'No autorizado' },
+        { ok: false, message: 'No autorizado', error: 'No autorizado' },
         { status: 401 }
       )
     }
@@ -56,8 +58,9 @@ export async function POST(req: NextRequest) {
     const parsed = AbogadoSchema.safeParse(body)
 
     if (!parsed.success) {
+      const errorMessage = parsed.error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')
       return NextResponse.json(
-        { ok: false, error: parsed.error.errors },
+        { ok: false, message: errorMessage, error: errorMessage },
         { status: 400 }
       )
     }
@@ -73,7 +76,7 @@ export async function POST(req: NextRequest) {
 
       if (!banco) {
         return NextResponse.json(
-          { ok: false, error: 'Banco no encontrado o no pertenece a tu oficina' },
+          { ok: false, message: 'Banco no encontrado o no pertenece a tu oficina', error: 'Banco no encontrado o no pertenece a tu oficina' },
           { status: 400 }
         )
       }
@@ -93,18 +96,12 @@ export async function POST(req: NextRequest) {
       },
     })
 
-    await prisma.auditLog.create({
-      data: {
-        userEmail: user.email,
-        action: `Creó nuevo Abogado: ${abogado.nombre || 'Sin nombre'}`,
-      },
-    })
-
     return NextResponse.json({ ok: true, data: abogado })
   } catch (error) {
     console.error('Error creating abogado:', error)
+    const errorMessage = error instanceof Error ? error.message : 'Error al crear el abogado'
     return NextResponse.json(
-      { ok: false, error: 'Error al crear el abogado' },
+      { ok: false, message: errorMessage, error: errorMessage },
       { status: 500 }
     )
   }

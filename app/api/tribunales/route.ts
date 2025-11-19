@@ -10,31 +10,27 @@ export const dynamic = 'force-dynamic'
 
 export async function GET() {
   try {
-    console.log('[API /tribunales] Getting user...')
     const user = await getCurrentUserWithOffice()
-    console.log('[API /tribunales] User result:', user ? { id: user.id, email: user.email, officeId: user.officeId } : 'null')
 
     if (!user) {
-      console.error('[API /tribunales] No user found - returning 401')
       return NextResponse.json(
-        { ok: false, error: 'No autorizado' },
+        { ok: false, message: 'No autorizado', error: 'No autorizado' },
         { status: 401 }
       )
     }
 
-    // Use the Phase 4 Tribunal model (with String officeId)
-    const officeIdStr = String(user.officeId)
     const tribunales = await prisma.tribunal.findMany({
-      where: { officeId: officeIdStr },
+      where: { officeId: user.officeId },
       orderBy: { createdAt: 'desc' },
+      take: 50,
     })
 
-    console.log('[API /tribunales] Found tribunales:', tribunales.length)
     return NextResponse.json({ ok: true, data: tribunales })
   } catch (error) {
     console.error('Error fetching tribunales:', error)
+    const errorMessage = error instanceof Error ? error.message : 'Error al obtener los tribunales'
     return NextResponse.json(
-      { ok: false, error: 'Error al obtener los tribunales' },
+      { ok: false, message: errorMessage, error: errorMessage },
       { status: 500 }
     )
   }
@@ -46,7 +42,7 @@ export async function POST(req: NextRequest) {
 
     if (!user) {
       return NextResponse.json(
-        { ok: false, error: 'No autorizado' },
+        { ok: false, message: 'No autorizado', error: 'No autorizado' },
         { status: 401 }
       )
     }
@@ -55,33 +51,26 @@ export async function POST(req: NextRequest) {
     const parsed = TribunalSchema.safeParse(body)
 
     if (!parsed.success) {
+      const errorMessage = parsed.error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')
       return NextResponse.json(
-        { ok: false, error: parsed.error.errors },
+        { ok: false, message: errorMessage, error: errorMessage },
         { status: 400 }
       )
     }
 
-    // Use the Phase 4 Tribunal model (with String officeId)
-    const officeIdStr = String(user.officeId)
     const tribunal = await prisma.tribunal.create({
       data: {
         ...parsed.data,
-        officeId: officeIdStr,
-      },
-    })
-
-    await prisma.auditLog.create({
-      data: {
-        userEmail: user.email,
-        action: `Creó nuevo Tribunal: ${tribunal.nombre}`,
+        officeId: user.officeId,
       },
     })
 
     return NextResponse.json({ ok: true, data: tribunal })
   } catch (error) {
     console.error('Error creating tribunal:', error)
+    const errorMessage = error instanceof Error ? error.message : 'Error al crear el tribunal'
     return NextResponse.json(
-      { ok: false, error: 'Error al crear el tribunal' },
+      { ok: false, message: errorMessage, error: errorMessage },
       { status: 500 }
     )
   }

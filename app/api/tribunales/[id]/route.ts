@@ -17,25 +17,24 @@ export async function PUT(
 
     if (!user) {
       return NextResponse.json(
-        { ok: false, error: 'No autorizado' },
+        { ok: false, message: 'No autorizado', error: 'No autorizado' },
         { status: 401 }
       )
     }
 
     const id = params.id
-    const officeIdStr = String(user.officeId)
 
-    // Verify tribunal exists and belongs to user's office (Phase 4 Tribunal model uses String IDs)
+    // Verify tribunal exists and belongs to user's office
     const existingTribunal = await prisma.tribunal.findFirst({
       where: {
         id,
-        officeId: officeIdStr,
+        officeId: user.officeId,
       },
     })
 
     if (!existingTribunal) {
       return NextResponse.json(
-        { ok: false, error: 'Tribunal no encontrado' },
+        { ok: false, message: 'Tribunal no encontrado o no pertenece a tu oficina', error: 'Tribunal no encontrado o no pertenece a tu oficina' },
         { status: 404 }
       )
     }
@@ -44,8 +43,9 @@ export async function PUT(
     const parsed = TribunalSchema.safeParse(body)
 
     if (!parsed.success) {
+      const errorMessage = parsed.error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')
       return NextResponse.json(
-        { ok: false, error: parsed.error.errors },
+        { ok: false, message: errorMessage, error: errorMessage },
         { status: 400 }
       )
     }
@@ -55,18 +55,12 @@ export async function PUT(
       data: parsed.data,
     })
 
-    await prisma.auditLog.create({
-      data: {
-        userEmail: user.email,
-        action: `Actualizó Tribunal: ${tribunal.nombre}`,
-      },
-    })
-
     return NextResponse.json({ ok: true, data: tribunal })
   } catch (error) {
     console.error('Error updating tribunal:', error)
+    const errorMessage = error instanceof Error ? error.message : 'Error al actualizar el tribunal'
     return NextResponse.json(
-      { ok: false, error: 'Error al actualizar el tribunal' },
+      { ok: false, message: errorMessage, error: errorMessage },
       { status: 500 }
     )
   }
@@ -81,25 +75,24 @@ export async function DELETE(
 
     if (!user) {
       return NextResponse.json(
-        { ok: false, error: 'No autorizado' },
+        { ok: false, message: 'No autorizado', error: 'No autorizado' },
         { status: 401 }
       )
     }
 
     const id = params.id
-    const officeIdStr = String(user.officeId)
 
-    // Verify tribunal exists and belongs to user's office (Phase 4 Tribunal model uses String IDs)
+    // Verify tribunal exists and belongs to user's office
     const existingTribunal = await prisma.tribunal.findFirst({
       where: {
         id,
-        officeId: officeIdStr,
+        officeId: user.officeId,
       },
     })
 
     if (!existingTribunal) {
       return NextResponse.json(
-        { ok: false, error: 'Tribunal no encontrado' },
+        { ok: false, message: 'Tribunal no encontrado o no pertenece a tu oficina', error: 'Tribunal no encontrado o no pertenece a tu oficina' },
         { status: 404 }
       )
     }
@@ -108,18 +101,12 @@ export async function DELETE(
       where: { id },
     })
 
-    await prisma.auditLog.create({
-      data: {
-        userEmail: user.email,
-        action: `Eliminó Tribunal: ${existingTribunal.nombre}`,
-      },
-    })
-
     return NextResponse.json({ ok: true, message: 'Tribunal eliminado correctamente' })
   } catch (error) {
     console.error('Error deleting tribunal:', error)
+    const errorMessage = error instanceof Error ? error.message : 'Error al eliminar el tribunal'
     return NextResponse.json(
-      { ok: false, error: 'Error al eliminar el tribunal' },
+      { ok: false, message: errorMessage, error: errorMessage },
       { status: 500 }
     )
   }

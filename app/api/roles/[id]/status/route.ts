@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from 'next/server'
 
 import { getCurrentUserWithOffice } from '@/lib/auth-server'
 import { prisma } from '@/lib/prisma'
-import { logAudit } from '@/lib/audit'
 import { StatusChangeSchema } from '@/lib/validations/rol-workspace'
 
 export const dynamic = 'force-dynamic'
@@ -106,16 +105,6 @@ export async function PUT(
       data: {
         estado: nextEstado,
       },
-    })
-
-    await logAudit({
-      userEmail: user.email,
-      userId: user.id,
-      officeId: officeIdStr,
-      rolId: rol.id,
-      tabla: 'RolCausa',
-      accion: 'Actualizó estado del Rol',
-      diff: { de: currentEstado, a: nextEstado },
     })
 
     return NextResponse.json({ ok: true, data: updatedRol })

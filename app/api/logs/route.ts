@@ -31,7 +31,7 @@ export async function GET(req: NextRequest) {
 
     if (!user) {
       return NextResponse.json(
-        { ok: false, error: 'No autorizado' },
+        { ok: false, message: 'No autorizado', error: 'No autorizado' },
         { status: 401 }
       )
     }
@@ -118,10 +118,12 @@ export async function GET(req: NextRequest) {
       error instanceof Prisma.PrismaClientKnownRequestError &&
       error.code === 'P1001'
     ) {
+      const errorMessage = 'No se pudieron obtener los registros. Intente nuevamente.'
       return NextResponse.json(
         {
           ok: false,
-          error: 'No se pudieron obtener los registros. Intente nuevamente.',
+          message: errorMessage,
+          error: errorMessage,
         },
         { status: 503 }
       )
@@ -129,15 +131,87 @@ export async function GET(req: NextRequest) {
 
     // Handle other Prisma errors
     if (error instanceof Prisma.PrismaClientKnownRequestError) {
+      const errorMessage = 'Error al procesar la solicitud.'
       return NextResponse.json(
-        { ok: false, error: 'Error al procesar la solicitud.' },
+        { ok: false, message: errorMessage, error: errorMessage },
         { status: 500 }
       )
     }
 
     // Handle generic errors
+    const errorMessage = error instanceof Error ? error.message : 'Error al obtener los logs de auditoría'
     return NextResponse.json(
-      { ok: false, error: 'Error al obtener los logs de auditoría' },
+      { ok: false, message: errorMessage, error: errorMessage },
+      { status: 500 }
+    )
+  }
+}
+
+export async function POST(req: NextRequest) {
+  try {
+    const user = await getCurrentUserWithOffice()
+
+    if (!user) {
+      return NextResponse.json(
+        { ok: false, message: 'No autorizado', error: 'No autorizado' },
+        { status: 401 }
+      )
+    }
+
+    const body = await req.json()
+    const { tabla, accion, diff } = body
+
+    if (!tabla || !accion) {
+      const errorMessage = 'Tabla y accion son requeridos'
+      return NextResponse.json(
+        { ok: false, message: errorMessage, error: errorMessage },
+        { status: 400 }
+      )
+    }
+
+    const log = await prisma.auditLog.create({
+      data: {
+        userId: user.id,
+        officeId: user.officeId,
+        tabla,
+        accion,
+        diff: diff || null,
+      },
+    })
+
+    return NextResponse.json({ ok: true, data: log })
+  } catch (error) {
+    console.error('Error creating audit log:', error)
+
+    // Handle Prisma connection errors (P1001 - DB unreachable)
+    if (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === 'P1001'
+    ) {
+      const errorMessage = 'No se pudo crear el registro. Intente nuevamente.'
+      return NextResponse.json(
+        {
+          ok: false,
+          message: errorMessage,
+          error: errorMessage,
+        },
+        { status: 503 }
+      )
+    }
+
+    // Handle other Prisma errors
+    if (error instanceof Prisma.PrismaClientKnownRequestError) {
+      const errorMessage = 'Error al procesar la solicitud.'
+      return NextResponse.json(
+        { ok: false, message: errorMessage, error: errorMessage },
+        { status: 500 }
+      )
+    }
+
+    // Handle generic errors
+    const errorMessage = error instanceof Error ? error.message : 'Error al crear el log de auditoría'
+    return NextResponse.json(
+      { ok: false, message: errorMessage, error: errorMessage },
       { status: 500 }
     )
   }

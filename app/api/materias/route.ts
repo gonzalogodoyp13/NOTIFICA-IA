@@ -10,14 +10,11 @@ export const dynamic = 'force-dynamic'
 
 export async function GET() {
   try {
-    console.log('[API /materias] Getting user...')
     const user = await getCurrentUserWithOffice()
-    console.log('[API /materias] User result:', user ? { id: user.id, email: user.email, officeId: user.officeId } : 'null')
 
     if (!user) {
-      console.error('[API /materias] No user found - returning 401')
       return NextResponse.json(
-        { ok: false, error: 'No autorizado' },
+        { ok: false, message: 'No autorizado', error: 'No autorizado' },
         { status: 401 }
       )
     }
@@ -25,13 +22,15 @@ export async function GET() {
     const materias = await prisma.materia.findMany({
       where: { officeId: user.officeId },
       orderBy: { createdAt: 'desc' },
+      take: 50,
     })
 
     return NextResponse.json({ ok: true, data: materias })
   } catch (error) {
     console.error('Error fetching materias:', error)
+    const errorMessage = error instanceof Error ? error.message : 'Error al obtener las materias'
     return NextResponse.json(
-      { ok: false, error: 'Error al obtener las materias' },
+      { ok: false, message: errorMessage, error: errorMessage },
       { status: 500 }
     )
   }
@@ -43,7 +42,7 @@ export async function POST(req: NextRequest) {
 
     if (!user) {
       return NextResponse.json(
-        { ok: false, error: 'No autorizado' },
+        { ok: false, message: 'No autorizado', error: 'No autorizado' },
         { status: 401 }
       )
     }
@@ -52,8 +51,9 @@ export async function POST(req: NextRequest) {
     const parsed = MateriaSchema.safeParse(body)
 
     if (!parsed.success) {
+      const errorMessage = parsed.error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')
       return NextResponse.json(
-        { ok: false, error: parsed.error.errors },
+        { ok: false, message: errorMessage, error: errorMessage },
         { status: 400 }
       )
     }
@@ -65,18 +65,12 @@ export async function POST(req: NextRequest) {
       },
     })
 
-    await prisma.auditLog.create({
-      data: {
-        userEmail: user.email,
-        action: `Creó nueva Materia: ${materia.nombre}`,
-      },
-    })
-
     return NextResponse.json({ ok: true, data: materia })
   } catch (error) {
     console.error('Error creating materia:', error)
+    const errorMessage = error instanceof Error ? error.message : 'Error al crear la materia'
     return NextResponse.json(
-      { ok: false, error: 'Error al crear la materia' },
+      { ok: false, message: errorMessage, error: errorMessage },
       { status: 500 }
     )
   }
