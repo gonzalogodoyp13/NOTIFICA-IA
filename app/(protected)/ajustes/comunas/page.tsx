@@ -21,7 +21,6 @@ export default function ComunasPage() {
   const [showModal, setShowModal] = useState(false)
   const [formData, setFormData] = useState({
     nombre: '',
-    region: '',
   })
   const [submitting, setSubmitting] = useState(false)
 
@@ -60,7 +59,6 @@ export default function ComunasPage() {
 
     try {
       const payload: any = { nombre: formData.nombre }
-      if (formData.region) payload.region = formData.region
 
       const response = await fetch('/api/comunas', {
         method: 'POST',
@@ -81,7 +79,7 @@ export default function ComunasPage() {
         setComunas(prev => [data.data, ...prev])
       }
       setShowModal(false)
-      setFormData({ nombre: '', region: '' })
+      setFormData({ nombre: '' })
       setSuccess('Comuna creada exitosamente')
     } catch (err) {
       setSuccess(null)
@@ -187,7 +185,6 @@ export default function ComunasPage() {
                 <thead className="bg-gray-50">
                   <tr>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Nombre</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Región</th>
                     <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Acciones</th>
                   </tr>
                 </thead>
@@ -197,7 +194,6 @@ export default function ComunasPage() {
                       <td className="px-6 py-4 text-sm font-medium text-gray-900">
                         {comuna.nombre}
                       </td>
-                      <td className="px-6 py-4 text-sm text-gray-600">{comuna.region || '-'}</td>
                       <td className="px-6 py-4 text-right text-sm font-medium">
                         <button
                           onClick={() => handleDelete(comuna.id)}
@@ -233,18 +229,6 @@ export default function ComunasPage() {
                       placeholder="Ej: Santiago, Valparaíso..."
                     />
                   </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Región
-                    </label>
-                    <input
-                      type="text"
-                      value={formData.region}
-                      onChange={(e) => setFormData({ ...formData, region: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500"
-                      placeholder="Ej: Región Metropolitana"
-                    />
-                  </div>
                   <div className="flex items-center gap-4 pt-4">
                     <button
                       type="submit"
@@ -257,7 +241,7 @@ export default function ComunasPage() {
                       type="button"
                       onClick={() => {
                         setShowModal(false)
-                        setFormData({ nombre: '', region: '' })
+                        setFormData({ nombre: '' })
                         setError(null)
                       }}
                       className="flex-1 px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors font-medium"

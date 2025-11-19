@@ -13,7 +13,7 @@ interface Abogado {
 }
 
 interface Tribunal {
-  id: string
+  id: number
   nombre: string
 }
 
@@ -105,21 +105,13 @@ export default function NuevaDemandaPage() {
     setError(null)
 
     try {
-      // TODO: Create API endpoint for creating Demanda with ejecutados
-      // For now, we'll create a simplified version that creates a RolCausa
-      // The full Demanda creation should be handled by a dedicated API endpoint
-      
       if (!formData.rol || !formData.tribunalId || !formData.caratula) {
         throw new Error('ROL, Tribunal y Carátula son requeridos')
       }
-
-      // Convert tribunalId from Int to String for Phase 4 Tribunal model
-      // First, we need to find the tribunal in the Phase 4 Tribunal model
-      // For now, we'll use the API to create a RolCausa
       
       const payload = {
         rol: formData.rol,
-        tribunalId: formData.tribunalId,
+        tribunalId: Number(formData.tribunalId), // Ensure numeric ID (Phase 3)
         caratula: formData.caratula,
         cuantia: formData.cuantia ? Number(formData.cuantia) : null,
         abogadoId: formData.abogadoId ? Number(formData.abogadoId) : null,
@@ -132,7 +124,7 @@ export default function NuevaDemandaPage() {
         })),
       }
 
-      const response = await fetch('/api/roles', {
+      const response = await fetch('/api/demandas', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),

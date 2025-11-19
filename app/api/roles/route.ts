@@ -1,6 +1,5 @@
 // API route: /api/roles
-// GET: List all ROLs for current user's office
-// POST: Create new RolCausa from Demanda (optional)
+// GET: List all Demandas for the logged-in user's officeId (Phase 3)
 import { NextRequest, NextResponse } from 'next/server'
 import { getCurrentUserWithOffice } from '@/lib/auth-server'
 import { prisma } from '@/lib/prisma'
@@ -9,194 +8,67 @@ export const dynamic = 'force-dynamic'
 
 export async function GET(req: NextRequest) {
   try {
-    console.log('[API /roles] Getting user...')
+    console.log('[GET /api/roles] Request received')
+    
     const user = await getCurrentUserWithOffice()
-    console.log('[API /roles] User result:', user ? { id: user.id, email: user.email, officeId: user.officeId } : 'null')
 
     if (!user) {
-      console.error('[API /roles] No user found - returning 401')
+      console.log('[GET /api/roles] Unauthorized - no user')
       return NextResponse.json(
         { ok: false, error: 'No autorizado' },
         { status: 401 }
       )
     }
 
-    // Convert officeId to string for Phase 4 models
-    const officeIdStr = String(user.officeId)
+    console.log('[GET /api/roles] User authenticated:', { id: user.id, email: user.email, officeId: user.officeId })
 
-    // Parse query parameters
-    const searchParams = req.nextUrl.searchParams
-    const q = searchParams.get('q') || undefined
-    const estado = searchParams.get('estado') || undefined
-    const tribunalId = searchParams.get('tribunalId') || undefined
-    const from = searchParams.get('from') || undefined
-    const to = searchParams.get('to') || undefined
-    const page = parseInt(searchParams.get('page') || '1')
-    const pageSize = parseInt(searchParams.get('pageSize') || '20')
+    // Get query params for future filters (structure ready but not implemented yet)
+    const { searchParams } = new URL(req.url)
+    const abogadoId = searchParams.get('abogadoId')
+    const tribunalId = searchParams.get('tribunalId')
 
     // Build where clause
     const where: any = {
-      officeId: officeIdStr,
+      officeId: user.officeId, // Int officeId
     }
 
-    if (q) {
-      where.OR = [
-        { rol: { contains: q, mode: 'insensitive' } },
-        { demanda: { caratula: { contains: q, mode: 'insensitive' } } },
-      ]
+    // Future filter support (prepared but not active)
+    if (abogadoId) {
+      where.abogadoId = parseInt(abogadoId)
     }
-
-    if (estado) {
-      where.estado = estado
-    }
-
     if (tribunalId) {
-      where.tribunalId = tribunalId
+      where.tribunalId = parseInt(tribunalId)
     }
 
-    if (from || to) {
-      where.createdAt = {}
-      if (from) {
-        where.createdAt.gte = new Date(from)
-      }
-      if (to) {
-        where.createdAt.lte = new Date(to)
-      }
-    }
-
-    // Get total count for pagination
-    const total = await prisma.rolCausa.count({ where })
-
-    // Fetch ROLs with minimal info
-    const roles = await prisma.rolCausa.findMany({
+    const demandas = await prisma.demanda.findMany({
       where,
-      select: {
-        id: true,
-        rol: true,
-        estado: true,
-        createdAt: true,
-        tribunal: {
+      include: {
+        tribunales: {
           select: {
+            id: true,
             nombre: true,
           },
         },
-        demanda: {
+        abogados: {
           select: {
-            caratula: true,
+            id: true,
+            nombre: true,
           },
         },
       },
       orderBy: { createdAt: 'desc' },
-      skip: (page - 1) * pageSize,
-      take: pageSize,
     })
 
-    return NextResponse.json({
-      ok: true,
-      data: roles,
-      pagination: {
-        page,
-        pageSize,
-        total,
-        totalPages: Math.ceil(total / pageSize),
-      },
-    })
+    console.log(`[GET /api/roles] Found ${demandas.length} demandas`)
+
+    return NextResponse.json({ ok: true, data: demandas })
   } catch (error) {
-    console.error('Error fetching roles:', error)
+    console.error('[GET /api/roles] Error:', error)
     return NextResponse.json(
-      { ok: false, error: 'Error al obtener los roles' },
+      { ok: false, error: 'Error al obtener las demandas' },
       { status: 500 }
     )
   }
 }
 
-export async function POST(req: NextRequest) {
-  try {
-    const user = await getCurrentUserWithOffice()
-
-    if (!user) {
-      return NextResponse.json(
-        { ok: false, error: 'No autorizado' },
-        { status: 401 }
-      )
-    }
-
-    const body = await req.json()
-    const { demandaId, rol, tribunalId, estado } = body
-
-    // Validate required fields
-    if (!rol || !tribunalId) {
-      return NextResponse.json(
-        { ok: false, error: 'rol y tribunalId son requeridos' },
-        { status: 400 }
-      )
-    }
-
-    // Convert officeId to string
-    const officeIdStr = String(user.officeId)
-
-    // If demandaId provided, verify it belongs to user's office
-    if (demandaId) {
-      const demanda = await prisma.demanda.findFirst({
-        where: {
-          id: demandaId,
-          officeId: user.officeId, // Demanda uses Int officeId
-        },
-      })
-
-      if (!demanda) {
-        return NextResponse.json(
-          { ok: false, error: 'Demanda no encontrada o no pertenece a tu oficina' },
-          { status: 404 }
-        )
-      }
-    }
-
-    // Verify tribunal belongs to user's office
-    const tribunal = await prisma.tribunal.findFirst({
-      where: {
-        id: tribunalId,
-        officeId: officeIdStr,
-      },
-    })
-
-    if (!tribunal) {
-      return NextResponse.json(
-        { ok: false, error: 'Tribunal no encontrado o no pertenece a tu oficina' },
-        { status: 404 }
-      )
-    }
-
-    // Create RolCausa
-    const rolCausa = await prisma.rolCausa.create({
-      data: {
-        demandaId: demandaId || null,
-        officeId: officeIdStr,
-        rol,
-        tribunalId,
-        estado: estado || 'pendiente',
-      },
-      include: {
-        tribunal: {
-          select: {
-            nombre: true,
-          },
-        },
-        demanda: {
-          select: {
-            caratula: true,
-          },
-        },
-      },
-    })
-
-    return NextResponse.json({ ok: true, data: rolCausa })
-  } catch (error) {
-    console.error('Error creating rol:', error)
-    return NextResponse.json(
-      { ok: false, error: 'Error al crear el rol' },
-      { status: 500 }
-    )
-  }
-}
 

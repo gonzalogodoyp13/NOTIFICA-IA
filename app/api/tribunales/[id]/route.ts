@@ -22,10 +22,18 @@ export async function PUT(
       )
     }
 
-    const id = params.id
+    // Convert params.id to number for Phase 3 tribunales (Int ID)
+    const id = Number(params.id)
+    
+    if (isNaN(id) || !Number.isInteger(id)) {
+      return NextResponse.json(
+        { ok: false, message: 'ID inválido', error: 'ID debe ser un número entero válido' },
+        { status: 400 }
+      )
+    }
 
-    // Verify tribunal exists and belongs to user's office
-    const existingTribunal = await prisma.tribunal.findFirst({
+    // Verify tribunal exists and belongs to user's office (Phase 3: tribunales table with Int ID)
+    const existingTribunal = await prisma.tribunales.findFirst({
       where: {
         id,
         officeId: user.officeId,
@@ -50,7 +58,7 @@ export async function PUT(
       )
     }
 
-    const tribunal = await prisma.tribunal.update({
+    const tribunal = await prisma.tribunales.update({
       where: { id },
       data: parsed.data,
     })
@@ -80,10 +88,18 @@ export async function DELETE(
       )
     }
 
-    const id = params.id
+    // Convert params.id to number for Phase 3 tribunales (Int ID)
+    const id = Number(params.id)
+    
+    if (isNaN(id) || !Number.isInteger(id)) {
+      return NextResponse.json(
+        { ok: false, message: 'ID inválido', error: 'ID debe ser un número entero válido' },
+        { status: 400 }
+      )
+    }
 
-    // Verify tribunal exists and belongs to user's office
-    const existingTribunal = await prisma.tribunal.findFirst({
+    // Verify tribunal exists and belongs to user's office (Phase 3: tribunales table with Int ID)
+    const existingTribunal = await prisma.tribunales.findFirst({
       where: {
         id,
         officeId: user.officeId,
@@ -97,7 +113,7 @@ export async function DELETE(
       )
     }
 
-    await prisma.tribunal.delete({
+    await prisma.tribunales.delete({
       where: { id },
     })
 

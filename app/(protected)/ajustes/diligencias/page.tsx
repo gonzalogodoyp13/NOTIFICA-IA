@@ -21,7 +21,6 @@ export default function DiligenciasPage() {
   const [showModal, setShowModal] = useState(false)
   const [formData, setFormData] = useState({
     nombre: '',
-    descripcion: '',
   })
   const [submitting, setSubmitting] = useState(false)
 
@@ -60,7 +59,6 @@ export default function DiligenciasPage() {
 
     try {
       const payload: any = { nombre: formData.nombre }
-      if (formData.descripcion) payload.descripcion = formData.descripcion
 
       const response = await fetch('/api/diligencia-tipos', {
         method: 'POST',
@@ -81,7 +79,7 @@ export default function DiligenciasPage() {
         setDiligencias(prev => [data.data, ...prev])
       }
       setShowModal(false)
-      setFormData({ nombre: '', descripcion: '' })
+      setFormData({ nombre: '' })
       setSuccess('Tipo de diligencia creado exitosamente')
     } catch (err) {
       setSuccess(null)
@@ -187,7 +185,6 @@ export default function DiligenciasPage() {
                 <thead className="bg-gray-50">
                   <tr>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Nombre</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Descripción</th>
                     <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Acciones</th>
                   </tr>
                 </thead>
@@ -197,7 +194,6 @@ export default function DiligenciasPage() {
                       <td className="px-6 py-4 text-sm font-medium text-gray-900">
                         {diligencia.nombre}
                       </td>
-                      <td className="px-6 py-4 text-sm text-gray-600">{diligencia.descripcion || '-'}</td>
                       <td className="px-6 py-4 text-right text-sm font-medium">
                         <button
                           onClick={() => handleDelete(diligencia.id)}
@@ -233,18 +229,6 @@ export default function DiligenciasPage() {
                       placeholder="Ej: Notificación, Embargo..."
                     />
                   </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Descripción
-                    </label>
-                    <textarea
-                      value={formData.descripcion}
-                      onChange={(e) => setFormData({ ...formData, descripcion: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500"
-                      rows={3}
-                      placeholder="Descripción del tipo de diligencia (opcional)"
-                    />
-                  </div>
                   <div className="flex items-center gap-4 pt-4">
                     <button
                       type="submit"
@@ -257,7 +241,7 @@ export default function DiligenciasPage() {
                       type="button"
                       onClick={() => {
                         setShowModal(false)
-                        setFormData({ nombre: '', descripcion: '' })
+                        setFormData({ nombre: '' })
                         setError(null)
                       }}
                       className="flex-1 px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors font-medium"

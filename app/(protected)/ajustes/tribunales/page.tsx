@@ -7,7 +7,7 @@ import Topbar from '@/components/Topbar'
 import Link from 'next/link'
 
 interface Tribunal {
-  id: string
+  id: number
   nombre: string
   direccion: string | null
   comuna: string | null
@@ -22,8 +22,6 @@ export default function TribunalesPage() {
   const [showModal, setShowModal] = useState(false)
   const [formData, setFormData] = useState({
     nombre: '',
-    direccion: '',
-    comuna: '',
   })
   const [submitting, setSubmitting] = useState(false)
 
@@ -62,8 +60,6 @@ export default function TribunalesPage() {
 
     try {
       const payload: any = { nombre: formData.nombre }
-      if (formData.direccion) payload.direccion = formData.direccion
-      if (formData.comuna) payload.comuna = formData.comuna
 
       const response = await fetch('/api/tribunales', {
         method: 'POST',
@@ -84,7 +80,7 @@ export default function TribunalesPage() {
         setTribunales(prev => [data.data, ...prev])
       }
       setShowModal(false)
-      setFormData({ nombre: '', direccion: '', comuna: '' })
+      setFormData({ nombre: '' })
       setSuccess('Tribunal creado exitosamente')
     } catch (err) {
       setSuccess(null)
@@ -94,7 +90,7 @@ export default function TribunalesPage() {
     }
   }
 
-  const handleDelete = async (id: string) => {
+  const handleDelete = async (id: number) => {
     if (!confirm('¿Estás seguro de que deseas eliminar este tribunal?')) {
       return
     }
@@ -190,8 +186,6 @@ export default function TribunalesPage() {
                 <thead className="bg-gray-50">
                   <tr>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Nombre</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Dirección</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Comuna</th>
                     <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Acciones</th>
                   </tr>
                 </thead>
@@ -201,8 +195,6 @@ export default function TribunalesPage() {
                       <td className="px-6 py-4 text-sm font-medium text-gray-900">
                         {tribunal.nombre}
                       </td>
-                      <td className="px-6 py-4 text-sm text-gray-600">{tribunal.direccion || '-'}</td>
-                      <td className="px-6 py-4 text-sm text-gray-600">{tribunal.comuna || '-'}</td>
                       <td className="px-6 py-4 text-right text-sm font-medium">
                         <button
                           onClick={() => handleDelete(tribunal.id)}
@@ -238,28 +230,6 @@ export default function TribunalesPage() {
                       placeholder="Ej: Juzgado de Letras de Santiago"
                     />
                   </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Dirección
-                    </label>
-                    <input
-                      type="text"
-                      value={formData.direccion}
-                      onChange={(e) => setFormData({ ...formData, direccion: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Comuna
-                    </label>
-                    <input
-                      type="text"
-                      value={formData.comuna}
-                      onChange={(e) => setFormData({ ...formData, comuna: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500"
-                    />
-                  </div>
                   <div className="flex items-center gap-4 pt-4">
                     <button
                       type="submit"
@@ -272,7 +242,7 @@ export default function TribunalesPage() {
                       type="button"
                       onClick={() => {
                         setShowModal(false)
-                        setFormData({ nombre: '', direccion: '', comuna: '' })
+                        setFormData({ nombre: '' })
                         setError(null)
                       }}
                       className="flex-1 px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors font-medium"

@@ -97,7 +97,7 @@ model Materia {
 }
 
 model Demanda {
-  id         String      @id
+  id         String      @id @default(cuid())
   rol        String      @unique
   tribunalId Int
   caratula   String
@@ -117,7 +117,7 @@ model Demanda {
 }
 
 model Ejecutado {
-  id        String  @id
+  id        String  @id @default(cuid())
   demandaId String
   nombre    String
   rut       String
