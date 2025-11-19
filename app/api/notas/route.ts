@@ -6,7 +6,6 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getCurrentUserWithOffice } from '@/lib/auth-server'
 import { prisma } from '@/lib/prisma'
 import { zNota } from '@/lib/validations/nota'
-import { logAudit } from '@/lib/audit'
 import { ZodError } from 'zod'
 
 export const dynamic = 'force-dynamic'
@@ -141,15 +140,6 @@ export async function POST(req: NextRequest) {
       },
     })
 
-    await logAudit({
-      userEmail: user.email,
-      userId: user.id,
-      officeId: officeIdStr,
-      tabla: 'Nota',
-      accion: 'Creó nueva Nota',
-      diff: { id: nota.id, rolId: nota.rolId },
-    })
-
     return NextResponse.json({ ok: true, data: nota })
   } catch (error) {
     if (error instanceof ZodError) {
@@ -221,15 +211,6 @@ export async function DELETE(req: NextRequest) {
 
     await prisma.nota.delete({
       where: { id },
-    })
-
-    await logAudit({
-      userEmail: user.email,
-      userId: user.id,
-      officeId: officeIdStr,
-      tabla: 'Nota',
-      accion: 'Eliminó Nota',
-      diff: { id },
     })
 
     return NextResponse.json({ ok: true, message: 'Nota eliminada correctamente' })

@@ -6,6 +6,7 @@ import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 import { redirect } from 'next/navigation'
 import { prisma } from './prisma'
+import { prismaNoMiddleware } from './prismaNoMiddleware'
 
 /**
  * Get the current user session (server-side)
@@ -152,7 +153,7 @@ export async function getCurrentUserWithOffice(): Promise<{
 
     console.log('[getCurrentUserWithOffice] Supabase user found:', data.user.email)
 
-    let dbUser = await prisma.user.findUnique({
+    let dbUser = await prismaNoMiddleware.user.findUnique({
       where: { email: data.user.email! },
     })
 
@@ -160,7 +161,7 @@ export async function getCurrentUserWithOffice(): Promise<{
     if (!dbUser) {
       console.log('[getCurrentUserWithOffice] User not found in database, creating:', data.user.email)
       try {
-        dbUser = await prisma.user.create({
+        dbUser = await prismaNoMiddleware.user.create({
           data: {
             email: data.user.email!,
             officeName: data.user.user_metadata?.officeName || data.user.email!.split('@')[0] || 'Default Office',
@@ -178,14 +179,14 @@ export async function getCurrentUserWithOffice(): Promise<{
     
     try {
       // Try to find office by name
-      let office = await prisma.office.findFirst({
+      let office = await prismaNoMiddleware.office.findFirst({
         where: { nombre: dbUser.officeName },
       })
       
       // If office doesn't exist, create it
       if (!office) {
         console.log('[getCurrentUserWithOffice] Office not found, creating:', dbUser.officeName)
-        office = await prisma.office.create({
+        office = await prismaNoMiddleware.office.create({
           data: { nombre: dbUser.officeName },
         })
       }

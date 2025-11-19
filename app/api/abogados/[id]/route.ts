@@ -85,13 +85,6 @@ export async function PUT(
       },
     })
 
-    await prisma.auditLog.create({
-      data: {
-        userEmail: user.email,
-        action: `Actualizó Abogado: ${abogado.nombre || 'Sin nombre'}`,
-      },
-    })
-
     return NextResponse.json({ ok: true, data: abogado })
   } catch (error) {
     console.error('Error updating abogado:', error)
@@ -142,13 +135,6 @@ export async function DELETE(
 
     await prisma.abogado.delete({
       where: { id },
-    })
-
-    await prisma.auditLog.create({
-      data: {
-        userEmail: user.email,
-        action: `Eliminó Abogado: ${existingAbogado.nombre || 'Sin nombre'}`,
-      },
     })
 
     return NextResponse.json({ ok: true, message: 'Abogado eliminado correctamente' })

@@ -7,7 +7,6 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getCurrentUserWithOffice } from '@/lib/auth-server'
 import { prisma } from '@/lib/prisma'
 import { zDiligencia, zDiligenciaUpdate } from '@/lib/validations/diligencia'
-import { logAudit } from '@/lib/audit'
 import { ZodError } from 'zod'
 
 export const dynamic = 'force-dynamic'
@@ -151,15 +150,6 @@ export async function POST(req: NextRequest) {
       },
     })
 
-    await logAudit({
-      userEmail: user.email,
-      userId: user.id,
-      officeId: officeIdStr,
-      tabla: 'Diligencia',
-      accion: 'Creó nueva Diligencia',
-      diff: { id: diligencia.id, tipoId: diligencia.tipoId },
-    })
-
     return NextResponse.json({ ok: true, data: diligencia })
   } catch (error) {
     if (error instanceof ZodError) {
@@ -242,15 +232,6 @@ export async function PUT(req: NextRequest) {
       },
     })
 
-    await logAudit({
-      userEmail: user.email,
-      userId: user.id,
-      officeId: officeIdStr,
-      tabla: 'Diligencia',
-      accion: 'Actualizó Diligencia',
-      diff: { id, cambios: parsed.data },
-    })
-
     return NextResponse.json({ ok: true, data: updated })
   } catch (error) {
     if (error instanceof ZodError) {
@@ -320,15 +301,6 @@ export async function DELETE(req: NextRequest) {
 
     await prisma.diligencia.delete({
       where: { id },
-    })
-
-    await logAudit({
-      userEmail: user.email,
-      userId: user.id,
-      officeId: officeIdStr,
-      tabla: 'Diligencia',
-      accion: 'Eliminó Diligencia',
-      diff: { id },
     })
 
     return NextResponse.json({ ok: true, message: 'Diligencia eliminada correctamente' })

@@ -34,18 +34,17 @@ export default function BancosPage() {
       const response = await fetch('/api/bancos', {
         credentials: 'include', // Ensure cookies are sent
       })
-      const data = await response.json().catch(() => ({}))
+      const data = await response.json().catch(() => ({ ok: false }))
 
-      if (!response.ok) {
-        throw new Error(data.error || 'Error al cargar los bancos')
+      if (!data.ok) {
+        const errorMessage = data.message || data.error || 'Error al cargar los bancos'
+        setError(errorMessage)
+        setLoading(false)
+        return
       }
 
-      if (data.ok) {
-        setBancos(data.data || [])
-        setError(null)
-      } else {
-        setError(data.error || 'Error al cargar los bancos')
-      }
+      setBancos(data.data || [])
+      setError(null)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error desconocido')
     } finally {
@@ -70,19 +69,20 @@ export default function BancosPage() {
         credentials: 'include',
       })
 
-      const data = await response.json().catch(() => ({}))
+      const data = await response.json().catch(() => ({ ok: false }))
 
-      if (!response.ok || !data.ok) {
-        const errorMessage = Array.isArray(data.error)
-          ? data.error.map((e: any) => e.message || JSON.stringify(e)).join(', ')
-          : (data.error || 'Error al crear el banco')
+      if (!data.ok) {
+        const errorMessage = data.message || data.error || 'Error al crear el banco'
         throw new Error(errorMessage)
       }
 
+      // Actualización optimista
+      if (data.data) {
+        setBancos(prev => [data.data, ...prev])
+      }
       setShowModal(false)
       setFormData({ nombre: '', cuenta: '' })
       setSuccess('Banco creado exitosamente')
-      fetchBancos()
     } catch (err) {
       setSuccess(null)
       setError(err instanceof Error ? err.message : 'Error al crear el banco')
@@ -96,22 +96,33 @@ export default function BancosPage() {
       return
     }
 
+    const previousBancos = bancos
+
+    // Actualización optimista ANTES del fetch
+    setBancos(prev => prev.filter(b => b.id !== id))
+
     try {
       const response = await fetch(`/api/bancos/${id}`, {
         method: 'DELETE',
         credentials: 'include',
       })
 
-      const data = await response.json()
+      const data = await response.json().catch(() => ({ ok: false }))
 
-      if (!response.ok || !data.ok) {
-        throw new Error(data.error || 'Error al eliminar el banco')
+      if (!data.ok) {
+        // Revertir si falla
+        setBancos(previousBancos)
+        const errorMessage = data.message || data.error || 'Error al eliminar el banco'
+        setSuccess(null)
+        setError(errorMessage)
+        return
       }
 
-      fetchBancos()
       setSuccess('Banco eliminado correctamente')
       setError(null)
     } catch (err) {
+      // Revertir si hay error de red
+      setBancos(previousBancos)
       setSuccess(null)
       setError(err instanceof Error ? err.message : 'Error al eliminar el banco')
     }

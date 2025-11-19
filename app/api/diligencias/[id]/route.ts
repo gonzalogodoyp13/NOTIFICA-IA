@@ -4,7 +4,6 @@ import { Prisma } from '@prisma/client'
 
 import { getCurrentUserWithOffice } from '@/lib/auth-server'
 import { prisma } from '@/lib/prisma'
-import { logAudit } from '@/lib/audit'
 import { DiligenciaUpdateSchema } from '@/lib/validations/rol-workspace'
 
 export const dynamic = 'force-dynamic'
@@ -234,16 +233,6 @@ export async function PUT(
 
     await syncRolEstado(diligencia.rol.id)
 
-    await logAudit({
-      userEmail: user.email,
-      userId: user.id,
-      officeId: officeIdStr,
-      rolId: diligencia.rol.id,
-      tabla: 'Diligencia',
-      accion: 'Actualizó diligencia',
-      diff: { diligenciaId: diligencia.id, cambios: data },
-    })
-
     return NextResponse.json({ ok: true, data: updated })
   } catch (error) {
     console.error('Error actualizando diligencia:', error)
@@ -293,16 +282,6 @@ export async function DELETE(
     })
 
     await syncRolEstado(diligencia.rolId)
-
-    await logAudit({
-      userEmail: user.email,
-      userId: user.id,
-      officeId: officeIdStr,
-      rolId: diligencia.rolId,
-      tabla: 'Diligencia',
-      accion: 'Eliminó diligencia',
-      diff: { diligenciaId: diligencia.id },
-    })
 
     return NextResponse.json({ ok: true, message: 'Diligencia eliminada correctamente' })
   } catch (error) {

@@ -61,13 +61,6 @@ export async function PUT(
       data: parsed.data,
     })
 
-    await prisma.auditLog.create({
-      data: {
-        userEmail: user.email,
-        action: `Actualizó Banco: ${banco.nombre}`,
-      },
-    })
-
     return NextResponse.json({ ok: true, data: banco })
   } catch (error) {
     console.error('Error updating banco:', error)
@@ -118,13 +111,6 @@ export async function DELETE(
 
     await prisma.banco.delete({
       where: { id },
-    })
-
-    await prisma.auditLog.create({
-      data: {
-        userEmail: user.email,
-        action: `Eliminó Banco: ${existingBanco.nombre}`,
-      },
     })
 
     return NextResponse.json({ ok: true, message: 'Banco eliminado correctamente' })

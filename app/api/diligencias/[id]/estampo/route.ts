@@ -3,7 +3,6 @@ import { PDFDocument, StandardFonts } from 'pdf-lib'
 
 import { getCurrentUserWithOffice } from '@/lib/auth-server'
 import { prisma } from '@/lib/prisma'
-import { logAudit } from '@/lib/audit'
 import { EstampoGenerateSchema } from '@/lib/validations/rol-workspace'
 
 export const dynamic = 'force-dynamic'
@@ -109,16 +108,6 @@ export async function POST(
         pdfId: pdfBase64,
         version: 1,
       },
-    })
-
-    await logAudit({
-      userEmail: user.email,
-      userId: user.id,
-      officeId: officeIdStr,
-      rolId: diligencia.rolId,
-      tabla: 'Documento',
-      accion: 'Generó estampo',
-      diff: { diligenciaId: diligencia.id, estampoId: estampo.id, documentoId: documento.id },
     })
 
     return NextResponse.json({ ok: true, data: documento })

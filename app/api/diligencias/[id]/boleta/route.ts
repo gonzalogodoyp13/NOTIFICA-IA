@@ -3,7 +3,6 @@ import { PDFDocument, StandardFonts, rgb } from 'pdf-lib'
 
 import { getCurrentUserWithOffice } from '@/lib/auth-server'
 import { prisma } from '@/lib/prisma'
-import { logAudit } from '@/lib/audit'
 import { BoletaGenerateSchema } from '@/lib/validations/rol-workspace'
 
 export const dynamic = 'force-dynamic'
@@ -129,16 +128,6 @@ export async function POST(
         medio: data.medio,
         ref: data.referencia ?? null,
       },
-    })
-
-    await logAudit({
-      userEmail: user.email,
-      userId: user.id,
-      officeId: officeIdStr,
-      rolId: diligencia.rolId,
-      tabla: 'Documento',
-      accion: 'Generó boleta de diligencia',
-      diff: { diligenciaId: diligencia.id, documentoId: documento.id },
     })
 
     return NextResponse.json({ ok: true, data: documento })

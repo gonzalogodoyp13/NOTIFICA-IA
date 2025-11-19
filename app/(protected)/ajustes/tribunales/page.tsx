@@ -36,18 +36,17 @@ export default function TribunalesPage() {
       const response = await fetch('/api/tribunales', {
         credentials: 'include', // Ensure cookies are sent
       })
-      const data = await response.json().catch(() => ({}))
+      const data = await response.json().catch(() => ({ ok: false }))
 
-      if (!response.ok) {
-        throw new Error(data.error || 'Error al cargar los tribunales')
+      if (!data.ok) {
+        const errorMessage = data.message || data.error || 'Error al cargar los tribunales'
+        setError(errorMessage)
+        setLoading(false)
+        return
       }
 
-      if (data.ok) {
-        setTribunales(data.data || [])
-        setError(null)
-      } else {
-        setError(data.error || 'Error al cargar los tribunales')
-      }
+      setTribunales(data.data || [])
+      setError(null)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error desconocido')
     } finally {
@@ -73,19 +72,20 @@ export default function TribunalesPage() {
         credentials: 'include',
       })
 
-      const data = await response.json().catch(() => ({}))
+      const data = await response.json().catch(() => ({ ok: false }))
 
-      if (!response.ok || !data.ok) {
-        const errorMessage = Array.isArray(data.error)
-          ? data.error.map((e: any) => e.message || JSON.stringify(e)).join(', ')
-          : (data.error || 'Error al crear el tribunal')
+      if (!data.ok) {
+        const errorMessage = data.message || data.error || 'Error al crear el tribunal'
         throw new Error(errorMessage)
       }
 
+      // Actualización optimista
+      if (data.data) {
+        setTribunales(prev => [data.data, ...prev])
+      }
       setShowModal(false)
       setFormData({ nombre: '', direccion: '', comuna: '' })
       setSuccess('Tribunal creado exitosamente')
-      fetchTribunales()
     } catch (err) {
       setSuccess(null)
       setError(err instanceof Error ? err.message : 'Error al crear el tribunal')
@@ -99,22 +99,33 @@ export default function TribunalesPage() {
       return
     }
 
+    const previousTribunales = tribunales
+
+    // Actualización optimista ANTES del fetch
+    setTribunales(prev => prev.filter(t => t.id !== id))
+
     try {
       const response = await fetch(`/api/tribunales/${id}`, {
         method: 'DELETE',
         credentials: 'include',
       })
 
-      const data = await response.json()
+      const data = await response.json().catch(() => ({ ok: false }))
 
-      if (!response.ok || !data.ok) {
-        throw new Error(data.error || 'Error al eliminar el tribunal')
+      if (!data.ok) {
+        // Revertir si falla
+        setTribunales(previousTribunales)
+        const errorMessage = data.message || data.error || 'Error al eliminar el tribunal'
+        setSuccess(null)
+        setError(errorMessage)
+        return
       }
 
-      fetchTribunales()
       setSuccess('Tribunal eliminado correctamente')
       setError(null)
     } catch (err) {
+      // Revertir si hay error de red
+      setTribunales(previousTribunales)
       setSuccess(null)
       setError(err instanceof Error ? err.message : 'Error al eliminar el tribunal')
     }

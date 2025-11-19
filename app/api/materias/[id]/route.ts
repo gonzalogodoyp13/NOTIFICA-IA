@@ -17,7 +17,7 @@ export async function PUT(
 
     if (!user) {
       return NextResponse.json(
-        { ok: false, error: 'No autorizado' },
+        { ok: false, message: 'No autorizado', error: 'No autorizado' },
         { status: 401 }
       )
     }
@@ -25,7 +25,7 @@ export async function PUT(
     const id = parseInt(params.id)
     if (isNaN(id)) {
       return NextResponse.json(
-        { ok: false, error: 'ID inválido' },
+        { ok: false, message: 'ID inválido', error: 'ID inválido' },
         { status: 400 }
       )
     }
@@ -40,7 +40,7 @@ export async function PUT(
 
     if (!existingMateria) {
       return NextResponse.json(
-        { ok: false, error: 'Materia no encontrada' },
+        { ok: false, message: 'Materia no encontrada o no pertenece a tu oficina', error: 'Materia no encontrada o no pertenece a tu oficina' },
         { status: 404 }
       )
     }
@@ -49,8 +49,9 @@ export async function PUT(
     const parsed = MateriaSchema.safeParse(body)
 
     if (!parsed.success) {
+      const errorMessage = parsed.error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')
       return NextResponse.json(
-        { ok: false, error: parsed.error.errors },
+        { ok: false, message: errorMessage, error: errorMessage },
         { status: 400 }
       )
     }
@@ -60,18 +61,12 @@ export async function PUT(
       data: parsed.data,
     })
 
-    await prisma.auditLog.create({
-      data: {
-        userEmail: user.email,
-        action: `Actualizó Materia: ${materia.nombre}`,
-      },
-    })
-
     return NextResponse.json({ ok: true, data: materia })
   } catch (error) {
     console.error('Error updating materia:', error)
+    const errorMessage = error instanceof Error ? error.message : 'Error al actualizar la materia'
     return NextResponse.json(
-      { ok: false, error: 'Error al actualizar la materia' },
+      { ok: false, message: errorMessage, error: errorMessage },
       { status: 500 }
     )
   }
@@ -86,7 +81,7 @@ export async function DELETE(
 
     if (!user) {
       return NextResponse.json(
-        { ok: false, error: 'No autorizado' },
+        { ok: false, message: 'No autorizado', error: 'No autorizado' },
         { status: 401 }
       )
     }
@@ -94,7 +89,7 @@ export async function DELETE(
     const id = parseInt(params.id)
     if (isNaN(id)) {
       return NextResponse.json(
-        { ok: false, error: 'ID inválido' },
+        { ok: false, message: 'ID inválido', error: 'ID inválido' },
         { status: 400 }
       )
     }
@@ -109,7 +104,7 @@ export async function DELETE(
 
     if (!existingMateria) {
       return NextResponse.json(
-        { ok: false, error: 'Materia no encontrada' },
+        { ok: false, message: 'Materia no encontrada o no pertenece a tu oficina', error: 'Materia no encontrada o no pertenece a tu oficina' },
         { status: 404 }
       )
     }
@@ -118,18 +113,12 @@ export async function DELETE(
       where: { id },
     })
 
-    await prisma.auditLog.create({
-      data: {
-        userEmail: user.email,
-        action: `Eliminó Materia: ${existingMateria.nombre}`,
-      },
-    })
-
     return NextResponse.json({ ok: true, message: 'Materia eliminada correctamente' })
   } catch (error) {
     console.error('Error deleting materia:', error)
+    const errorMessage = error instanceof Error ? error.message : 'Error al eliminar la materia'
     return NextResponse.json(
-      { ok: false, error: 'Error al eliminar la materia' },
+      { ok: false, message: errorMessage, error: errorMessage },
       { status: 500 }
     )
   }

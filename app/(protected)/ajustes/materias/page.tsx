@@ -30,18 +30,17 @@ export default function MateriasPage() {
       const response = await fetch('/api/materias', {
         credentials: 'include', // Ensure cookies are sent
       })
-      const data = await response.json().catch(() => ({}))
+      const data = await response.json().catch(() => ({ ok: false }))
 
-      if (!response.ok) {
-        throw new Error(data.error || 'Error al cargar las materias')
+      if (!data.ok) {
+        const errorMessage = data.message || data.error || 'Error al cargar las materias'
+        setError(errorMessage)
+        setLoading(false)
+        return
       }
 
-      if (data.ok) {
-        setMaterias(data.data || [])
-        setError(null)
-      } else {
-        setError(data.error || 'Error al cargar las materias')
-      }
+      setMaterias(data.data || [])
+      setError(null)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error desconocido')
     } finally {
@@ -63,19 +62,20 @@ export default function MateriasPage() {
         credentials: 'include',
       })
 
-      const data = await response.json().catch(() => ({}))
+      const data = await response.json().catch(() => ({ ok: false }))
 
-      if (!response.ok || !data.ok) {
-        const errorMessage = Array.isArray(data.error)
-          ? data.error.map((e: any) => e.message || JSON.stringify(e)).join(', ')
-          : (data.error || 'Error al crear la materia')
+      if (!data.ok) {
+        const errorMessage = data.message || data.error || 'Error al crear la materia'
         throw new Error(errorMessage)
       }
 
+      // Actualización optimista
+      if (data.data) {
+        setMaterias(prev => [data.data, ...prev])
+      }
       setShowModal(false)
       setFormData({ nombre: '' })
       setSuccess('Materia creada exitosamente')
-      fetchMaterias()
     } catch (err) {
       setSuccess(null)
       setError(err instanceof Error ? err.message : 'Error al crear la materia')
@@ -89,22 +89,33 @@ export default function MateriasPage() {
       return
     }
 
+    const previousMaterias = materias
+
+    // Actualización optimista ANTES del fetch
+    setMaterias(prev => prev.filter(m => m.id !== id))
+
     try {
       const response = await fetch(`/api/materias/${id}`, {
         method: 'DELETE',
         credentials: 'include',
       })
 
-      const data = await response.json()
+      const data = await response.json().catch(() => ({ ok: false }))
 
-      if (!response.ok || !data.ok) {
-        throw new Error(data.error || 'Error al eliminar la materia')
+      if (!data.ok) {
+        // Revertir si falla
+        setMaterias(previousMaterias)
+        const errorMessage = data.message || data.error || 'Error al eliminar la materia'
+        setSuccess(null)
+        setError(errorMessage)
+        return
       }
 
-      fetchMaterias()
       setSuccess('Materia eliminada correctamente')
       setError(null)
     } catch (err) {
+      // Revertir si hay error de red
+      setMaterias(previousMaterias)
       setSuccess(null)
       setError(err instanceof Error ? err.message : 'Error al eliminar la materia')
     }

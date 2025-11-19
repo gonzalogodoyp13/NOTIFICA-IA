@@ -65,13 +65,6 @@ export async function POST(req: NextRequest) {
       },
     })
 
-    await prisma.auditLog.create({
-      data: {
-        userEmail: user.email,
-        action: `Creó nueva Comuna: ${comuna.nombre}`,
-      },
-    })
-
     return NextResponse.json({ ok: true, data: comuna })
   } catch (error) {
     console.error('Error creating comuna:', error)

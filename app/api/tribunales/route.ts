@@ -65,13 +65,6 @@ export async function POST(req: NextRequest) {
       },
     })
 
-    await prisma.auditLog.create({
-      data: {
-        userEmail: user.email,
-        action: `Creó nuevo Tribunal: ${tribunal.nombre}`,
-      },
-    })
-
     return NextResponse.json({ ok: true, data: tribunal })
   } catch (error) {
     console.error('Error creating tribunal:', error)

@@ -4,7 +4,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getCurrentUserWithOffice } from '@/lib/auth-server'
 import { prisma } from '@/lib/prisma'
-import { logAudit } from '@/lib/audit'
 
 export const dynamic = 'force-dynamic'
 
@@ -189,15 +188,6 @@ export async function POST(req: NextRequest) {
           },
         },
       },
-    })
-
-    await logAudit({
-      userEmail: user.email,
-      userId: user.id,
-      officeId: officeIdStr,
-      tabla: 'RolCausa',
-      accion: 'Creó nuevo RolCausa',
-      diff: { id: rolCausa.id, rol: rolCausa.rol },
     })
 
     return NextResponse.json({ ok: true, data: rolCausa })

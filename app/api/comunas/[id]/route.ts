@@ -61,13 +61,6 @@ export async function PUT(
       data: parsed.data,
     })
 
-    await prisma.auditLog.create({
-      data: {
-        userEmail: user.email,
-        action: `Actualizó Comuna: ${comuna.nombre}`,
-      },
-    })
-
     return NextResponse.json({ ok: true, data: comuna })
   } catch (error) {
     console.error('Error updating comuna:', error)
@@ -118,13 +111,6 @@ export async function DELETE(
 
     await prisma.comuna.delete({
       where: { id },
-    })
-
-    await prisma.auditLog.create({
-      data: {
-        userEmail: user.email,
-        action: `Eliminó Comuna: ${existingComuna.nombre}`,
-      },
     })
 
     return NextResponse.json({ ok: true, message: 'Comuna eliminada correctamente' })

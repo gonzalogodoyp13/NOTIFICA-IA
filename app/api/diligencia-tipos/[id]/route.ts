@@ -17,25 +17,24 @@ export async function PUT(
 
     if (!user) {
       return NextResponse.json(
-        { ok: false, error: 'No autorizado' },
+        { ok: false, message: 'No autorizado', error: 'No autorizado' },
         { status: 401 }
       )
     }
 
-    const officeIdStr = String(user.officeId)
     const id = params.id
 
     // Verify diligencia exists and belongs to user's office
     const existingDiligencia = await prisma.diligenciaTipo.findFirst({
       where: {
         id,
-        officeId: officeIdStr,
+        officeId: user.officeId,
       },
     })
 
     if (!existingDiligencia) {
       return NextResponse.json(
-        { ok: false, error: 'Tipo de diligencia no encontrado' },
+        { ok: false, message: 'Tipo de diligencia no encontrado o no pertenece a tu oficina', error: 'Tipo de diligencia no encontrado o no pertenece a tu oficina' },
         { status: 404 }
       )
     }
@@ -44,8 +43,9 @@ export async function PUT(
     const parsed = DiligenciaTipoSchema.safeParse(body)
 
     if (!parsed.success) {
+      const errorMessage = parsed.error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')
       return NextResponse.json(
-        { ok: false, error: parsed.error.errors },
+        { ok: false, message: errorMessage, error: errorMessage },
         { status: 400 }
       )
     }
@@ -55,18 +55,12 @@ export async function PUT(
       data: parsed.data,
     })
 
-    await prisma.auditLog.create({
-      data: {
-        userEmail: user.email,
-        action: `Actualizó Tipo de Diligencia: ${diligencia.nombre}`,
-      },
-    })
-
     return NextResponse.json({ ok: true, data: diligencia })
   } catch (error) {
     console.error('Error updating diligencia tipo:', error)
+    const errorMessage = error instanceof Error ? error.message : 'Error al actualizar el tipo de diligencia'
     return NextResponse.json(
-      { ok: false, error: 'Error al actualizar el tipo de diligencia' },
+      { ok: false, message: errorMessage, error: errorMessage },
       { status: 500 }
     )
   }
@@ -81,25 +75,24 @@ export async function DELETE(
 
     if (!user) {
       return NextResponse.json(
-        { ok: false, error: 'No autorizado' },
+        { ok: false, message: 'No autorizado', error: 'No autorizado' },
         { status: 401 }
       )
     }
 
-    const officeIdStr = String(user.officeId)
     const id = params.id
 
     // Verify diligencia exists and belongs to user's office
     const existingDiligencia = await prisma.diligenciaTipo.findFirst({
       where: {
         id,
-        officeId: officeIdStr,
+        officeId: user.officeId,
       },
     })
 
     if (!existingDiligencia) {
       return NextResponse.json(
-        { ok: false, error: 'Tipo de diligencia no encontrado' },
+        { ok: false, message: 'Tipo de diligencia no encontrado o no pertenece a tu oficina', error: 'Tipo de diligencia no encontrado o no pertenece a tu oficina' },
         { status: 404 }
       )
     }
@@ -108,18 +101,12 @@ export async function DELETE(
       where: { id },
     })
 
-    await prisma.auditLog.create({
-      data: {
-        userEmail: user.email,
-        action: `Eliminó Tipo de Diligencia: ${existingDiligencia.nombre}`,
-      },
-    })
-
     return NextResponse.json({ ok: true, message: 'Tipo de diligencia eliminado correctamente' })
   } catch (error) {
     console.error('Error deleting diligencia tipo:', error)
+    const errorMessage = error instanceof Error ? error.message : 'Error al eliminar el tipo de diligencia'
     return NextResponse.json(
-      { ok: false, error: 'Error al eliminar el tipo de diligencia' },
+      { ok: false, message: errorMessage, error: errorMessage },
       { status: 500 }
     )
   }
