@@ -16,12 +16,10 @@ export async function GET(
       return NextResponse.json({ ok: false, error: 'No autorizado' }, { status: 401 })
     }
 
-    const officeIdStr = String(user.officeId)
-
     const rol = await prisma.rolCausa.findFirst({
       where: {
         id: params.id,
-        officeId: officeIdStr,
+        officeId: user.officeId,
       },
       select: { id: true },
     })

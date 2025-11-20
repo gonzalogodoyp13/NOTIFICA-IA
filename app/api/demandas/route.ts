@@ -111,64 +111,151 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    // Create Demanda with ejecutados if provided
-    // Use Prisma's cuid() for id generation (no manual crypto)
-    console.log('[POST /api/demandas] Creating demanda...')
-    const demanda = await prisma.demanda.create({
-      data: {
-        rol,
-        tribunalId: tribunalIdInt, // Use validated Int tribunalId
-        caratula,
-        cuantia: cuantia ? parseFloat(cuantia) : 0,
-        abogadoId: parseInt(abogadoId),
-        officeId,
-        userId: user.id,
-        ejecutados: ejecutados && ejecutados.length > 0 ? {
-          create: ejecutados.map((ej: any) => ({
-            nombre: ej.nombre,
-            rut: ej.rut,
-            direccion: ej.direccion || null,
-            comunaId: ej.comunaId ? parseInt(ej.comunaId) : null,
-          })),
-        } : undefined,
-      },
-      include: {
-        tribunales: {
-          select: {
-            id: true,
-            nombre: true,
-          },
+    // Helper function to find or create Tribunal from tribunales
+    const findOrCreateTribunal = async (tribunalesId: number, officeId: number) => {
+      // First, try to find existing Tribunal with same name and officeId
+      const tribunalesRecord = await prisma.tribunales.findUnique({
+        where: { id: tribunalesId },
+      })
+
+      if (!tribunalesRecord) {
+        throw new Error('Tribunal no encontrado')
+      }
+
+      // Try to find existing Tribunal with same nombre and officeId
+      let tribunal = await prisma.tribunal.findFirst({
+        where: {
+          nombre: tribunalesRecord.nombre,
+          officeId: officeId,
         },
-        abogados: {
-          select: {
-            id: true,
-            nombre: true,
+      })
+
+      // If not found, create new Tribunal
+      if (!tribunal) {
+        tribunal = await prisma.tribunal.create({
+          data: {
+            nombre: tribunalesRecord.nombre,
+            direccion: tribunalesRecord.direccion,
+            comuna: tribunalesRecord.comuna,
+            officeId: officeId,
           },
+        })
+        console.log(`[POST /api/demandas] Created new Tribunal:`, { id: tribunal.id, nombre: tribunal.nombre })
+      }
+
+      return tribunal
+    }
+
+    // Create Demanda and RolCausa in a transaction
+    console.log('[POST /api/demandas] Creating demanda and rolCausa...')
+    
+    const result = await prisma.$transaction(async (tx) => {
+      // 1. Create Demanda
+      const demanda = await tx.demanda.create({
+        data: {
+          rol,
+          tribunalId: tribunalIdInt, // Use validated Int tribunalId
+          caratula,
+          cuantia: cuantia ? parseFloat(cuantia) : 0,
+          abogadoId: parseInt(abogadoId),
+          officeId,
+          userId: user.id,
+          ejecutados: ejecutados && ejecutados.length > 0 ? {
+            create: ejecutados.map((ej: any) => ({
+              nombre: ej.nombre,
+              rut: ej.rut,
+              direccion: ej.direccion || null,
+              comunaId: ej.comunaId ? parseInt(ej.comunaId) : null,
+            })),
+          } : undefined,
         },
-        ejecutados: {
-          include: {
-            comunas: {
-              select: {
-                id: true,
-                nombre: true,
+        include: {
+          tribunales: {
+            select: {
+              id: true,
+              nombre: true,
+            },
+          },
+          abogados: {
+            select: {
+              id: true,
+              nombre: true,
+            },
+          },
+          ejecutados: {
+            include: {
+              comunas: {
+                select: {
+                  id: true,
+                  nombre: true,
+                },
               },
             },
           },
         },
-      },
+      })
+
+      // 2. Find or create Tribunal (String ID) from tribunales (Int ID)
+      const tribunal = await findOrCreateTribunal(tribunalIdInt, officeId)
+
+      // 3. Check if RolCausa already exists (should not, but safety check)
+      const existingRolCausa = await tx.rolCausa.findUnique({
+        where: { id: demanda.id },
+      })
+
+      if (existingRolCausa) {
+        console.log(`[POST /api/demandas] ⚠️ RolCausa already exists for demanda.id ${demanda.id}, updating...`)
+        // Update existing RolCausa
+        await tx.rolCausa.update({
+          where: { id: demanda.id },
+          data: {
+            demandaId: demanda.id,
+            rol: demanda.rol,
+            officeId: demanda.officeId,
+            tribunalId: tribunal.id,
+            estado: 'pendiente',
+          },
+        })
+      } else {
+        // 4. Create RolCausa with the same ID as Demanda
+        await tx.rolCausa.create({
+          data: {
+            id: demanda.id, // Same ID as Demanda
+            demandaId: demanda.id, // Auto-reference
+            rol: demanda.rol,
+            officeId: demanda.officeId,
+            tribunalId: tribunal.id, // String ID from Tribunal
+            estado: 'pendiente',
+            createdAt: demanda.createdAt,
+          },
+        })
+        console.log(`[POST /api/demandas] ✅ Created RolCausa with id: ${demanda.id}`)
+      }
+
+      return demanda
     })
+
+    const demanda = result
 
     if (process.env.NODE_ENV === 'development') {
       console.log(`[POST /api/demandas] ✅ Demanda created successfully:`, {
         id: demanda.id,
         rol: demanda.rol,
         officeId: demanda.officeId,
+        rolId: demanda.id, // Same as demanda.id
       })
     } else {
       console.log('[POST /api/demandas] Demanda created successfully:', demanda.id)
     }
 
-    return NextResponse.json({ ok: true, data: demanda })
+    // Return response with rolId for frontend
+    return NextResponse.json({ 
+      ok: true, 
+      data: {
+        ...demanda,
+        rolId: demanda.id, // Same ID as demanda.id for frontend navigation
+      }
+    })
   } catch (error: any) {
     console.error('[POST /api/demandas] Error creating demanda:', error)
     console.error('[POST /api/demandas] Error details:', {

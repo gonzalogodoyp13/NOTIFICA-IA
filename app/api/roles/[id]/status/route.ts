@@ -46,12 +46,11 @@ export async function PUT(
     }
 
     const { estado: nextEstado } = parsed.data
-    const officeIdStr = String(user.officeId)
 
     const rol = await prisma.rolCausa.findFirst({
       where: {
         id: params.id,
-        officeId: officeIdStr,
+        officeId: user.officeId,
       },
     })
 
