@@ -153,8 +153,8 @@ model tribunales {
 }
 
 model RolCausa {
-  id          String       @id @default(cuid())
-  demandaId   String?
+  id          String       @id  // Sin @default - el ID vendrá de Demanda
+  demandaId   String?      @unique  // Asegurar 1:1 cuando existe
   officeId    Int
   rol         String
   tribunalId  String

@@ -16,12 +16,10 @@ export async function GET(
       return NextResponse.json({ ok: false, error: 'No autorizado' }, { status: 401 })
     }
 
-    const officeIdStr = String(user.officeId)
-
     const rol = await prisma.rolCausa.findFirst({
       where: {
         id: params.id,
-        officeId: officeIdStr,
+        officeId: user.officeId,
       },
       select: { id: true },
     })
@@ -35,8 +33,15 @@ export async function GET(
 
     const auditLogs = await prisma.auditLog.findMany({
       where: {
-        action: {
+        accion: {
           contains: `[ROL:${rol.id}]`,
+        },
+      },
+      include: {
+        user: {
+          select: {
+            email: true,
+          },
         },
       },
       orderBy: { createdAt: 'desc' },
@@ -45,8 +50,8 @@ export async function GET(
 
     const data = auditLogs.map(log => ({
       id: log.id,
-      userEmail: log.userEmail,
-      accion: log.action,
+      userEmail: log.user.email,
+      accion: log.accion,
       createdAt: log.createdAt.toISOString(),
     }))
 
