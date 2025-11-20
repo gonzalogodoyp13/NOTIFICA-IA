@@ -2,6 +2,7 @@
 // This layout ensures all child routes require authentication
 import { redirect } from 'next/navigation'
 import { getSession } from '@/lib/auth-server'
+import TopBar from './_components/TopBar'
 
 export const dynamic = 'force-dynamic'
 
@@ -19,6 +20,11 @@ export default async function ProtectedLayout({
   }
 
   // Render children if authenticated
-  return <>{children}</>
+  return (
+    <>
+      <TopBar />
+      <main>{children}</main>
+    </>
+  )
 }
 
