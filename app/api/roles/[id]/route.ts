@@ -44,17 +44,27 @@ export async function GET(
           },
         },
         demanda: {
-          select: {
-            id: true,
-            cuantia: true,
-            caratula: true,
+          include: {
+            // @ts-expect-error - materia relation exists but Prisma client needs regeneration
+            materia: true,
+            ejecutados: {
+              include: {
+                comunas: {
+                  select: {
+                    id: true,
+                    nombre: true,
+                  },
+                },
+              },
+            },
             abogados: {
-              select: {
-                id: true,
-                nombre: true,
-                rut: true,
-                email: true,
-                telefono: true,
+              include: {
+                banco: {
+                  select: {
+                    id: true,
+                    nombre: true,
+                  },
+                },
               },
             },
           },
@@ -120,7 +130,7 @@ export async function GET(
           },
         },
       },
-    })
+    }) as any
 
     if (!rolCausa) {
       console.log(`[GET /api/roles/${params.id}] RolCausa not found or doesn't belong to user's office`)
@@ -156,6 +166,26 @@ export async function GET(
           id: rolCausa.demanda.id,
           cuantia: rolCausa.demanda.cuantia ?? null,
           caratula: rolCausa.demanda.caratula ?? null,
+          materia: rolCausa.demanda.materia
+            ? {
+                id: rolCausa.demanda.materia.id,
+                nombre: rolCausa.demanda.materia.nombre,
+              }
+            : null,
+          ejecutados: rolCausa.demanda.ejecutados
+            ? rolCausa.demanda.ejecutados.map((ej: any) => ({
+                id: ej.id,
+                nombre: ej.nombre,
+                rut: ej.rut,
+                direccion: ej.direccion ?? null,
+                comuna: ej.comunas
+                  ? {
+                      id: ej.comunas.id,
+                      nombre: ej.comunas.nombre,
+                    }
+                  : null,
+              }))
+            : [],
         }
       : null
 
@@ -167,33 +197,39 @@ export async function GET(
           rut: rolCausa.demanda.abogados.rut ?? null,
           email: rolCausa.demanda.abogados.email ?? null,
           telefono: rolCausa.demanda.abogados.telefono ?? null,
+          banco: rolCausa.demanda.abogados.banco
+            ? {
+                id: rolCausa.demanda.abogados.banco.id,
+                nombre: rolCausa.demanda.abogados.banco.nombre,
+              }
+            : null,
         }
       : null
 
     // Calculate ultimaActividad
     const allDates: Date[] = [
-      ...rolCausa.diligencias.map(d => d.createdAt),
-      ...rolCausa.documentos.map(d => d.createdAt),
-      ...rolCausa.notas.map(n => n.createdAt),
-      ...rolCausa.recibos.map(r => r.createdAt),
+      ...rolCausa.diligencias.map((d: any) => d.createdAt),
+      ...rolCausa.documentos.map((d: any) => d.createdAt),
+      ...rolCausa.notas.map((n: any) => n.createdAt),
+      ...rolCausa.recibos.map((r: any) => r.createdAt),
     ]
     const ultimaActividad =
       allDates.length > 0
-        ? new Date(Math.max(...allDates.map(d => d.getTime()))).toISOString()
+        ? new Date(Math.max(...allDates.map((d: any) => d.getTime()))).toISOString()
         : null
 
     // Calculate KPIs
     const kpis = {
       diligenciasTotal: rolCausa.diligencias.length,
-      diligenciasPendientes: rolCausa.diligencias.filter(d => d.estado === 'pendiente').length,
-      diligenciasCompletadas: rolCausa.diligencias.filter(d => d.estado === 'completada').length,
+      diligenciasPendientes: rolCausa.diligencias.filter((d: any) => d.estado === 'pendiente').length,
+      diligenciasCompletadas: rolCausa.diligencias.filter((d: any) => d.estado === 'completada').length,
       documentosTotal: rolCausa.documentos.length,
       notasTotal: rolCausa.notas.length,
       recibosTotal: rolCausa.recibos.length,
     }
 
     // Build resumen.diligencias
-    const resumenDiligencias = rolCausa.diligencias.map(d => ({
+    const resumenDiligencias = rolCausa.diligencias.map((d: any) => ({
       id: d.id,
       tipo: {
         id: d.tipo.id,
@@ -207,7 +243,7 @@ export async function GET(
     }))
 
     // Build resumen.documentos
-    const resumenDocumentos = rolCausa.documentos.map(doc => ({
+    const resumenDocumentos = rolCausa.documentos.map((doc: any) => ({
       id: doc.id,
       nombre: doc.nombre,
       tipo: doc.tipo,
@@ -230,7 +266,7 @@ export async function GET(
     }))
 
     // Build resumen.notas
-    const resumenNotas = rolCausa.notas.map(nota => ({
+    const resumenNotas = rolCausa.notas.map((nota: any) => ({
       id: nota.id,
       contenido: nota.contenido,
       userId: nota.userId,
@@ -238,7 +274,7 @@ export async function GET(
     }))
 
     // Build resumen.recibos
-    const resumenRecibos = rolCausa.recibos.map(recibo => ({
+    const resumenRecibos = rolCausa.recibos.map((recibo: any) => ({
       id: recibo.id,
       monto: Number(recibo.monto), // Convert Float to number
       medio: recibo.medio,

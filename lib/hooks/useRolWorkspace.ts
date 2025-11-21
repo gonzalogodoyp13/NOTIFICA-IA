@@ -82,11 +82,33 @@ const TribunalSchema = z
   })
   .nullable()
 
+const EjecutadoSchema = z.object({
+  id: z.string(),
+  nombre: z.string(),
+  rut: z.string(),
+  direccion: z.string().nullable().optional(),
+  comuna: z
+    .object({
+      id: z.number(),
+      nombre: z.string(),
+    })
+    .nullable()
+    .optional(),
+})
+
 const DemandaSchema = z
   .object({
     id: z.string(),
     cuantia: z.number().nullable().optional(),
     caratula: z.string().nullable().optional(),
+    materia: z
+      .object({
+        id: z.number(),
+        nombre: z.string(),
+      })
+      .nullable()
+      .optional(),
+    ejecutados: z.array(EjecutadoSchema).optional(),
   })
   .nullable()
 
@@ -97,6 +119,13 @@ const AbogadoSchema = z
     rut: z.string().nullable().optional(),
     email: z.string().nullable().optional(),
     telefono: z.string().nullable().optional(),
+    banco: z
+      .object({
+        id: z.number(),
+        nombre: z.string(),
+      })
+      .nullable()
+      .optional(),
   })
   .nullable()
 

@@ -92,6 +92,8 @@ model Materia {
   nombre    String
   createdAt DateTime @default(now())
 
+  demandas  Demanda[]
+
   @@index([officeId])
   @@map("materias")
 }
@@ -102,6 +104,8 @@ model Demanda {
   tribunalId Int
   caratula   String
   cuantia    Float
+  materiaId  Int?
+  materia    Materia?   @relation(fields: [materiaId], references: [id])
   abogadoId  Int
   officeId   Int
   userId     String

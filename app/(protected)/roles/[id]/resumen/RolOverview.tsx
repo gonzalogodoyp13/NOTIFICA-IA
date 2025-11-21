@@ -1,5 +1,6 @@
 import { Fragment, type ReactNode } from 'react'
 import { type RolWorkspaceData } from '@/lib/hooks/useRolWorkspace'
+import EjecutadoSelector from './EjecutadoSelector'
 
 interface RolOverviewProps {
   rolData?: RolWorkspaceData
@@ -45,6 +46,73 @@ export default function RolOverview({ rolData, isRolLoading, isRolError }: RolOv
         <p className="mt-4 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
           No fue posible obtener el resumen. Intenta recargar la página.
         </p>
+      )}
+
+      {/* Ficha del ROL */}
+      {!isRolLoading && !isRolError && rolData?.demanda && (
+        <div className="mt-6 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+          <h3 className="text-sm font-semibold text-slate-700 mb-4">Ficha del ROL</h3>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* Carátula / Demandante */}
+            <div>
+              <p className="text-xs text-slate-500">Carátula / Demandante</p>
+              <p className="font-medium text-slate-900">
+                {rolData.demanda.caratula ?? '—'}
+              </p>
+            </div>
+
+            {/* Tribunal */}
+            <div>
+              <p className="text-xs text-slate-500">Tribunal</p>
+              <p className="font-medium text-slate-900">
+                {rolData.tribunal?.nombre ?? '—'}
+              </p>
+            </div>
+
+            {/* Materia */}
+            <div>
+              <p className="text-xs text-slate-500">Materia</p>
+              <p className="font-medium text-slate-900">
+                {rolData.demanda.materia?.nombre ?? '—'}
+              </p>
+            </div>
+
+            {/* Cuantía */}
+            <div>
+              <p className="text-xs text-slate-500">Cuantía</p>
+              <p className="font-medium text-slate-900">
+                {rolData.demanda.cuantia
+                  ? new Intl.NumberFormat('es-CL', {
+                      style: 'currency',
+                      currency: 'CLP',
+                    }).format(rolData.demanda.cuantia)
+                  : '—'}
+              </p>
+            </div>
+
+            {/* Abogado */}
+            <div>
+              <p className="text-xs text-slate-500">Abogado</p>
+              <p className="font-medium text-slate-900">
+                {rolData.abogado?.nombre ?? '—'}
+              </p>
+            </div>
+
+            {/* Banco del abogado */}
+            <div>
+              <p className="text-xs text-slate-500">Banco</p>
+              <p className="font-medium text-slate-900">
+                {rolData.abogado?.banco?.nombre ?? '—'}
+              </p>
+            </div>
+          </div>
+
+          {/* Ejecutados */}
+          {rolData.demanda.ejecutados && rolData.demanda.ejecutados.length > 0 && (
+            <EjecutadoSelector ejecutados={rolData.demanda.ejecutados} />
+          )}
+        </div>
       )}
 
       {!isRolLoading && !isRolError && kpis && (

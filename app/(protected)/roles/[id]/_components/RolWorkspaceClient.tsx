@@ -41,7 +41,9 @@ export default function RolWorkspaceClient({ rolId }: RolWorkspaceClientProps) {
       </div>
       <main className="flex-1 space-y-4 p-6">
         <div className="text-sm text-slate-500">
-          Trabajando en el ROL <span className="font-semibold text-slate-700">{rolId}</span>
+          Trabajando en el ROL <span className="font-semibold text-slate-700">
+            {rolData?.rol?.numero ?? rolId}
+          </span>
         </div>
         {isError && (
           <div className="rounded-md border border-red-200 bg-red-50 p-4 text-sm text-red-700">
