@@ -25,7 +25,7 @@ export async function POST(req: NextRequest) {
     const body = await req.json()
     console.log('[POST /api/demandas] Request body:', JSON.stringify(body, null, 2))
     
-    const { rol, tribunalId, caratula, cuantia, abogadoId, ejecutados } = body
+    const { rol, tribunalId, caratula, cuantia, abogadoId, materiaId, ejecutados } = body
 
     // Validate required fields
     if (!rol || !tribunalId || !caratula || !abogadoId) {
@@ -99,6 +99,23 @@ export async function POST(req: NextRequest) {
       )
     }
 
+    // Verify materiaId if provided
+    if (materiaId) {
+      const materia = await prisma.materia.findFirst({
+        where: {
+          id: parseInt(materiaId),
+          officeId: user.officeId,
+        },
+      })
+
+      if (!materia) {
+        return NextResponse.json(
+          { ok: false, error: 'Materia no encontrada o no pertenece a tu oficina' },
+          { status: 400 }
+        )
+      }
+    }
+
     // Check if ROL already exists
     const existingDemanda = await prisma.demanda.findUnique({
       where: { rol },
@@ -158,6 +175,7 @@ export async function POST(req: NextRequest) {
           caratula,
           cuantia: cuantia ? parseFloat(cuantia) : 0,
           abogadoId: parseInt(abogadoId),
+          materiaId: materiaId ? parseInt(materiaId) : null,
           officeId,
           userId: user.id,
           ejecutados: ejecutados && ejecutados.length > 0 ? {
