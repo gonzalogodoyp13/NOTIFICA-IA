@@ -1,10 +1,11 @@
-// Nueva Demanda page
-// Full form to create a new Demanda with all related data
+// Editar Demanda page
+// Allows editing an existing Demanda (including ROL number)
+// Reuses form structure from /demandas/nueva
+// TODO: Refactor form into shared component for reuse
 'use client'
 
 import { useEffect, useState, useMemo } from 'react'
-import { useRouter } from 'next/navigation'
-import Topbar from '@/components/Topbar'
+import { useRouter, useParams } from 'next/navigation'
 import Link from 'next/link'
 
 interface Banco {
@@ -37,9 +38,51 @@ interface Comuna {
   nombre: string
 }
 
-export default function NuevaDemandaPage() {
+interface RolData {
+  rol: {
+    id: string
+    numero: string
+    estado: string
+  }
+  demanda: {
+    id: string
+    caratula: string | null
+    cuantia: number | null
+    materia: {
+      id: number
+      nombre: string
+    } | null
+    ejecutados?: Array<{
+      id: string
+      nombre: string
+      rut: string
+      direccion: string | null
+      comuna: {
+        id: number
+        nombre: string
+      } | null
+    }>
+  } | null
+  tribunal: {
+    id: string
+    nombre: string
+  } | null
+  abogado: {
+    id: number | null
+    nombre: string | null
+    banco: {
+      id: number
+      nombre: string
+    } | null
+  } | null
+}
+
+export default function EditarDemandaPage() {
   const router = useRouter()
+  const params = useParams()
+  const rolId = params.id as string
   const [loading, setLoading] = useState(false)
+  const [loadingData, setLoadingData] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [bancos, setBancos] = useState<Banco[]>([])
   const [bancoId, setBancoId] = useState<string>('')
@@ -49,11 +92,13 @@ export default function NuevaDemandaPage() {
   const [materias, setMaterias] = useState<Materia[]>([])
   const [comunas, setComunas] = useState<Comuna[]>([])
   const [ejecutados, setEjecutados] = useState<Array<{
+    id?: string
     nombre: string
     rut: string
     direccion: string
     comunaId: string
-  }>>([{ nombre: '', rut: '', direccion: '', comunaId: '' }])
+  }>>([])
+  const [rolData, setRolData] = useState<RolData | null>(null)
 
   const [formData, setFormData] = useState({
     rol: '',
@@ -73,8 +118,87 @@ export default function NuevaDemandaPage() {
   }, [bancoId, bancos])
 
   useEffect(() => {
-    fetchOptions()
-  }, [])
+    if (rolId) {
+      fetchRolData()
+      fetchOptions()
+    }
+  }, [rolId])
+
+  const fetchRolData = async () => {
+    try {
+      setLoadingData(true)
+      const response = await fetch(`/api/roles/${rolId}`, {
+        credentials: 'include',
+      })
+
+      if (!response.ok) {
+        throw new Error('Error al cargar los datos del ROL')
+      }
+
+      const data = await response.json()
+      if (data.ok && data.data) {
+        setRolData(data.data)
+        
+        // Pre-fill form with current data
+        const rol = data.data
+        setFormData({
+          rol: rol.rol?.numero || '',
+          tribunalId: '', // Will be set after finding matching tribunales
+          cuantia: rol.demanda?.cuantia ? String(rol.demanda.cuantia) : '',
+          abogadoId: rol.abogado?.id ? String(rol.abogado.id) : '',
+          materiaId: rol.demanda?.materia?.id ? String(rol.demanda.materia.id) : '',
+        })
+
+        // Find matching tribunales by nombre
+        if (rol.tribunal?.nombre) {
+          const tribunalesRes = await fetch('/api/tribunales', {
+            credentials: 'include',
+          })
+          if (tribunalesRes.ok) {
+            const tribunalesData = await tribunalesRes.json()
+            if (tribunalesData.ok && tribunalesData.data) {
+              const matchingTribunal = tribunalesData.data.find(
+                (t: Tribunal) => t.nombre === rol.tribunal?.nombre
+              )
+              if (matchingTribunal) {
+                setFormData(prev => ({
+                  ...prev,
+                  tribunalId: String(matchingTribunal.id),
+                }))
+              }
+            }
+          }
+        }
+
+        // Pre-fill banco: Priority 1 - from abogado.banco.id
+        // Priority 2 - match by caratula nombre (will be done in fetchOptions after bancos load)
+        if (rol.abogado?.banco?.id) {
+          setBancoId(String(rol.abogado.banco.id))
+        }
+
+        // Pre-fill ejecutados from demanda.ejecutados
+        if (rol.demanda?.ejecutados && rol.demanda.ejecutados.length > 0) {
+          const ejecutadosData = rol.demanda.ejecutados.map((ej: { id: string; nombre: string; rut: string; direccion: string | null; comuna: { id: number; nombre: string } | null }) => ({
+            id: ej.id, // Preservar ID de ejecutados existentes
+            nombre: ej.nombre || '',
+            rut: ej.rut || '',
+            direccion: ej.direccion || '',
+            comunaId: ej.comuna?.id ? String(ej.comuna.id) : '',
+          }))
+          setEjecutados(ejecutadosData)
+        } else {
+          // No ejecutados or empty array - initialize with empty array
+          setEjecutados([])
+        }
+      } else {
+        throw new Error(data.error || 'Error al cargar los datos del ROL')
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error desconocido')
+    } finally {
+      setLoadingData(false)
+    }
+  }
 
   const fetchOptions = async () => {
     try {
@@ -86,17 +210,51 @@ export default function NuevaDemandaPage() {
         fetch('/api/comunas', { credentials: 'include' }),
       ])
 
+      let bancosData: Banco[] = []
+      let abogadosData: Abogado[] = []
+      
       if (bancosRes.ok) {
         const data = await bancosRes.json()
-        if (data.ok) setBancos(data.data || [])
+        if (data.ok) {
+          bancosData = data.data || []
+          setBancos(bancosData)
+        }
       }
+      
       if (abogadosRes.ok) {
         const data = await abogadosRes.json()
         if (data.ok) {
-          const abogadosData = data.data || []
+          abogadosData = data.data || []
           setAllAbogados(abogadosData)
-          setAbogados(abogadosData) // Initially show all
         }
+      }
+      
+      // After both bancos and abogados are loaded, handle matching
+      // If bancoId not set yet, try to match by caratula (Priority 2)
+      if (!bancoId && rolData?.demanda?.caratula && bancosData.length > 0) {
+        const matchingBanco = bancosData.find(
+          (b: Banco) => b.nombre === rolData.demanda?.caratula
+        )
+        if (matchingBanco) {
+          setBancoId(String(matchingBanco.id))
+          // Filter abogados for this banco
+          if (abogadosData.length > 0) {
+            const filtered = abogadosData.filter((a: Abogado) => a.bancoId === matchingBanco.id)
+            setAbogados(filtered)
+          }
+        } else {
+          // No matching banco found, show all abogados
+          if (abogadosData.length > 0) {
+            setAbogados(abogadosData)
+          }
+        }
+      } else if (bancoId && abogadosData.length > 0) {
+        // Filter abogados if bancoId is already set
+        const filtered = abogadosData.filter((a: Abogado) => a.bancoId === Number(bancoId))
+        setAbogados(filtered)
+      } else if (abogadosData.length > 0) {
+        // No banco selected, show all abogados
+        setAbogados(abogadosData)
       }
       if (tribunalesRes.ok) {
         const data = await tribunalesRes.json()
@@ -113,20 +271,6 @@ export default function NuevaDemandaPage() {
     } catch (err) {
       console.error('Error loading options:', err)
     }
-  }
-
-  const addEjecutado = () => {
-    setEjecutados([...ejecutados, { nombre: '', rut: '', direccion: '', comunaId: '' }])
-  }
-
-  const removeEjecutado = (index: number) => {
-    setEjecutados(ejecutados.filter((_, i) => i !== index))
-  }
-
-  const updateEjecutado = (index: number, field: string, value: string) => {
-    const updated = [...ejecutados]
-    updated[index] = { ...updated[index], [field]: value }
-    setEjecutados(updated)
   }
 
   const handleBancoChange = (newBancoId: string) => {
@@ -180,6 +324,20 @@ export default function NuevaDemandaPage() {
     }
   }
 
+  const addEjecutado = () => {
+    setEjecutados([...ejecutados, { nombre: '', rut: '', direccion: '', comunaId: '' }])
+  }
+
+  const removeEjecutado = (index: number) => {
+    setEjecutados(ejecutados.filter((_, i) => i !== index))
+  }
+
+  const updateEjecutado = (index: number, field: string, value: string) => {
+    const updated = [...ejecutados]
+    updated[index] = { ...updated[index], [field]: value }
+    setEjecutados(updated)
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
@@ -192,24 +350,31 @@ export default function NuevaDemandaPage() {
       if (!formData.rol || !formData.tribunalId || !finalCaratula) {
         throw new Error('ROL, Tribunal y Banco son requeridos')
       }
-      
+
+      if (!rolData?.demanda?.id) {
+        throw new Error('No se pudo obtener el ID de la demanda')
+      }
+
+      // Normalize ejecutados: empty strings → null
+      const ejecutadosNormalized = ejecutados.map((ejecutado) => ({
+        nombre: ejecutado.nombre,
+        rut: ejecutado.rut,
+        direccion: ejecutado.direccion.trim() || null,
+        comunaId: ejecutado.comunaId ? Number(ejecutado.comunaId) : null,
+      }))
+
       const payload = {
         rol: formData.rol,
-        tribunalId: Number(formData.tribunalId), // Ensure numeric ID (Phase 3)
+        tribunalId: Number(formData.tribunalId),
         caratula: finalCaratula,
         cuantia: formData.cuantia ? Number(formData.cuantia) : null,
         abogadoId: formData.abogadoId ? Number(formData.abogadoId) : null,
         materiaId: formData.materiaId ? Number(formData.materiaId) : null,
-        ejecutados: ejecutados.map((ejecutado) => ({
-          nombre: ejecutado.nombre,
-          rut: ejecutado.rut,
-          direccion: ejecutado.direccion,
-          comunaId: ejecutado.comunaId ? Number(ejecutado.comunaId) : null,
-        })),
+        ejecutados: ejecutadosNormalized,
       }
 
-      const response = await fetch('/api/demandas', {
-        method: 'POST',
+      const response = await fetch(`/api/demandas/${rolData.demanda.id}`, {
+        method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
         credentials: 'include',
@@ -220,30 +385,63 @@ export default function NuevaDemandaPage() {
       if (!response.ok || !data.ok) {
         const errorMessage = Array.isArray(data.error)
           ? data.error.map((e: any) => e.message || JSON.stringify(e)).join(', ')
-          : (data.error || 'Error al crear la demanda')
+          : (data.error || 'Error al actualizar la demanda')
         throw new Error(errorMessage)
       }
 
-      router.push('/roles')
+      // Redirect to ROL workspace
+      router.push(`/roles/${rolId}`)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Error al crear la demanda')
+      setError(err instanceof Error ? err.message : 'Error al actualizar la demanda')
     } finally {
       setLoading(false)
     }
   }
 
+  if (loadingData) {
+    return (
+      <div className="min-h-screen bg-white">
+        <div className="pt-20 pb-16">
+          <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="text-center py-12">
+              <p className="text-gray-600">Cargando datos del ROL...</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  if (!rolData) {
+    return (
+      <div className="min-h-screen bg-white">
+        <div className="pt-20 pb-16">
+          <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+              <p className="text-red-800">{error || 'No se pudieron cargar los datos del ROL'}</p>
+              <Link
+                href={`/roles/${rolId}`}
+                className="mt-4 inline-block text-blue-600 hover:text-blue-800 font-medium"
+              >
+                ← Volver al ROL
+              </Link>
+            </div>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="min-h-screen bg-white">
-      <Topbar />
-      
       <main className="pt-20 pb-16">
         <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="mb-8">
             <h1 className="text-3xl font-semibold text-gray-900 mb-2">
-              Nueva Demanda
+              Editar Demanda
             </h1>
             <p className="text-gray-600">
-              Registra una nueva demanda en el sistema
+              Modifica los datos de la demanda del ROL {rolData.rol?.numero || rolId}
             </p>
           </div>
 
@@ -475,36 +673,36 @@ export default function NuevaDemandaPage() {
                   disabled={loading}
                   className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  {loading ? 'Guardando...' : 'Guardar Demanda'}
+                  {loading ? 'Guardando...' : 'Guardar Cambios'}
                 </button>
-                <Link
-                  href="/roles"
-                  className="px-6 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors font-medium"
-                >
-                  Cancelar
-                </Link>
-              </div>
-            </form>
-          </div>
-
-          <div className="mt-8 flex items-center gap-4 flex-wrap">
-            <Link
-              href="/roles"
-              className="text-blue-600 hover:text-blue-800 font-medium transition-colors inline-flex items-center gap-2"
-            >
-              ← Volver a Roles
-            </Link>
-            <span className="text-gray-400">•</span>
-            <Link
-              href="/dashboard"
-              className="text-blue-600 hover:text-blue-800 font-medium transition-colors inline-flex items-center gap-2"
-            >
-              ← Volver al Dashboard
-            </Link>
-          </div>
+              <Link
+                href={`/roles/${rolId}`}
+                className="px-6 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors font-medium"
+              >
+                Cancelar
+              </Link>
+            </div>
+          </form>
         </div>
-      </main>
-    </div>
-  )
+
+        <div className="mt-8 flex items-center gap-4 flex-wrap">
+          <Link
+            href={`/roles/${rolId}`}
+            className="text-blue-600 hover:text-blue-800 font-medium transition-colors inline-flex items-center gap-2"
+          >
+            ← Volver al ROL
+          </Link>
+          <span className="text-gray-400">•</span>
+          <Link
+            href="/roles"
+            className="text-blue-600 hover:text-blue-800 font-medium transition-colors inline-flex items-center gap-2"
+          >
+            ← Volver a Roles
+          </Link>
+        </div>
+      </div>
+    </main>
+  </div>
+)
 }
 
