@@ -1,4 +1,5 @@
 import { Fragment, type ReactNode } from 'react'
+import Link from 'next/link'
 import { type RolWorkspaceData } from '@/lib/hooks/useRolWorkspace'
 import EjecutadoSelector from './EjecutadoSelector'
 
@@ -21,7 +22,7 @@ const cards: Array<{
   { label: 'Recibos', getValue: kpis => kpis.recibosTotal },
 ]
 
-export default function RolOverview({ rolData, isRolLoading, isRolError }: RolOverviewProps) {
+export default function RolOverview({ rolData, isRolLoading, isRolError, rolId }: RolOverviewProps) {
   const kpis = rolData?.kpis
   const hasActivity =
     !!rolData &&
@@ -34,12 +35,22 @@ export default function RolOverview({ rolData, isRolLoading, isRolError }: RolOv
     <section className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
       <header className="flex items-center justify-between gap-4">
         <h2 className="text-lg font-semibold text-slate-900">Resumen del ROL</h2>
-        {isRolLoading && (
-          <span className="inline-flex items-center gap-2 text-xs text-slate-500">
-            <span className="h-2 w-2 animate-ping rounded-full bg-slate-400" />
-            Cargando...
-          </span>
-        )}
+        <div className="flex items-center gap-2">
+          {!isRolLoading && rolData?.demanda && (
+            <Link
+              href={`/roles/${rolId}/editar`}
+              className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
+            >
+              Editar Demanda
+            </Link>
+          )}
+          {isRolLoading && (
+            <span className="inline-flex items-center gap-2 text-xs text-slate-500">
+              <span className="h-2 w-2 animate-ping rounded-full bg-slate-400" />
+              Cargando...
+            </span>
+          )}
+        </div>
       </header>
 
       {isRolError && (
