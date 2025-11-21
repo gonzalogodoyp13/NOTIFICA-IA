@@ -2,14 +2,24 @@
 // Full form to create a new Demanda with all related data
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import Topbar from '@/components/Topbar'
 import Link from 'next/link'
 
+interface Banco {
+  id: number
+  nombre: string
+}
+
 interface Abogado {
   id: number
   nombre: string | null
+  bancoId: number | null
+  banco: {
+    id: number
+    nombre: string
+  } | null
 }
 
 interface Tribunal {
@@ -31,7 +41,10 @@ export default function NuevaDemandaPage() {
   const router = useRouter()
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [bancos, setBancos] = useState<Banco[]>([])
+  const [bancoId, setBancoId] = useState<string>('')
   const [abogados, setAbogados] = useState<Abogado[]>([])
+  const [allAbogados, setAllAbogados] = useState<Abogado[]>([]) // Store all abogados for filtering
   const [tribunales, setTribunales] = useState<Tribunal[]>([])
   const [materias, setMaterias] = useState<Materia[]>([])
   const [comunas, setComunas] = useState<Comuna[]>([])
@@ -45,11 +58,19 @@ export default function NuevaDemandaPage() {
   const [formData, setFormData] = useState({
     rol: '',
     tribunalId: '',
-    caratula: '',
     cuantia: '',
     abogadoId: '',
     materiaId: '',
   })
+
+  // Calculate caratula from selected banco
+  const caratula = useMemo(() => {
+    if (bancoId) {
+      const banco = bancos.find(b => b.id === Number(bancoId))
+      return banco?.nombre || ''
+    }
+    return ''
+  }, [bancoId, bancos])
 
   useEffect(() => {
     fetchOptions()
@@ -57,16 +78,25 @@ export default function NuevaDemandaPage() {
 
   const fetchOptions = async () => {
     try {
-      const [abogadosRes, tribunalesRes, materiasRes, comunasRes] = await Promise.all([
+      const [bancosRes, abogadosRes, tribunalesRes, materiasRes, comunasRes] = await Promise.all([
+        fetch('/api/bancos', { credentials: 'include' }),
         fetch('/api/abogados', { credentials: 'include' }),
         fetch('/api/tribunales', { credentials: 'include' }),
         fetch('/api/materias', { credentials: 'include' }),
         fetch('/api/comunas', { credentials: 'include' }),
       ])
 
+      if (bancosRes.ok) {
+        const data = await bancosRes.json()
+        if (data.ok) setBancos(data.data || [])
+      }
       if (abogadosRes.ok) {
         const data = await abogadosRes.json()
-        if (data.ok) setAbogados(data.data || [])
+        if (data.ok) {
+          const abogadosData = data.data || []
+          setAllAbogados(abogadosData)
+          setAbogados(abogadosData) // Initially show all
+        }
       }
       if (tribunalesRes.ok) {
         const data = await tribunalesRes.json()
@@ -99,20 +129,74 @@ export default function NuevaDemandaPage() {
     setEjecutados(updated)
   }
 
+  const handleBancoChange = (newBancoId: string) => {
+    setBancoId(newBancoId)
+    
+    if (!newBancoId) {
+      // Clear banco: reset abogados list and clear abogadoId
+      setAbogados(allAbogados)
+      setFormData(prev => ({ ...prev, abogadoId: '' }))
+      return
+    }
+
+    // Filter abogados by bancoId
+    const filteredAbogados = allAbogados.filter(a => a.bancoId === Number(newBancoId))
+    setAbogados(filteredAbogados)
+
+    // Auto-select if exactly 1 abogado
+    if (filteredAbogados.length === 1) {
+      setFormData(prev => ({ ...prev, abogadoId: String(filteredAbogados[0].id) }))
+    } else {
+      // Clear abogadoId if 0 or >1 abogados
+      setFormData(prev => ({ ...prev, abogadoId: '' }))
+    }
+  }
+
+  const handleAbogadoChange = (newAbogadoId: string) => {
+    setFormData(prev => ({ ...prev, abogadoId: newAbogadoId }))
+
+    if (!newAbogadoId) {
+      // If clearing abogado and no banco selected, clear everything
+      if (!bancoId) {
+        setBancoId('')
+      }
+      // If banco is selected, keep it
+      return
+    }
+
+    // Find selected abogado
+    const abogado = allAbogados.find(a => a.id === Number(newAbogadoId))
+    
+    if (abogado?.bancoId) {
+      // Auto-select banco from abogado
+      setBancoId(String(abogado.bancoId))
+      // Filter abogados to show only those from this banco
+      const filteredAbogados = allAbogados.filter(a => a.bancoId === abogado.bancoId)
+      setAbogados(filteredAbogados)
+    } else {
+      // Abogado has no banco: clear banco selection
+      setBancoId('')
+      setAbogados(allAbogados)
+    }
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
     setError(null)
 
     try {
-      if (!formData.rol || !formData.tribunalId || !formData.caratula) {
-        throw new Error('ROL, Tribunal y Carátula son requeridos')
+      // Calculate caratula from banco if not already set
+      const finalCaratula = caratula || (bancoId ? bancos.find(b => b.id === Number(bancoId))?.nombre || '' : '')
+      
+      if (!formData.rol || !formData.tribunalId || !finalCaratula) {
+        throw new Error('ROL, Tribunal y Banco son requeridos')
       }
       
       const payload = {
         rol: formData.rol,
         tribunalId: Number(formData.tribunalId), // Ensure numeric ID (Phase 3)
-        caratula: formData.caratula,
+        caratula: finalCaratula,
         cuantia: formData.cuantia ? Number(formData.cuantia) : null,
         abogadoId: formData.abogadoId ? Number(formData.abogadoId) : null,
         materiaId: formData.materiaId ? Number(formData.materiaId) : null,
@@ -181,21 +265,39 @@ export default function NuevaDemandaPage() {
                 />
               </div>
 
-              {/* Carátula */}
+              {/* Banco */}
               <div>
-                <label htmlFor="caratula" className="block text-sm font-medium text-gray-700 mb-2">
-                  Carátula *
+                <label htmlFor="bancoId" className="block text-sm font-medium text-gray-700 mb-2">
+                  Banco *
                 </label>
-                <input
-                  type="text"
-                  id="caratula"
+                <select
+                  id="bancoId"
                   required
-                  value={formData.caratula}
-                  onChange={(e) => setFormData({ ...formData, caratula: e.target.value })}
+                  value={bancoId}
+                  onChange={(e) => handleBancoChange(e.target.value)}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500"
-                  placeholder="Ej: Juan Pérez con Pedro González"
-                />
+                >
+                  <option value="">Seleccionar banco</option>
+                  {bancos.map((banco) => (
+                    <option key={banco.id} value={banco.id}>
+                      {banco.nombre}
+                    </option>
+                  ))}
+                </select>
+                {bancoId && abogados.length === 0 && (
+                  <p className="mt-1 text-xs text-amber-600">
+                    Este banco no tiene abogados asignados
+                  </p>
+                )}
               </div>
+
+              {/* Carátula (hidden, auto-calculated) */}
+              <input
+                type="hidden"
+                id="caratula"
+                required
+                value={caratula}
+              />
 
               {/* Tribunal */}
               <div>
@@ -226,7 +328,7 @@ export default function NuevaDemandaPage() {
                 <select
                   id="abogadoId"
                   value={formData.abogadoId}
-                  onChange={(e) => setFormData({ ...formData, abogadoId: e.target.value })}
+                  onChange={(e) => handleAbogadoChange(e.target.value)}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500"
                 >
                   <option value="">Seleccionar abogado (opcional)</option>

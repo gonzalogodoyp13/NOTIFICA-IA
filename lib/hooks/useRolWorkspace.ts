@@ -209,7 +209,7 @@ export function useRolData(rolId: string) {
     queryFn: () => fetcher(`/api/roles/${rolId}`, RolDataSchema),
     enabled: !!rolId,
     retry: false,
-    refetchInterval: 5000,
+    refetchInterval: 120000, // 2 minutes
   })
 }
 

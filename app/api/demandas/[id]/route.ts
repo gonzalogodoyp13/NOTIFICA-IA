@@ -29,7 +29,7 @@ export async function PUT(
     const body = await req.json()
     console.log(`[PUT /api/demandas/${params.id}] Request body:`, JSON.stringify(body, null, 2))
     
-    const { rol, tribunalId, caratula, cuantia, abogadoId, materiaId } = body
+    const { rol, tribunalId, caratula, cuantia, abogadoId, materiaId, ejecutados } = body
 
     // Validate required fields
     if (!rol || !tribunalId || !caratula) {
@@ -113,6 +113,43 @@ export async function PUT(
       }
     }
 
+    // Validate ejecutados if provided
+    if (ejecutados !== undefined) {
+      if (!Array.isArray(ejecutados)) {
+        return NextResponse.json(
+          { ok: false, error: 'ejecutados debe ser un array' },
+          { status: 400 }
+        )
+      }
+
+      // Validate each ejecutado
+      for (const ej of ejecutados) {
+        if (!ej.nombre || !ej.rut) {
+          return NextResponse.json(
+            { ok: false, error: 'Cada ejecutado debe tener nombre y rut' },
+            { status: 400 }
+          )
+        }
+
+        // Validate comunaId if provided
+        if (ej.comunaId !== null && ej.comunaId !== undefined) {
+          const comuna = await prisma.comuna.findFirst({
+            where: {
+              id: typeof ej.comunaId === 'string' ? parseInt(ej.comunaId) : ej.comunaId,
+              officeId: user.officeId,
+            },
+          })
+
+          if (!comuna) {
+            return NextResponse.json(
+              { ok: false, error: `Comuna con ID ${ej.comunaId} no encontrada o no pertenece a tu oficina` },
+              { status: 400 }
+            )
+          }
+        }
+      }
+    }
+
     // Check if ROL changed
     const rolChanged = demanda.rol !== rol
 
@@ -166,7 +203,29 @@ export async function PUT(
         },
       })
 
-      // 2. If ROL changed, update RolCausa.rol
+      // 2. Replace ejecutados (FULL REPLACEMENT strategy)
+      if (ejecutados !== undefined) {
+        // Delete all existing ejecutados for this demanda
+        await tx.ejecutado.deleteMany({
+          where: { demandaId: params.id },
+        })
+        
+        // Create new ejecutados from incoming array
+        if (ejecutados.length > 0) {
+          await tx.ejecutado.createMany({
+            data: ejecutados.map((ej: any) => ({
+              demandaId: params.id,
+              nombre: ej.nombre,
+              rut: ej.rut,
+              direccion: ej.direccion || null,
+              comunaId: ej.comunaId || null,
+            })),
+          })
+        }
+        console.log(`[PUT /api/demandas/${params.id}] ✅ Replaced ${ejecutados.length} ejecutados`)
+      }
+
+      // 3. If ROL changed, update RolCausa.rol
       if (rolChanged) {
         const rolCausa = await tx.rolCausa.findFirst({
           where: {

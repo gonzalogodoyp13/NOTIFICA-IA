@@ -24,6 +24,7 @@ export async function GET() {
       include: {
         banco: {
           select: {
+            id: true,
             nombre: true,
           },
         },
