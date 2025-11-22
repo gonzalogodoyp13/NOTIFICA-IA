@@ -4,6 +4,7 @@ import { PDFDocument, StandardFonts } from 'pdf-lib'
 import { getCurrentUserWithOffice } from '@/lib/auth-server'
 import { prisma } from '@/lib/prisma'
 import { EstampoGenerateSchema } from '@/lib/validations/rol-workspace'
+import { formatCuantiaCLP } from '@/lib/utils/cuantia'
 
 export const dynamic = 'force-dynamic'
 
@@ -11,7 +12,12 @@ function replaceVariables(template: string, variables?: Record<string, string>) 
   if (!variables) return template
   let result = template
   Object.entries(variables).forEach(([key, value]) => {
-    result = result.replaceAll(`$${key}`, value ?? '')
+    if (key === 'cuantia' && value) {
+      // Si viene como número, formatear; si ya es string, intentar parsear y formatear
+      const numVal = typeof value === 'number' ? value : parseFloat(String(value))
+      value = !isNaN(numVal) ? formatCuantiaCLP(numVal) : String(value ?? '')
+    }
+    result = result.replaceAll(`$${key}`, String(value ?? ''))
   })
   return result
 }
@@ -57,7 +63,15 @@ export async function POST(
         },
       },
       include: {
-        rol: true,
+        rol: {
+          include: {
+            demanda: {
+              select: {
+                cuantia: true,
+              },
+            },
+          },
+        },
       },
     })
 
@@ -91,9 +105,16 @@ export async function POST(
     }
 
     const template = estampo.contenido || 'Estampo generado para $rol'
+    
+    // Preparar variables, agregando cuantía de la demanda si no viene en variables
+    const variablesWithCuantia = { ...(data.variables ?? {}) }
+    if (!variablesWithCuantia.cuantia && diligencia.rol.demanda?.cuantia) {
+      variablesWithCuantia.cuantia = String(diligencia.rol.demanda.cuantia)
+    }
+    
     const filled = replaceVariables(template, {
       rol: diligencia.rol.rol,
-      ...(data.variables ?? {}),
+      ...variablesWithCuantia,
     })
 
     const pdfBase64 = await buildEstampoPdf(filled)

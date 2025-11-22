@@ -3,6 +3,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getCurrentUserWithOffice } from '@/lib/auth-server'
 import { prisma } from '@/lib/prisma'
+import { parseCuantiaForStorage } from '@/lib/utils/cuantia'
 
 export const dynamic = 'force-dynamic'
 
@@ -173,7 +174,7 @@ export async function POST(req: NextRequest) {
           rol,
           tribunalId: tribunalIdInt, // Use validated Int tribunalId
           caratula,
-          cuantia: cuantia ? parseFloat(cuantia) : 0,
+          cuantia: parseCuantiaForStorage(cuantia),
           abogadoId: parseInt(abogadoId),
           materiaId: materiaId ? parseInt(materiaId) : null,
           officeId,
