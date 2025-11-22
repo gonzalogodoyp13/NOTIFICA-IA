@@ -6,6 +6,7 @@ import { useEffect, useState, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import Topbar from '@/components/Topbar'
 import Link from 'next/link'
+import { cleanCuantiaInput } from '@/lib/utils/cuantia'
 
 interface Banco {
   id: number
@@ -197,7 +198,7 @@ export default function NuevaDemandaPage() {
         rol: formData.rol,
         tribunalId: Number(formData.tribunalId), // Ensure numeric ID (Phase 3)
         caratula: finalCaratula,
-        cuantia: formData.cuantia ? Number(formData.cuantia) : null,
+        cuantia: formData.cuantia ? cleanCuantiaInput(formData.cuantia) : null,
         abogadoId: formData.abogadoId ? Number(formData.abogadoId) : null,
         materiaId: formData.materiaId ? Number(formData.materiaId) : null,
         ejecutados: ejecutados.map((ejecutado) => ({
@@ -366,14 +367,12 @@ export default function NuevaDemandaPage() {
                   Cuantía
                 </label>
                 <input
-                  type="number"
+                  type="text"
                   id="cuantia"
-                  step="0.01"
-                  min="0"
                   value={formData.cuantia}
                   onChange={(e) => setFormData({ ...formData, cuantia: e.target.value })}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500"
-                  placeholder="0.00"
+                  placeholder="Ej: 4.000.000"
                 />
               </div>
 

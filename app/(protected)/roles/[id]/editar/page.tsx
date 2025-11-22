@@ -7,6 +7,7 @@
 import { useEffect, useState, useMemo } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import Link from 'next/link'
+import { cleanCuantiaInput } from '@/lib/utils/cuantia'
 
 interface Banco {
   id: number
@@ -144,7 +145,7 @@ export default function EditarDemandaPage() {
         setFormData({
           rol: rol.rol?.numero || '',
           tribunalId: '', // Will be set after finding matching tribunales
-          cuantia: rol.demanda?.cuantia ? String(rol.demanda.cuantia) : '',
+          cuantia: rol.demanda?.cuantia ? String(Math.floor(rol.demanda.cuantia)) : '',
           abogadoId: rol.abogado?.id ? String(rol.abogado.id) : '',
           materiaId: rol.demanda?.materia?.id ? String(rol.demanda.materia.id) : '',
         })
@@ -367,7 +368,7 @@ export default function EditarDemandaPage() {
         rol: formData.rol,
         tribunalId: Number(formData.tribunalId),
         caratula: finalCaratula,
-        cuantia: formData.cuantia ? Number(formData.cuantia) : null,
+        cuantia: formData.cuantia ? cleanCuantiaInput(formData.cuantia) : null,
         abogadoId: formData.abogadoId ? Number(formData.abogadoId) : null,
         materiaId: formData.materiaId ? Number(formData.materiaId) : null,
         ejecutados: ejecutadosNormalized,
@@ -564,14 +565,12 @@ export default function EditarDemandaPage() {
                   Cuantía
                 </label>
                 <input
-                  type="number"
+                  type="text"
                   id="cuantia"
-                  step="0.01"
-                  min="0"
                   value={formData.cuantia}
                   onChange={(e) => setFormData({ ...formData, cuantia: e.target.value })}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500"
-                  placeholder="0.00"
+                  placeholder="Ej: 4.000.000"
                 />
               </div>
 

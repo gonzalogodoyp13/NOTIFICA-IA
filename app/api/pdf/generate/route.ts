@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import { wrapText } from "@/lib/pdf/textLayout";
 import { embedSignatureImages } from "@/lib/pdf/imageUtils";
+import { formatCuantiaCLP } from "@/lib/utils/cuantia";
 import fs from "fs";
 import path from "path";
 
@@ -18,15 +19,19 @@ export async function POST(req: NextRequest) {
       hora_diligencia: "10:30",
       rol: "C-1234-2025",
       tribunal: "Juzgado Civil de Santiago",
-      cuantia: "500.000",
+      cuantia: formatCuantiaCLP(500000),
     };
 
     let filled = contenido;
-    Object.entries({ ...sample, ...(variables as Record<string, string>) }).forEach(
-      ([key, val]) => {
-        filled = filled.replaceAll(`$${key}`, String(val ?? ""));
+    const processedVariables = { ...sample, ...(variables as Record<string, string>) };
+    Object.entries(processedVariables).forEach(([key, val]) => {
+      if (key === 'cuantia') {
+        // Si viene como número, formatear; si ya es string, intentar parsear y formatear
+        const numVal = typeof val === 'number' ? val : parseFloat(String(val));
+        val = !isNaN(numVal) ? formatCuantiaCLP(numVal) : String(val ?? '');
       }
-    );
+      filled = filled.replaceAll(`$${key}`, String(val ?? ""));
+    });
 
     const firmaPath = path.resolve("./public/mock-firma.png");
     const selloPath = path.resolve("./public/mock-sello.png");
