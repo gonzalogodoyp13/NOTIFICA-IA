@@ -1,3 +1,6 @@
+'use client'
+
+import { useState } from 'react'
 import { useDocumentos } from '@/lib/hooks/useRolWorkspace'
 
 interface DocumentoListProps {
@@ -6,6 +9,45 @@ interface DocumentoListProps {
 
 export default function DocumentoList({ rolId }: DocumentoListProps) {
   const { data, isLoading, isError, error } = useDocumentos(rolId)
+  const [downloadingId, setDownloadingId] = useState<string | null>(null)
+  const [downloadError, setDownloadError] = useState<string | null>(null)
+
+  const handleDownload = async (docId: string, docNombre: string) => {
+    setDownloadingId(docId)
+    setDownloadError(null)
+
+    try {
+      const response = await fetch(`/api/documentos/${docId}/download`, {
+        credentials: 'include',
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => null)
+        throw new Error(
+          errorData?.error || `Error ${response.status}: ${response.statusText}`
+        )
+      }
+
+      const blob = await response.blob()
+      const url = window.URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `${docNombre}.pdf`
+      document.body.appendChild(a)
+      a.click()
+      window.URL.revokeObjectURL(url)
+      document.body.removeChild(a)
+    } catch (error) {
+      console.error('Error descargando documento:', error)
+      setDownloadError(
+        error instanceof Error ? error.message : 'Error al descargar el documento'
+      )
+      // Limpiar error después de 5 segundos
+      setTimeout(() => setDownloadError(null), 5000)
+    } finally {
+      setDownloadingId(null)
+    }
+  }
 
   return (
     <section className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
@@ -22,6 +64,12 @@ export default function DocumentoList({ rolId }: DocumentoListProps) {
       {isError && (
         <p className="mt-4 rounded-md border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">
           Error al obtener los documentos: {error?.message ?? 'intenta nuevamente.'}
+        </p>
+      )}
+
+      {downloadError && (
+        <p className="mt-4 rounded-md border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">
+          {downloadError}
         </p>
       )}
 
@@ -62,11 +110,29 @@ export default function DocumentoList({ rolId }: DocumentoListProps) {
               </div>
               <button
                 type="button"
-                className="cursor-not-allowed rounded border border-slate-200 px-4 py-2 text-xs font-medium text-slate-400"
-                disabled
-                title="Descarga disponible en la siguiente fase"
+                onClick={() => handleDownload(doc.id, doc.nombre)}
+                disabled={!doc.pdfId || downloadingId === doc.id}
+                className={
+                  !doc.pdfId || downloadingId === doc.id
+                    ? 'cursor-not-allowed rounded border border-slate-200 px-4 py-2 text-xs font-medium text-slate-400'
+                    : 'rounded border border-slate-300 bg-white px-4 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 hover:border-slate-400 transition-colors'
+                }
+                title={
+                  !doc.pdfId
+                    ? 'Este documento no tiene PDF disponible'
+                    : downloadingId === doc.id
+                      ? 'Descargando...'
+                      : 'Descargar PDF'
+                }
               >
-                Descargar
+                {downloadingId === doc.id ? (
+                  <span className="inline-flex items-center gap-1">
+                    <span className="h-2 w-2 animate-spin rounded-full border border-slate-400 border-t-transparent" />
+                    Descargando...
+                  </span>
+                ) : (
+                  'Descargar'
+                )}
               </button>
             </li>
           ))}

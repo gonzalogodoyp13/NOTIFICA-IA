@@ -3,6 +3,8 @@ import { NextResponse } from "next/server";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import { wrapText } from "@/lib/pdf/textLayout";
 import { embedSignatureImages } from "@/lib/pdf/imageUtils";
+import { drawRolHeader } from "@/lib/pdf/header";
+import { getCurrentUserWithOffice } from "@/lib/auth-server";
 import { formatCuantiaCLP } from "@/lib/utils/cuantia";
 import fs from "fs";
 import path from "path";
@@ -49,9 +51,24 @@ export async function POST(req: NextRequest) {
     let page = pdf.addPage();
     const margin = 50;
     const font = await pdf.embedFont(StandardFonts.TimesRoman);
+    const fontBold = await pdf.embedFont(StandardFonts.TimesRomanBold);
     const fontSize = 12;
     const lineHeight = fontSize + 4;
     let y = page.getSize().height - margin;
+
+    // Get authenticated user for receptor name
+    const user = await getCurrentUserWithOffice();
+
+    // Draw header before content
+    const headerData = {
+      receptorNombre: user?.officeName ?? "Receptor Judicial",
+      tribunalNombre: (variables.tribunal as string | undefined) ?? sample.tribunal,
+      rolNumero: (variables.rol as string | undefined) ?? sample.rol,
+      bancoNombre: "Banco de Chile", // Mock for preview
+      ejecutadoNombre: "Ejecutado Ejemplo", // Mock for preview
+    };
+
+    y = drawRolHeader(pdf, page, headerData, { font, fontBold }, y, margin);
 
     const lines = wrapText(
       filled,
