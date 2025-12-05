@@ -44,11 +44,10 @@ export function EstampoEditor({ estampo, onSaved }: EstampoEditorProps) {
   async function handleSave() {
     try {
       setSaving(true);
-      const res = await fetch("/api/estampos", {
+      const res = await fetch(`/api/estampos/${estampo.id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          id: estampo.id,
           nombre: estampo.nombre,
           tipo: estampo.tipo,
           contenido,

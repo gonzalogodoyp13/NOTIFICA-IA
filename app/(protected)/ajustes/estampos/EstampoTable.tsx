@@ -25,10 +25,8 @@ export function EstampoTable({ data, onRefresh, onEdit }: EstampoTableProps) {
     if (!confirmDelete) return;
 
     try {
-      const res = await fetch("/api/estampos", {
+      const res = await fetch(`/api/estampos/${id}`, {
         method: "DELETE",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id }),
       });
 
       if (!res.ok) {
