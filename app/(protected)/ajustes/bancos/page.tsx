@@ -5,6 +5,7 @@
 import { useEffect, useState } from 'react'
 import Topbar from '@/components/Topbar'
 import Link from 'next/link'
+import { ArancelesModal } from './ArancelesModal'
 
 interface Banco {
   id: number
@@ -23,6 +24,8 @@ export default function BancosPage() {
     nombre: '',
   })
   const [submitting, setSubmitting] = useState(false)
+  const [arancelesModalBancoId, setArancelesModalBancoId] = useState<number | null>(null)
+  const [showArancelesModal, setShowArancelesModal] = useState(false)
 
   useEffect(() => {
     fetchBancos()
@@ -195,12 +198,23 @@ export default function BancosPage() {
                         {banco.nombre}
                       </td>
                       <td className="px-6 py-4 text-right text-sm font-medium">
-                        <button
-                          onClick={() => handleDelete(banco.id)}
-                          className="text-red-600 hover:text-red-900"
-                        >
-                          Eliminar
-                        </button>
+                        <div className="flex items-center justify-end gap-3">
+                          <button
+                            onClick={() => {
+                              setArancelesModalBancoId(banco.id)
+                              setShowArancelesModal(true)
+                            }}
+                            className="text-blue-600 hover:text-blue-900 font-medium"
+                          >
+                            Aranceles
+                          </button>
+                          <button
+                            onClick={() => handleDelete(banco.id)}
+                            className="text-red-600 hover:text-red-900"
+                          >
+                            Eliminar
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -271,6 +285,18 @@ export default function BancosPage() {
           </div>
         </div>
       </main>
+
+      {arancelesModalBancoId && (
+        <ArancelesModal
+          bancoId={arancelesModalBancoId}
+          bancoNombre={bancos.find((b) => b.id === arancelesModalBancoId)?.nombre || ''}
+          isOpen={showArancelesModal}
+          onClose={() => {
+            setShowArancelesModal(false)
+            setArancelesModalBancoId(null)
+          }}
+        />
+      )}
     </div>
   )
 }

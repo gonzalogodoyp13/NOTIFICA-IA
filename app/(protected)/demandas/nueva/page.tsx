@@ -21,6 +21,12 @@ interface Abogado {
     id: number
     nombre: string
   } | null
+  bancos?: Array<{
+    banco: {
+      id: number
+      nombre: string
+    }
+  }>
 }
 
 interface Tribunal {
@@ -140,8 +146,15 @@ export default function NuevaDemandaPage() {
       return
     }
 
-    // Filter abogados by bancoId
-    const filteredAbogados = allAbogados.filter(a => a.bancoId === Number(newBancoId))
+    // Filter abogados by bancoId - consider both primary banco and bancos array
+    const selectedBancoId = Number(newBancoId)
+    const filteredAbogados = allAbogados.filter(a => {
+      // Check if banco principal matches
+      const primaryMatch = a.banco?.id === selectedBancoId || a.bancoId === selectedBancoId
+      // Check if any banco in bancos array matches
+      const multiMatch = a.bancos?.some(rel => rel.banco.id === selectedBancoId)
+      return primaryMatch || multiMatch
+    })
     setAbogados(filteredAbogados)
 
     // Auto-select if exactly 1 abogado

@@ -55,6 +55,8 @@ model Abogado {
   bancoId   Int?
   createdAt DateTime  @default(now())
   banco     Banco?    @relation(fields: [bancoId], references: [id])
+  bancos    AbogadoBanco[] @relation("AbogadoBancos")
+  aranceles Arancel[] @relation("AbogadoAranceles")
   demandas  Demanda[]
 
   @@index([bancoId])
@@ -69,9 +71,52 @@ model Banco {
   cuenta    String?
   createdAt DateTime  @default(now())
   abogados  Abogado[]
+  abogadoBancos AbogadoBanco[] @relation("BancoAbogados")
+  aranceles Arancel[] @relation("BancoAranceles")
 
   @@index([officeId])
   @@map("bancos")
+}
+
+model AbogadoBanco {
+  id        Int      @id @default(autoincrement())
+  officeId  Int
+  abogadoId Int
+  bancoId   Int
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  abogado   Abogado  @relation("AbogadoBancos", fields: [abogadoId], references: [id], onDelete: Cascade)
+  banco     Banco    @relation("BancoAbogados", fields: [bancoId], references: [id], onDelete: Cascade)
+
+  @@unique([officeId, abogadoId, bancoId])
+  @@index([abogadoId])
+  @@index([bancoId])
+  @@index([officeId])
+  @@map("abogado_bancos")
+}
+
+model Arancel {
+  id        Int      @id @default(autoincrement())
+  officeId  Int
+  bancoId   Int
+  abogadoId Int?
+  estampoId String
+  monto     Int
+  activo    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  banco     Banco    @relation("BancoAranceles", fields: [bancoId], references: [id], onDelete: Cascade)
+  abogado   Abogado? @relation("AbogadoAranceles", fields: [abogadoId], references: [id], onDelete: Cascade)
+  estampo   Estampo  @relation("EstampoAranceles", fields: [estampoId], references: [id], onDelete: Cascade)
+
+  @@unique([officeId, bancoId, abogadoId, estampoId])
+  @@index([officeId, bancoId, estampoId])
+  @@index([officeId, abogadoId, estampoId])
+  @@index([officeId, bancoId])
+  @@index([estampoId])
+  @@map("aranceles")
 }
 
 model Comuna {
@@ -259,6 +304,7 @@ model Estampo {
   tipo       String
   contenido  String?
   documentos Documento[]
+  aranceles  Arancel[]   @relation("EstampoAranceles")
   office     Office      @relation("OfficeEstampos", fields: [officeId], references: [id])
 }
 

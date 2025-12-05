@@ -28,6 +28,16 @@ export async function GET() {
             nombre: true,
           },
         },
+        bancos: {  // NUEVO - incluir lista de bancos via join
+          include: {
+            banco: {
+              select: {
+                id: true,
+                nombre: true,
+              },
+            },
+          },
+        },
       },
       orderBy: { createdAt: 'desc' },
       take: 50,
@@ -66,8 +76,26 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    // Verify bancoId belongs to user's office if provided
-    if (parsed.data.bancoId) {
+    // Validar bancoIds (si se proporciona)
+    if (parsed.data.bancoIds && parsed.data.bancoIds.length > 0) {
+      // Verificar que todos los bancos pertenezcan a la oficina del usuario
+      const bancos = await prisma.banco.findMany({
+        where: {
+          id: { in: parsed.data.bancoIds },
+          officeId: user.officeId,
+        },
+      })
+
+      if (bancos.length !== parsed.data.bancoIds.length) {
+        return NextResponse.json(
+          { ok: false, message: 'Uno o más bancos no encontrados o no pertenecen a tu oficina', error: 'Bancos inválidos' },
+          { status: 400 }
+        )
+      }
+    }
+
+    // Verify bancoId belongs to user's office if provided (legacy support)
+    if (parsed.data.bancoId && !parsed.data.bancoIds) {
       const banco = await prisma.banco.findFirst({
         where: {
           id: parsed.data.bancoId,
@@ -83,21 +111,57 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // Determinar bancoId principal
+    const primaryBancoId = parsed.data.bancoIds && parsed.data.bancoIds.length > 0 
+      ? parsed.data.bancoIds[0] 
+      : parsed.data.bancoId || null
+
+    // Crear Abogado con bancoId principal
     const abogado = await prisma.abogado.create({
       data: {
-        ...parsed.data,
+        nombre: parsed.data.nombre,
+        telefono: parsed.data.telefono,
+        email: parsed.data.email,
+        bancoId: primaryBancoId,  // Primer banco como principal
         officeId: user.officeId,
       },
+    })
+
+    // Crear relaciones en AbogadoBanco
+    if (parsed.data.bancoIds && parsed.data.bancoIds.length > 0) {
+      await prisma.abogadoBanco.createMany({
+        data: parsed.data.bancoIds.map(bancoId => ({
+          officeId: user.officeId,
+          abogadoId: abogado.id,
+          bancoId: bancoId,
+        })),
+      })
+    }
+
+    // Incluir relaciones en la respuesta
+    const abogadoWithRelations = await prisma.abogado.findUnique({
+      where: { id: abogado.id },
       include: {
         banco: {
           select: {
+            id: true,
             nombre: true,
+          },
+        },
+        bancos: {
+          include: {
+            banco: {
+              select: {
+                id: true,
+                nombre: true,
+              },
+            },
           },
         },
       },
     })
 
-    return NextResponse.json({ ok: true, data: abogado })
+    return NextResponse.json({ ok: true, data: abogadoWithRelations })
   } catch (error) {
     console.error('Error creating abogado:', error)
     const errorMessage = error instanceof Error ? error.message : 'Error al crear el abogado'

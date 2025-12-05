@@ -15,8 +15,15 @@ interface Abogado {
   telefono: string | null
   email: string | null
   banco: {
+    id: number
     nombre: string
   } | null
+  bancos?: Array<{
+    banco: {
+      id: number
+      nombre: string
+    }
+  }>
   createdAt: string
 }
 
@@ -36,7 +43,7 @@ export default function AbogadosPage() {
     nombre: '',
     telefono: '',
     email: '',
-    bancoId: '',
+    bancoIds: [] as number[],
   })
   const [submitting, setSubmitting] = useState(false)
 
@@ -97,7 +104,7 @@ export default function AbogadosPage() {
       const payload: any = { nombre: formData.nombre }
       if (formData.telefono) payload.telefono = formData.telefono
       if (formData.email) payload.email = formData.email
-      if (formData.bancoId) payload.bancoId = parseInt(formData.bancoId)
+      if (formData.bancoIds.length > 0) payload.bancoIds = formData.bancoIds
 
       const response = await fetch('/api/abogados', {
         method: 'POST',
@@ -122,7 +129,7 @@ export default function AbogadosPage() {
         nombre: '',
         telefono: '',
         email: '',
-        bancoId: '',
+        bancoIds: [],
       })
       setSuccess('Abogado creado exitosamente')
     } catch (err) {
@@ -241,7 +248,14 @@ export default function AbogadosPage() {
                         {abogado.nombre || 'Sin nombre'}
                       </td>
                       <td className="px-6 py-4 text-sm text-gray-600">{abogado.email || '-'}</td>
-                      <td className="px-6 py-4 text-sm text-gray-600">{abogado.banco?.nombre || '-'}</td>
+                      <td className="px-6 py-4 text-sm text-gray-600">
+                        {abogado.banco?.nombre || '-'}
+                        {abogado.bancos && abogado.bancos.length > 1 && (
+                          <span className="ml-2 text-xs text-blue-600" title={`${abogado.bancos.length} bancos asignados`}>
+                            (+{abogado.bancos.length - 1})
+                          </span>
+                        )}
+                      </td>
                       <td className="px-6 py-4 text-right text-sm font-medium">
                         <button
                           onClick={() => handleDelete(abogado.id)}
@@ -299,20 +313,42 @@ export default function AbogadosPage() {
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Banco
+                      Bancos
                     </label>
-                    <select
-                      value={formData.bancoId}
-                      onChange={(e) => setFormData({ ...formData, bancoId: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500"
-                    >
-                      <option value="">Seleccionar banco (opcional)</option>
-                      {bancos.map((banco) => (
-                        <option key={banco.id} value={banco.id}>
-                          {banco.nombre}
-                        </option>
-                      ))}
-                    </select>
+                    <div className="max-h-48 overflow-y-auto border border-gray-300 rounded-lg p-3 space-y-2">
+                      {bancos.length === 0 ? (
+                        <p className="text-sm text-gray-500">No hay bancos disponibles</p>
+                      ) : (
+                        bancos.map((banco) => (
+                          <label key={banco.id} className="flex items-center space-x-2 cursor-pointer hover:bg-gray-50 p-2 rounded">
+                            <input
+                              type="checkbox"
+                              checked={formData.bancoIds.includes(banco.id)}
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  setFormData({
+                                    ...formData,
+                                    bancoIds: [...formData.bancoIds, banco.id],
+                                  })
+                                } else {
+                                  setFormData({
+                                    ...formData,
+                                    bancoIds: formData.bancoIds.filter(id => id !== banco.id),
+                                  })
+                                }
+                              }}
+                              className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                            />
+                            <span className="text-sm text-gray-700">{banco.nombre}</span>
+                          </label>
+                        ))
+                      )}
+                    </div>
+                    {formData.bancoIds.length > 0 && (
+                      <p className="mt-1 text-xs text-gray-500">
+                        {formData.bancoIds.length} banco(s) seleccionado(s)
+                      </p>
+                    )}
                   </div>
                   <div className="flex items-center gap-4 pt-4">
                     <button
@@ -330,7 +366,7 @@ export default function AbogadosPage() {
                           nombre: '',
                           telefono: '',
                           email: '',
-                          bancoId: '',
+                          bancoIds: [],
                         })
                         setError(null)
                       }}
