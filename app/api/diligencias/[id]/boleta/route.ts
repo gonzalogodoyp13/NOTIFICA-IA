@@ -72,13 +72,11 @@ export async function POST(
       return NextResponse.json({ ok: false, error: 'No autorizado' }, { status: 401 })
     }
 
-    const officeIdStr = String(user.officeId)
-
     const diligencia = await prisma.diligencia.findFirst({
       where: {
         id: params.id,
         rol: {
-          officeId: officeIdStr,
+          officeId: user.officeId,
         },
       },
       include: {

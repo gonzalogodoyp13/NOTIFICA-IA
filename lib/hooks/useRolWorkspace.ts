@@ -425,3 +425,34 @@ export function useGenerateEstampo(
   })
 }
 
+export function useUpdateDiligenciaMeta(
+  rolId: string,
+  diligenciaId: string
+): UseMutationResult<unknown, Error, Record<string, unknown>> {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async (metaUpdates: Record<string, unknown>) => {
+      const response = await fetch(`/api/diligencias/${diligenciaId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ meta: metaUpdates }),
+        credentials: 'include',
+      })
+
+      const result = await response.json().catch(() => null)
+      if (!response.ok || result?.ok !== true) {
+        throw new Error(
+          (result && typeof result.error === 'string' && result.error) ||
+            'Error al actualizar diligencia'
+        )
+      }
+      return result.data
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: diligenciasKey(rolId) })
+      queryClient.invalidateQueries({ queryKey: rolQueryKey(rolId) })
+    },
+  })
+}
+

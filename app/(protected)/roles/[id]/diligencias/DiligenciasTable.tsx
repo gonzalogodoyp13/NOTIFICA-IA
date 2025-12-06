@@ -2,8 +2,7 @@ import { useMemo, useState } from 'react'
 
 import { useDiligencias, type DiligenciaItem } from '@/lib/hooks/useRolWorkspace'
 
-import BoletaModal from './BoletaModal'
-import EstampoModal from './EstampoModal'
+import EjecutarWizard from './EjecutarWizard'
 import NuevaDiligenciaWizard from './NuevaDiligenciaWizard'
 
 interface DiligenciasTableProps {
@@ -20,8 +19,7 @@ export default function DiligenciasTable({ rolId }: DiligenciasTableProps) {
   const { data, isLoading, isError, error } = useDiligencias(rolId)
 
   const [showWizard, setShowWizard] = useState(false)
-  const [boletaTarget, setBoletaTarget] = useState<DiligenciaItem | null>(null)
-  const [estampoTarget, setEstampoTarget] = useState<DiligenciaItem | null>(null)
+  const [ejecutarTarget, setEjecutarTarget] = useState<DiligenciaItem | null>(null)
   const [flashMessage, setFlashMessage] = useState<string | null>(null)
 
   const sorted = useMemo(
@@ -121,17 +119,10 @@ export default function DiligenciasTable({ rolId }: DiligenciasTableProps) {
                     <div className="flex justify-end gap-2 text-xs">
                       <button
                         type="button"
-                        onClick={() => setBoletaTarget(diligencia)}
+                        onClick={() => setEjecutarTarget(diligencia)}
                         className="rounded border border-slate-200 px-3 py-1 text-slate-600 transition hover:bg-slate-100"
                       >
-                        Generar Boleta
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setEstampoTarget(diligencia)}
-                        className="rounded border border-slate-200 px-3 py-1 text-slate-600 transition hover:bg-slate-100"
-                      >
-                        Generar Estampo
+                        Ejecutar
                       </button>
                     </div>
                   </td>
@@ -148,24 +139,15 @@ export default function DiligenciasTable({ rolId }: DiligenciasTableProps) {
           onCreated={() => setFlashMessage('Diligencia creada correctamente.')}
         />
       )}
-      {boletaTarget && (
-        <BoletaModal
+      {ejecutarTarget && (
+        <EjecutarWizard
           rolId={rolId}
-          diligenciaId={boletaTarget.id}
-          onClose={() => setBoletaTarget(null)}
-          onGenerated={() =>
-            setFlashMessage(`Boleta generada para la diligencia ${boletaTarget.tipo.nombre}.`)
-          }
-        />
-      )}
-      {estampoTarget && (
-        <EstampoModal
-          rolId={rolId}
-          diligenciaId={estampoTarget.id}
-          onClose={() => setEstampoTarget(null)}
-          onGenerated={() =>
-            setFlashMessage(`Estampo generado para la diligencia ${estampoTarget.tipo.nombre}.`)
-          }
+          diligencia={ejecutarTarget}
+          onClose={() => setEjecutarTarget(null)}
+          onSuccess={() => {
+            setFlashMessage(`Ejecución completada para ${ejecutarTarget.tipo.nombre}.`)
+            setEjecutarTarget(null)
+          }}
         />
       )}
     </section>

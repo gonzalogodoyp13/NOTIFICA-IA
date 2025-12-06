@@ -55,13 +55,11 @@ export async function GET(
       return NextResponse.json({ ok: false, message: 'No autorizado', error: 'No autorizado' }, { status: 401 })
     }
 
-    const officeIdStr = String(user.officeId)
-
     const diligencia = await prisma.diligencia.findFirst({
       where: {
         id: params.id,
         rol: {
-          officeId: officeIdStr,
+          officeId: user.officeId,
         },
       },
       include: {
@@ -104,13 +102,11 @@ export async function PUT(
       return NextResponse.json({ ok: false, message: 'No autorizado', error: 'No autorizado' }, { status: 401 })
     }
 
-    const officeIdStr = String(user.officeId)
-
     const diligencia = await prisma.diligencia.findFirst({
       where: {
         id: params.id,
         rol: {
-          officeId: officeIdStr,
+          officeId: user.officeId,
         },
       },
       include: {
@@ -145,7 +141,7 @@ export async function PUT(
       const tipo = await prisma.diligenciaTipo.findFirst({
         where: {
           id: data.tipoId,
-          officeId: officeIdStr,
+          officeId: user.officeId,
         },
       })
 
@@ -255,13 +251,11 @@ export async function DELETE(
       return NextResponse.json({ ok: false, message: 'No autorizado', error: 'No autorizado' }, { status: 401 })
     }
 
-    const officeIdStr = String(user.officeId)
-
     const diligencia = await prisma.diligencia.findFirst({
       where: {
         id: params.id,
         rol: {
-          officeId: officeIdStr,
+          officeId: user.officeId,
         },
       },
       select: {

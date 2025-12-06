@@ -241,7 +241,9 @@ export async function POST(
       )
     }
 
-    const template = estampo.contenido || 'Estampo generado para $rol'
+    const template = data.contenidoPersonalizado
+      ? data.contenidoPersonalizado
+      : (estampo.contenido || 'Estampo generado para $rol')
 
     // Build complete variable map from diligencia data
     const variableMap = buildEstampoVariables(diligencia, dbUser)

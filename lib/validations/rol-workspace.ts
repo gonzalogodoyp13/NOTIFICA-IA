@@ -50,6 +50,7 @@ export const BoletaGenerateSchema = z.object({
 export const EstampoGenerateSchema = z.object({
   estampoId: z.string().min(1, 'estampoId es requerido'),
   variables: z.record(z.string()).optional(),
+  contenidoPersonalizado: z.string().optional(),
 })
 
 export const NotaCreateSchema = z.object({
