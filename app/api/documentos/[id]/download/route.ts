@@ -6,7 +6,7 @@ import { prisma } from '@/lib/prisma'
 export const dynamic = 'force-dynamic'
 
 export async function GET(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: { id: string } }
 ) {
   try {
@@ -15,6 +15,10 @@ export async function GET(
     if (!user) {
       return NextResponse.json({ ok: false, error: 'No autorizado' }, { status: 401 })
     }
+
+    // Extract mode query parameter for inline viewing
+    const searchParams = req.nextUrl.searchParams
+    const mode = searchParams.get('mode') // 'inline' or null
 
     // Buscar el documento con su rol para validar ownership
     const documento = await prisma.documento.findFirst({
@@ -59,11 +63,16 @@ export async function GET(
     // Sanitizar nombre de archivo para evitar problemas
     const fileName = documento.nombre.replace(/[^a-zA-Z0-9._-]/g, '_') + '.pdf'
 
+    // Determine Content-Disposition based on mode parameter
+    const disposition = mode === 'inline' || mode === 'view'
+      ? `inline; filename="${fileName}"`
+      : `attachment; filename="${fileName}"`
+
     // Retornar PDF como binary response
     return new NextResponse(pdfBuffer, {
       headers: {
         'Content-Type': 'application/pdf',
-        'Content-Disposition': `attachment; filename="${fileName}"`,
+        'Content-Disposition': disposition,
         'Content-Length': pdfBuffer.length.toString(),
       },
     })

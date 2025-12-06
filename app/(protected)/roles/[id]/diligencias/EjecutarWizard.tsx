@@ -18,6 +18,7 @@ interface EjecutarWizardProps {
   rolId: string
   diligencia: DiligenciaItem
   rolData?: RolWorkspaceData
+  initialStep?: 1 | 2 | 3
   onClose: () => void
   onSuccess?: () => void
 }
@@ -33,6 +34,7 @@ export default function EjecutarWizard({
   rolId,
   diligencia,
   rolData: rolDataProp,
+  initialStep,
   onClose,
   onSuccess,
 }: EjecutarWizardProps) {
@@ -46,7 +48,7 @@ export default function EjecutarWizard({
   const generateEstampo = useGenerateEstampo(rolId, diligencia.id)
 
   // Step state
-  const [step, setStep] = useState<1 | 2 | 3>(1)
+  const [step, setStep] = useState<1 | 2 | 3>(initialStep ?? 1)
 
   // Step I fields
   const [fechaEjecucion, setFechaEjecucion] = useState('')
@@ -478,6 +480,14 @@ export default function EjecutarWizard({
             <>
               <button
                 type="button"
+                className="rounded bg-slate-200 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-300"
+                onClick={() => setStep(1)}
+                disabled={isLoading}
+              >
+                Anterior
+              </button>
+              <button
+                type="button"
                 className="rounded bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-500 disabled:cursor-not-allowed disabled:bg-emerald-300"
                 onClick={() => handleStepIIGenerate(false)}
                 disabled={isLoading || !selectedEstampoId || !monto}
@@ -498,6 +508,14 @@ export default function EjecutarWizard({
           {/* Step III buttons */}
           {step === 3 && (
             <>
+              <button
+                type="button"
+                className="rounded bg-slate-200 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-300"
+                onClick={() => setStep(2)}
+                disabled={isLoading}
+              >
+                Anterior
+              </button>
               <button
                 type="button"
                 className="rounded bg-slate-200 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-300"
