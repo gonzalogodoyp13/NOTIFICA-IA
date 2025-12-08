@@ -1,65 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { PDFDocument, StandardFonts, rgb } from 'pdf-lib'
 
 import { getCurrentUserWithOffice } from '@/lib/auth-server'
 import { prisma } from '@/lib/prisma'
 import { BoletaGenerateSchema } from '@/lib/validations/rol-workspace'
+import { buildReciboVariables, buildReciboPdf, loadReciboStamp } from '@/lib/pdf/recibo'
+import type { DiligenciaWithReciboRelations } from '@/lib/pdf/recibo'
 
 export const dynamic = 'force-dynamic'
-
-async function buildReciboPdf(params: {
-  rol: string
-  diligenciaId: string
-  monto: number
-  medio: string
-  referencia?: string
-  variables?: Record<string, string>
-}) {
-  const doc = await PDFDocument.create()
-  const page = doc.addPage([595, 842]) // A4
-  const font = await doc.embedFont(StandardFonts.Helvetica)
-  const fontBold = await doc.embedFont(StandardFonts.HelveticaBold)
-
-  const { rol, diligenciaId, monto, medio, referencia, variables } = params
-
-  const lines = [
-    'Recibo de diligencia',
-    `ROL: ${rol}`,
-    `Diligencia: ${diligenciaId}`,
-    `Monto: $${monto.toLocaleString('es-CL')}`,
-    `Medio de pago: ${medio}`,
-    referencia ? `Referencia: ${referencia}` : null,
-  ].filter(Boolean) as string[]
-
-  const custom = variables
-    ? Object.entries(variables).map(([key, value]) => `${key}: ${value}`)
-    : []
-
-  let y = 780
-
-  page.drawText('Recibo de diligencia', {
-    x: 50,
-    y,
-    size: 18,
-    font: fontBold,
-    color: rgb(0.1, 0.1, 0.1),
-  })
-  y -= 40
-
-  ;[...lines.slice(1), ...custom].forEach(line => {
-    page.drawText(line, {
-      x: 50,
-      y,
-      size: 12,
-      font,
-      color: rgb(0, 0, 0),
-    })
-    y -= 20
-  })
-
-  const pdfBytes = await doc.save()
-  return Buffer.from(pdfBytes).toString('base64')
-}
 
 export async function POST(
   req: NextRequest,
@@ -72,6 +19,12 @@ export async function POST(
       return NextResponse.json({ ok: false, error: 'No autorizado' }, { status: 401 })
     }
 
+    // Get user with officeName from database
+    const dbUser = await prisma.user.findUnique({
+      where: { id: user.id },
+      select: { officeName: true },
+    })
+
     const diligencia = await prisma.diligencia.findFirst({
       where: {
         id: params.id,
@@ -80,9 +33,26 @@ export async function POST(
         },
       },
       include: {
-        rol: true,
+        rol: {
+          include: {
+            tribunal: true,
+            demanda: {
+              include: {
+                abogados: {
+                  include: { banco: true },
+                },
+                ejecutados: {
+                  include: { comunas: true },
+                },
+              },
+            },
+          },
+        },
+        tipo: {
+          select: { nombre: true },
+        },
       },
-    })
+    }) as DiligenciaWithReciboRelations | null
 
     if (!diligencia) {
       return NextResponse.json(
@@ -99,20 +69,27 @@ export async function POST(
 
     const data = parsed.data
 
-    const pdfBase64 = await buildReciboPdf({
-      rol: diligencia.rol.rol,
-      diligenciaId: diligencia.id,
-      monto: data.monto,
-      medio: data.medio,
-      referencia: data.referencia,
-      variables: data.variables,
-    })
+    // Build Recibo variables
+    const variables = buildReciboVariables(
+      diligencia,
+      dbUser,
+      data.monto,
+      data.medio,
+      data.referencia,
+      data.tipoEstampoNombre // Pasar el nombre del estampo
+    )
+
+    // Load stamp image
+    const stampBytes = await loadReciboStamp()
+
+    // Generate PDF
+    const pdfBase64 = await buildReciboPdf(variables, stampBytes)
 
     const documento = await prisma.documento.create({
       data: {
         rolId: diligencia.rolId,
         diligenciaId: diligencia.id,
-        nombre: `Boleta ${new Date().toISOString()}`,
+        nombre: `Recibo ${variables.numero_recibo}`,
         tipo: 'Recibo',
         pdfId: pdfBase64,
         version: 1,

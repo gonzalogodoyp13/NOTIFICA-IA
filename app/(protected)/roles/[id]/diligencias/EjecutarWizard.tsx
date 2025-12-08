@@ -197,6 +197,7 @@ export default function EjecutarWizard({
       monto: montoNum,
       medio: 'No especificado',
       referencia: undefined,
+      tipoEstampoNombre: selectedEstampo?.nombre ?? undefined, // Agregar nombre del estampo
     })
 
     if (!validation.success) {

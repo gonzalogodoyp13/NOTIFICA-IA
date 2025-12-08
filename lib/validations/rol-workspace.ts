@@ -45,6 +45,7 @@ export const BoletaGenerateSchema = z.object({
   medio: z.string().min(1, 'El medio de pago es requerido'),
   referencia: z.string().optional(),
   variables: z.record(z.string()).optional(),
+  tipoEstampoNombre: z.string().optional(), // Nuevo campo para el nombre del estampo
 })
 
 export const EstampoGenerateSchema = z.object({
