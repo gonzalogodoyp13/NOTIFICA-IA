@@ -19,12 +19,13 @@ model User {
 }
 
 model Office {
-  id        Int        @id @default(autoincrement())
-  nombre    String
-  createdAt DateTime   @default(now())
-  estampos  Estampo[]  @relation("OfficeEstampos")
-  auditLogs AuditLog[]
-  demandas  Demanda[]
+  id             Int             @id @default(autoincrement())
+  nombre         String
+  createdAt      DateTime        @default(now())
+  estampos       Estampo[]       @relation("OfficeEstampos")
+  estampoCustoms EstampoCustom[] @relation("OfficeEstampoCustoms")
+  auditLogs      AuditLog[]
+  demandas       Demanda[]
 
   @@map("offices")
 }
@@ -44,7 +45,7 @@ model AuditLog {
 }
 
 model Abogado {
-  id        Int       @id @default(autoincrement())
+  id        Int            @id @default(autoincrement())
   officeId  Int
   nombre    String?
   rut       String?
@@ -53,10 +54,10 @@ model Abogado {
   telefono  String?
   email     String?
   bancoId   Int?
-  createdAt DateTime  @default(now())
-  banco     Banco?    @relation(fields: [bancoId], references: [id])
+  createdAt DateTime       @default(now())
+  banco     Banco?         @relation(fields: [bancoId], references: [id])
   bancos    AbogadoBanco[] @relation("AbogadoBancos")
-  aranceles Arancel[] @relation("AbogadoAranceles")
+  aranceles Arancel[]      @relation("AbogadoAranceles")
   demandas  Demanda[]
 
   @@index([bancoId])
@@ -65,14 +66,14 @@ model Abogado {
 }
 
 model Banco {
-  id        Int       @id @default(autoincrement())
-  officeId  Int
-  nombre    String
-  cuenta    String?
-  createdAt DateTime  @default(now())
-  abogados  Abogado[]
+  id            Int            @id @default(autoincrement())
+  officeId      Int
+  nombre        String
+  cuenta        String?
+  createdAt     DateTime       @default(now())
+  abogados      Abogado[]
   abogadoBancos AbogadoBanco[] @relation("BancoAbogados")
-  aranceles Arancel[] @relation("BancoAranceles")
+  aranceles     Arancel[]      @relation("BancoAranceles")
 
   @@index([officeId])
   @@map("bancos")
@@ -85,9 +86,9 @@ model AbogadoBanco {
   bancoId   Int
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-  
-  abogado   Abogado  @relation("AbogadoBancos", fields: [abogadoId], references: [id], onDelete: Cascade)
-  banco     Banco    @relation("BancoAbogados", fields: [bancoId], references: [id], onDelete: Cascade)
+
+  abogado Abogado @relation("AbogadoBancos", fields: [abogadoId], references: [id], onDelete: Cascade)
+  banco   Banco   @relation("BancoAbogados", fields: [bancoId], references: [id], onDelete: Cascade)
 
   @@unique([officeId, abogadoId, bancoId])
   @@index([abogadoId])
@@ -107,9 +108,9 @@ model Arancel {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  banco     Banco    @relation("BancoAranceles", fields: [bancoId], references: [id], onDelete: Cascade)
-  abogado   Abogado? @relation("AbogadoAranceles", fields: [abogadoId], references: [id], onDelete: Cascade)
-  estampo   Estampo  @relation("EstampoAranceles", fields: [estampoId], references: [id], onDelete: Cascade)
+  banco   Banco    @relation("BancoAranceles", fields: [bancoId], references: [id], onDelete: Cascade)
+  abogado Abogado? @relation("AbogadoAranceles", fields: [abogadoId], references: [id], onDelete: Cascade)
+  estampo Estampo  @relation("EstampoAranceles", fields: [estampoId], references: [id], onDelete: Cascade)
 
   @@unique([officeId, bancoId, abogadoId, estampoId])
   @@index([officeId, bancoId, estampoId])
@@ -137,7 +138,7 @@ model Materia {
   nombre    String
   createdAt DateTime @default(now())
 
-  demandas  Demanda[]
+  demandas Demanda[]
 
   @@index([officeId])
   @@map("materias")
@@ -150,7 +151,7 @@ model Demanda {
   caratula   String
   cuantia    Float
   materiaId  Int?
-  materia    Materia?   @relation(fields: [materiaId], references: [id])
+  materia    Materia?    @relation(fields: [materiaId], references: [id])
   abogadoId  Int
   officeId   Int
   userId     String
@@ -202,8 +203,8 @@ model tribunales {
 }
 
 model RolCausa {
-  id          String       @id  // Sin @default - el ID vendrá de Demanda
-  demandaId   String?      @unique  // Asegurar 1:1 cuando existe
+  id          String       @id // Sin @default - el ID vendrá de Demanda
+  demandaId   String?      @unique // Asegurar 1:1 cuando existe
   officeId    Int
   rol         String
   tribunalId  String
@@ -306,6 +307,61 @@ model Estampo {
   documentos Documento[]
   aranceles  Arancel[]   @relation("EstampoAranceles")
   office     Office      @relation("OfficeEstampos", fields: [officeId], references: [id])
+}
+
+model EstampoBase {
+  id            Int     @id @default(autoincrement())
+  slug          String  @unique
+  nombreVisible String
+  categoria     String
+  descripcion   String?
+
+  // Full template text with $variables (matches Word doc base templates)
+  textoTemplate String
+
+  // JSON describing variables: auto, wizard, derived
+  variablesSchema Json
+
+  // JSON describing wizard questions: order, labels, type, options, conditionals
+  wizardSchema Json
+
+  version  Int     @default(1)
+  isActive Boolean @default(true)
+
+  customs EstampoCustom[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([categoria, isActive])
+  @@index([slug])
+  @@map("estampo_bases")
+}
+
+model EstampoCustom {
+  id Int @id @default(autoincrement())
+
+  baseId Int
+  base   EstampoBase @relation(fields: [baseId], references: [id], onDelete: Cascade)
+
+  officeId Int
+  office   Office @relation("OfficeEstampoCustoms", fields: [officeId], references: [id], onDelete: Cascade)
+
+  nombreOverride String?
+  textoTemplate  String
+
+  isDefaultForOffice Boolean @default(true)
+  isActive           Boolean @default(true)
+  version            Int     @default(1)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([baseId, officeId], name: "EstampoCustom_base_office_unique")
+  @@index([officeId])
+  @@index([baseId])
+  @@index([officeId, isActive])
+  @@map("estampo_customs")
 }
 
 enum EstadoRol {
