@@ -49,3 +49,13 @@ export interface WizardQuestion {
   };
 }
 
+export type EstampoBaseSeed = {
+  slug: string;
+  nombreVisible: string;
+  categoria: string;
+  descripcion?: string;
+  textoTemplate: string;
+  variablesSchema: VariableDef[];
+  wizardSchema: WizardQuestion[];
+};
+

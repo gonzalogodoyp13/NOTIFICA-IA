@@ -10,7 +10,11 @@
     "db:generate": "prisma generate",
     "db:push": "prisma db push",
     "db:migrate": "prisma migrate dev",
-    "db:studio": "prisma studio"
+    "db:studio": "prisma studio",
+    "db:seed": "prisma db seed"
+  },
+  "prisma": {
+    "seed": "ts-node --compiler-options {\"module\":\"commonjs\"} prisma/seed.ts"
   },
   "dependencies": {
     "@prisma/client": "^5.19.1",
@@ -32,6 +36,7 @@
     "postcss": "^8.4.39",
     "prisma": "^5.19.1",
     "tailwindcss": "^3.4.6",
+    "ts-node": "^10.9.2",
     "typescript": "^5.5.3"
   }
 }
