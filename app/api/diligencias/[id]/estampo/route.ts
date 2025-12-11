@@ -1,14 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { PDFDocument, StandardFonts, rgb } from 'pdf-lib'
 
 import { getCurrentUserWithOffice } from '@/lib/auth-server'
 import { prisma } from '@/lib/prisma'
 import { EstampoGenerateSchema } from '@/lib/validations/rol-workspace'
 import { formatCuantiaCLP } from '@/lib/utils/cuantia'
 import { formatDateToSpanishWords } from '@/lib/utils/dateFormat'
-import { wrapText } from '@/lib/pdf/textLayout'
-import { embedSignatureImages } from '@/lib/pdf/imageUtils'
 import { drawRolHeader, type HeaderData } from '@/lib/pdf/header'
+import { replaceVariables } from '@/lib/estampos/text'
+import { buildEstampoPdf } from '@/lib/estampos/pdf'
 import fs from 'fs'
 import path from 'path'
 
@@ -18,15 +17,6 @@ export const dynamic = 'force-dynamic'
 type DiligenciaWithRelations = NonNullable<
   Awaited<ReturnType<typeof prisma.diligencia.findFirst>>
 >
-
-function replaceVariables(template: string, variables?: Record<string, string>) {
-  if (!variables) return template
-  let result = template
-  Object.entries(variables).forEach(([key, value]) => {
-    result = result.replaceAll(`$${key}`, String(value ?? ''))
-  })
-  return result
-}
 
 function buildEstampoVariables(
   diligencia: DiligenciaWithRelations,
@@ -95,69 +85,6 @@ function buildEstampoVariables(
     // Placeholders vacíos (para futuro uso)
     n_operacion: (meta?.n_operacion as string) ?? '',
   }
-}
-
-async function buildEstampoPdf(
-  content: string,
-  headerData: HeaderData,
-  officeImages?: { firma?: Uint8Array; sello?: Uint8Array }
-): Promise<string> {
-  const pdf = await PDFDocument.create()
-  let page = pdf.addPage([595, 842]) // A4 size
-  const margin = 50
-  const font = await pdf.embedFont(StandardFonts.TimesRoman)
-  const fontBold = await pdf.embedFont(StandardFonts.TimesRomanBold)
-  const fontSize = 12
-  const lineHeight = fontSize + 4
-  let y = page.getSize().height - margin
-
-  // Draw header on first page
-  y = drawRolHeader(pdf, page, headerData, { font, fontBold }, y, margin)
-
-  // Wrap text for proper line breaking
-  const lines = wrapText(
-    content,
-    page.getSize().width - margin * 2,
-    font,
-    fontSize
-  )
-
-  // Draw content lines with pagination
-  for (const line of lines) {
-    if (y <= margin + 50) {
-      page = pdf.addPage()
-      y = page.getSize().height - margin
-      // Header only appears on first page, so no header on subsequent pages
-    }
-
-    if (line === '__BLANK__') {
-      y -= fontSize * 1.5
-      continue
-    }
-
-    const adjustedText = await embedSignatureImages(
-      pdf,
-      page,
-      line,
-      y,
-      officeImages || {}
-    )
-
-    if (adjustedText.trim()) {
-      page.drawText(adjustedText, {
-        x: margin,
-        y,
-        size: fontSize,
-        font,
-        color: rgb(0, 0, 0),
-      })
-    }
-
-    y -= lineHeight
-  }
-
-  const pdfBytes = await pdf.save()
-  return Buffer.from(pdfBytes).toString('base64')
 }
 
 export async function POST(

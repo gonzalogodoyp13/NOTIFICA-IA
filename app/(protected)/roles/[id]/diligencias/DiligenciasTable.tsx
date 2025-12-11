@@ -9,6 +9,7 @@ import {
 
 import EjecutarWizard from './EjecutarWizard'
 import NuevaDiligenciaWizard from './NuevaDiligenciaWizard'
+import EstampoWizardModal from './EstampoWizardModal'
 
 interface DiligenciasTableProps {
   rolId: string
@@ -65,17 +66,19 @@ function getDiligenciaProgress(
 }
 
 export default function DiligenciasTable({ rolId }: DiligenciasTableProps) {
-  const { data, isLoading, isError, error } = useDiligencias(rolId)
+  const { data, isLoading, isError, error, refetch: refetchDiligencias } = useDiligencias(rolId)
   const {
     data: documentos = [],
     isLoading: documentosLoading,
     isError: documentosError,
+    refetch: refetchDocumentos,
   } = useDocumentos(rolId)
 
   const [showWizard, setShowWizard] = useState(false)
   const [ejecutarTarget, setEjecutarTarget] = useState<DiligenciaItem | null>(null)
   const [ejecutarInitialStep, setEjecutarInitialStep] = useState<1 | 2 | 3 | undefined>(undefined)
   const [flashMessage, setFlashMessage] = useState<string | null>(null)
+  const [estampoWizardDiligenciaId, setEstampoWizardDiligenciaId] = useState<string | null>(null)
 
   const sorted = useMemo(
     () =>
@@ -266,6 +269,13 @@ export default function DiligenciasTable({ rolId }: DiligenciasTableProps) {
                             >
                               Continuar con Estampo
                             </button>
+                            <button
+                              type="button"
+                              onClick={() => setEstampoWizardDiligenciaId(diligencia.id)}
+                              className="rounded border border-purple-200 bg-purple-50 px-3 py-1 text-purple-700 transition hover:bg-purple-100"
+                            >
+                              Generar estampo (nuevo)
+                            </button>
                             {progress.latestBoletaId && (
                               <button
                                 type="button"
@@ -337,6 +347,19 @@ export default function DiligenciasTable({ rolId }: DiligenciasTableProps) {
             setFlashMessage(`Ejecución completada para ${ejecutarTarget.tipo.nombre}.`)
             setEjecutarTarget(null)
             setEjecutarInitialStep(undefined)
+          }}
+        />
+      )}
+      {estampoWizardDiligenciaId && (
+        <EstampoWizardModal
+          rolId={rolId}
+          diligenciaId={estampoWizardDiligenciaId}
+          isOpen={true}
+          onClose={() => setEstampoWizardDiligenciaId(null)}
+          onSuccess={() => {
+            refetchDiligencias()
+            refetchDocumentos()
+            setFlashMessage('Estampo generado correctamente.')
           }}
         />
       )}

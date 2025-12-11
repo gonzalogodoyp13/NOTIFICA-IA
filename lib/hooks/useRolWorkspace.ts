@@ -456,3 +456,42 @@ export function useUpdateDiligenciaMeta(
   })
 }
 
+export function useGenerateEstampoWizard(
+  rolId: string,
+  diligenciaId: string
+): UseMutationResult<
+  unknown,
+  Error,
+  { estampoBaseId: number; wizardAnswers: Record<string, string> }
+> {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async (input: { estampoBaseId: number; wizardAnswers: Record<string, string> }) => {
+      const response = await fetch(`/api/diligencias/${diligenciaId}/estampos/generate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(input),
+        credentials: 'include',
+      })
+
+      const result = await response.json().catch(() => null)
+
+      if (!response.ok || result?.ok !== true) {
+        const errorMsg = result?.error || 'Error al generar estampo'
+        const missing = result?.missing as string[] | undefined
+        throw new Error(
+          missing && missing.length > 0 ? `${errorMsg}: ${missing.join(', ')}` : errorMsg
+        )
+      }
+
+      return result.data
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: documentosKey(rolId) })
+      queryClient.invalidateQueries({ queryKey: diligenciasKey(rolId) })
+      queryClient.invalidateQueries({ queryKey: rolQueryKey(rolId) })
+    },
+  })
+}
+
