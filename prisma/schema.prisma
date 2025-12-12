@@ -244,6 +244,7 @@ model Documento {
   nombre       String
   tipo         String
   pdfId        String?
+  textoEditado String?
   version      Int         @default(1)
   createdAt    DateTime    @default(now())
   diligencia   Diligencia? @relation(fields: [diligenciaId], references: [id])

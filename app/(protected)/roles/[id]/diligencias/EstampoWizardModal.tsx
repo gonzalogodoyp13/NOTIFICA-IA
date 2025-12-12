@@ -44,6 +44,9 @@ export default function EstampoWizardModal({
   const [answers, setAnswers] = useState<Record<string, string>>({})
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
+  const [showTextEditor, setShowTextEditor] = useState(false)
+  const [textoEditado, setTextoEditado] = useState<string | null>(null)
+  const [previewingText, setPreviewingText] = useState(false)
 
   // Load wizard data when modal opens
   useEffect(() => {
@@ -123,6 +126,9 @@ export default function EstampoWizardModal({
       setAnswers({})
       setSubmitting(false)
       setSubmitError(null)
+      setShowTextEditor(false)
+      setTextoEditado(null)
+      setPreviewingText(false)
     }
   }, [isOpen])
 
@@ -149,8 +155,47 @@ export default function EstampoWizardModal({
 
   // Handle answer change
   const handleAnswerChange = (variable: string, value: string) => {
+    // MVP: Clear silently (no warning) to avoid blocking user flow
     setAnswers(prev => ({ ...prev, [variable]: value }))
+    setTextoEditado(null)  // NEW: Clear edits when answers change (avoid mismatch)
     setSubmitError(null)
+  }
+
+  // Handle open text editor
+  const handleOpenTextEditor = async () => {
+    if (!selectedEstampoId) return
+
+    // If textoEditado already exists (non-empty), just open editor with existing text
+    if (textoEditado && textoEditado.trim() !== '') {
+      setShowTextEditor(true)
+      return
+    }
+
+    // Only fetch preview if textoEditado is null/empty (first open)
+    setPreviewingText(true)
+    try {
+      const response = await fetch(`/api/diligencias/${diligenciaId}/estampos/preview`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          estampoBaseId: selectedEstampoId,
+          wizardAnswers: answers,
+        }),
+        credentials: 'include',
+      })
+
+      const result = await response.json()
+      if (result?.ok && result?.data?.renderedText) {
+        setTextoEditado(result.data.renderedText)
+        setShowTextEditor(true)
+      } else {
+        setSubmitError('Error al cargar vista previa')
+      }
+    } catch (err) {
+      setSubmitError('Error al cargar vista previa')
+    } finally {
+      setPreviewingText(false)
+    }
   }
 
   // Handle submit
@@ -170,6 +215,7 @@ export default function EstampoWizardModal({
         body: JSON.stringify({
           estampoBaseId: selectedEstampoId,
           wizardAnswers: answers,
+          textoEditado: textoEditado || undefined, // NEW
         }),
         credentials: 'include',
       })
@@ -255,6 +301,7 @@ export default function EstampoWizardModal({
                       checked={selectedEstampoId === estampo.id}
                       onChange={() => {
                         setSelectedEstampoId(estampo.id)
+                        setTextoEditado(null)  // NEW: Clear edits when switching estampo
                         // Reset answers when changing estampo
                         const newAnswers: Record<string, string> = {}
                         const wizardVars = new Set(estampo.wizardSchema.map(q => q.variable))
@@ -412,6 +459,14 @@ export default function EstampoWizardModal({
           </button>
           <button
             type="button"
+            className="rounded bg-purple-600 px-4 py-2 text-sm font-medium text-white hover:bg-purple-500 disabled:cursor-not-allowed disabled:bg-purple-300"
+            onClick={handleOpenTextEditor}
+            disabled={!selectedEstampoId || submitting || previewingText}
+          >
+            {previewingText ? 'Cargando...' : 'Editar texto...'}
+          </button>
+          <button
+            type="button"
             className="rounded bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:cursor-not-allowed disabled:bg-blue-300"
             onClick={handleSubmit}
             disabled={submitting || !selectedEstampoId}
@@ -420,6 +475,54 @@ export default function EstampoWizardModal({
           </button>
         </footer>
       </div>
+
+      {/* Text Editor Modal */}
+      {showTextEditor && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 px-4">
+          <div className="w-full max-w-3xl rounded-lg bg-white p-6 shadow-lg max-h-[90vh] overflow-y-auto">
+            <h3 className="text-lg font-semibold mb-4">Editar texto del estampo</h3>
+            <p className="text-xs text-slate-500 mb-3">
+              Puedes editar el texto libremente. Los cambios solo aplicarán a esta diligencia.
+            </p>
+            <textarea
+              className="w-full h-96 border rounded p-3 font-mono text-sm"
+              value={textoEditado || ''}
+              onChange={e => setTextoEditado(e.target.value)}
+            />
+            <div className="mt-4 flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowTextEditor(false)
+                  // Do NOT clear textoEditado on cancel - preserve user edits
+                }}
+                className="rounded bg-slate-200 px-4 py-2 text-sm"
+              >
+                Cancelar
+              </button>
+              {textoEditado && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setTextoEditado(null)
+                    setShowTextEditor(false)
+                  }}
+                  className="rounded bg-amber-600 px-4 py-2 text-sm text-white"
+                >
+                  Restablecer
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => setShowTextEditor(false)}
+                className="rounded bg-blue-600 px-4 py-2 text-sm text-white"
+              >
+                Confirmar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
