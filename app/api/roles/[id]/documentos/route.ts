@@ -47,6 +47,7 @@ export async function GET(
           },
         },
         estampo: true,
+        estampoBase: true,
       },
       orderBy: { createdAt: 'desc' },
     })
@@ -69,6 +70,13 @@ export async function GET(
             id: doc.estampo.id,
             nombre: doc.estampo.nombre,
             tipo: doc.estampo.tipo,
+          }
+        : null,
+      estampoBase: doc.estampoBase
+        ? {
+            id: doc.estampoBase.id,
+            nombreVisible: doc.estampoBase.nombreVisible,
+            categoria: doc.estampoBase.categoria,
           }
         : null,
     }))

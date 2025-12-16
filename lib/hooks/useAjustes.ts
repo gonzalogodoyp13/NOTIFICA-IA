@@ -55,3 +55,56 @@ export function useEstampos() {
   })
 }
 
+interface WizardCategoria {
+  categoria: string
+  label: string
+  count: number
+}
+
+interface EstamposGrouped {
+  wizard: WizardCategoria[]
+  legacy: EstampoCatalogItem[]
+}
+
+export function useEstamposGrouped() {
+  const { data: legacyEstampos = [], isLoading: legacyLoading } = useEstampos()
+
+  const {
+    data: wizardCategorias = [],
+    isLoading: wizardLoading,
+    error: wizardError,
+  } = useQuery<WizardCategoria[]>({
+    queryKey: ['estampos', 'wizard', 'categorias'],
+    queryFn: async () => {
+      try {
+        const response = await fetch('/api/estampos/wizard/categorias', {
+          credentials: 'include',
+        })
+
+        if (!response.ok) {
+          throw new Error('No se pudieron cargar las categorías wizard')
+        }
+
+        const payload = await response.json().catch(() => null)
+        if (payload?.ok && Array.isArray(payload.data)) {
+          return payload.data
+        }
+
+        return []
+      } catch (error) {
+        console.warn('Fallo al cargar categorías wizard desde API', error)
+        return []
+      }
+    },
+  })
+
+  return {
+    data: {
+      wizard: wizardCategorias,
+      legacy: legacyEstampos,
+    } as EstamposGrouped,
+    isLoading: legacyLoading || wizardLoading,
+    error: wizardError,
+  }
+}
+

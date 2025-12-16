@@ -5,6 +5,7 @@ export const zDocumento = z.object({
   rolId: z.string().min(1, "rolId es requerido"),
   diligenciaId: z.string().optional(),
   estampoId: z.string().optional(),
+  estampoBaseId: z.number().int().optional(),
   nombre: z.string().min(3, "Nombre debe tener al menos 3 caracteres"),
   tipo: z.string().min(2, "Tipo es requerido"),
   pdfId: z.string().optional(),

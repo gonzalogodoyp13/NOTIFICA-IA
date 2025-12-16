@@ -70,10 +70,14 @@ export async function GET(
     // Cast to DiligenciaWithRelations - we know the include matches the expected structure
     const diligenciaWithRelations = diligencia as DiligenciaWithRelations
 
-    // Fetch EstampoBase for BUSQUEDA_NEGATIVA (hardcoded for now)
+    // Get categoria from query param, default to BUSQUEDA_NEGATIVA for backward compatibility
+    const searchParams = req.nextUrl.searchParams
+    const categoria = searchParams.get('categoria') || 'BUSQUEDA_NEGATIVA'
+
+    // Fetch EstampoBase for the specified categoria
     const estamposBase = await prisma.estampoBase.findMany({
       where: {
-        categoria: 'BUSQUEDA_NEGATIVA',
+        categoria,
         isActive: true,
       },
       orderBy: {

@@ -97,9 +97,6 @@ export async function POST(
       )
     }
 
-    // Cast to DiligenciaWithRelations - we know the include matches the expected structure
-    const diligenciaWithRelations = diligencia as DiligenciaWithRelations
-
     // Load EstampoBase
     const estampoBase = await prisma.estampoBase.findFirst({
       where: {
@@ -129,8 +126,8 @@ export async function POST(
 
     // Build complete variables
     const initialVariables = buildInitialVariables({
-      diligencia: diligenciaWithRelations,
-      rol: diligenciaWithRelations.rol,
+      diligencia: diligencia as unknown as DiligenciaWithRelations,
+      rol: diligencia.rol,
       estampoBase,
       estampoCustom,
       dbUser,
@@ -196,9 +193,9 @@ export async function POST(
     // Build header data
     const headerData: HeaderData = {
       receptorNombre: dbUser?.officeName ?? 'Receptor Judicial',
-      tribunalNombre: diligenciaWithRelations.rol.tribunal?.nombre ?? null,
-      rolNumero: diligenciaWithRelations.rol.rol,
-      bancoNombre: diligenciaWithRelations.rol.demanda?.abogados?.banco?.nombre ?? null,
+      tribunalNombre: diligencia.rol.tribunal?.nombre ?? null,
+      rolNumero: diligencia.rol.rol,
+      bancoNombre: diligencia.rol.demanda?.abogados?.banco?.nombre ?? null,
       ejecutadoNombre: finalVariables.nombre_ejecutado || null,
     }
 
@@ -208,12 +205,13 @@ export async function POST(
     // Create Documento record
     const documento = await prisma.documento.create({
       data: {
-        rolId: diligenciaWithRelations.rolId,
-        diligenciaId: diligenciaWithRelations.id,
+        rolId: diligencia.rolId,
+        diligenciaId: diligencia.id,
+        estampoBaseId: estampoBaseId,
         nombre: `Estampo ${estampoBase.nombreVisible}`,
         tipo: 'Estampo',
         pdfId: pdfBase64,
-        textoEditado: textoEditado || null, // NEW
+        textoEditado: textoEditado || null,
         version: 1,
       },
     })

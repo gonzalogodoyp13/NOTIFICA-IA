@@ -49,6 +49,14 @@ const DocumentoItemSchema = z.object({
     })
     .nullable()
     .optional(),
+  estampoBase: z
+    .object({
+      id: z.number(),
+      nombreVisible: z.string(),
+      categoria: z.string(),
+    })
+    .nullable()
+    .optional(),
 })
 
 const NotaItemSchema = z.object({

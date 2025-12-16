@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 
-import { useEstampos } from '@/lib/hooks/useAjustes'
+import { useEstamposGrouped } from '@/lib/hooks/useAjustes'
 import {
   useGenerateBoleta,
   useGenerateEstampo,
@@ -13,6 +13,7 @@ import {
 } from '@/lib/hooks/useRolWorkspace'
 import { BoletaGenerateSchema, EstampoGenerateSchema } from '@/lib/validations/rol-workspace'
 import { cleanCuantiaInput } from '@/lib/utils/cuantia'
+import { parseEstampoTipo, type EstampoTipo } from '@/lib/estampos/selection'
 
 interface EjecutarWizardProps {
   rolId: string
@@ -21,6 +22,7 @@ interface EjecutarWizardProps {
   initialStep?: 1 | 2 | 3
   onClose: () => void
   onSuccess?: () => void
+  onOpenWizard?: (diligenciaId: string, categoria: string) => void
 }
 
 interface EstampoCatalogItem {
@@ -37,12 +39,13 @@ export default function EjecutarWizard({
   initialStep,
   onClose,
   onSuccess,
+  onOpenWizard,
 }: EjecutarWizardProps) {
   // Get rol data if not provided
   const { data: rolDataFromHook } = useRolData(rolId)
   const rolData = rolDataProp || rolDataFromHook
 
-  const { data: estampos = [], isLoading: estamposLoading } = useEstampos()
+  const { data: estamposGrouped, isLoading: estamposLoading } = useEstamposGrouped()
   const updateMeta = useUpdateDiligenciaMeta(rolId, diligencia.id)
   const generateBoleta = useGenerateBoleta(rolId, diligencia.id)
   const generateEstampo = useGenerateEstampo(rolId, diligencia.id)
@@ -54,8 +57,8 @@ export default function EjecutarWizard({
   const [fechaEjecucion, setFechaEjecucion] = useState('')
   const [horaEjecucion, setHoraEjecucion] = useState('')
 
-  // Step II fields
-  const [selectedEstampoId, setSelectedEstampoId] = useState('')
+  // Step II fields - nueva estructura unificada
+  const [selectedEstampoTipo, setSelectedEstampoTipo] = useState<EstampoTipo | null>(null)
   const [monto, setMonto] = useState('')
 
   // Step III fields
@@ -65,7 +68,7 @@ export default function EjecutarWizard({
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
   const [successMsg, setSuccessMsg] = useState<string | null>(null)
 
-  // Initialize from meta
+  // Initialize from meta using parseEstampoTipo
   useEffect(() => {
     const meta = diligencia.meta as Record<string, unknown> | null | undefined
     if (meta) {
@@ -76,8 +79,10 @@ export default function EjecutarWizard({
       if (meta.horaEjecucion) {
         setHoraEjecucion(meta.horaEjecucion as string)
       }
-      if (meta.estampoId) {
-        setSelectedEstampoId(String(meta.estampoId))
+      // Use parseEstampoTipo for backward compatibility
+      const estampoTipo = parseEstampoTipo(meta)
+      if (estampoTipo) {
+        setSelectedEstampoTipo(estampoTipo)
       }
       if (meta.monto) {
         setMonto(String(meta.monto))
@@ -88,25 +93,33 @@ export default function EjecutarWizard({
     }
   }, [diligencia.meta])
 
-  // Get selected estampo
-  const selectedEstampo = useMemo<EstampoCatalogItem | undefined>(
-    () => estampos.find(item => String(item.id) === selectedEstampoId),
-    [estampos, selectedEstampoId]
-  )
+  // Get selected estampo (legacy only, for Step 3)
+  const selectedEstampo = useMemo<EstampoCatalogItem | undefined>(() => {
+    if (selectedEstampoTipo?.kind === 'LEGACY' && estamposGrouped?.legacy) {
+      return estamposGrouped.legacy.find(
+        item => String(item.id) === selectedEstampoTipo.estampoId
+      )
+    }
+    return undefined
+  }, [selectedEstampoTipo, estamposGrouped])
 
-  // Auto-fill monto when estampo is selected (Step II)
+  // Auto-fill monto when legacy estampo is selected (Step II) - only for legacy
   useEffect(() => {
-    if (step === 2 && selectedEstampoId && rolData) {
-      const demanda = rolData.demanda
+    if (
+      step === 2 &&
+      selectedEstampoTipo?.kind === 'LEGACY' &&
+      selectedEstampoTipo.estampoId &&
+      rolData
+    ) {
       const abogado = rolData.abogado
       const bancoId = abogado?.banco?.id ?? null
-      const abogadoId = demanda?.abogadoId ?? abogado?.id ?? null
+      const abogadoId = abogado?.id ?? null
 
-      if (bancoId && selectedEstampoId) {
-        // Call API to lookup arancel
+      if (bancoId && selectedEstampoTipo.estampoId) {
+        // Call API to lookup arancel (auto-suggest only, doesn't block if fails)
         const params = new URLSearchParams({
           bancoId: String(bancoId),
-          estampoId: selectedEstampoId,
+          estampoId: selectedEstampoTipo.estampoId,
         })
         if (abogadoId) {
           params.append('abogadoId', String(abogadoId))
@@ -126,7 +139,8 @@ export default function EjecutarWizard({
           })
       }
     }
-  }, [step, selectedEstampoId, rolData])
+    // Wizard doesn't do lookup - monto is entered manually
+  }, [step, selectedEstampoTipo, rolData])
 
   // Pre-fill contenidoEstampo when entering Step III
   useEffect(() => {
@@ -182,22 +196,36 @@ export default function EjecutarWizard({
   const handleStepIIGenerate = async (continueToStep3: boolean) => {
     setErrorMsg(null)
 
-    if (!selectedEstampoId) {
+    // Validar selección (wizard o legacy, no ambos)
+    if (!selectedEstampoTipo) {
       setErrorMsg('Selecciona un tipo de estampo.')
       return
     }
 
+    // Validar monto (requerido, pero no depende de lookup exitoso)
     const montoNum = cleanCuantiaInput(monto)
     if (montoNum === null || montoNum < 0) {
       setErrorMsg('El monto es requerido y debe ser mayor o igual a 0.')
       return
     }
 
+    // Obtener nombre del estampo para el recibo
+    let tipoEstampoNombre: string | undefined
+    if (selectedEstampoTipo.kind === 'LEGACY') {
+      tipoEstampoNombre = selectedEstampo?.nombre
+    } else if (selectedEstampoTipo.kind === 'WIZARD') {
+      // Para wizard, usar el label de la categoría
+      const categoria = estamposGrouped?.wizard.find(
+        cat => cat.categoria === selectedEstampoTipo.categoria
+      )
+      tipoEstampoNombre = categoria?.label
+    }
+
     const validation = BoletaGenerateSchema.safeParse({
       monto: montoNum,
       medio: 'No especificado',
       referencia: undefined,
-      tipoEstampoNombre: selectedEstampo?.nombre ?? undefined, // Agregar nombre del estampo
+      tipoEstampoNombre,
     })
 
     if (!validation.success) {
@@ -207,15 +235,28 @@ export default function EjecutarWizard({
 
     generateBoleta.mutate(validation.data, {
       onSuccess: () => {
-        // Save estampoId and monto to meta
+        // Guardar estampoTipo (nuevo formato) y monto
         const metaUpdates: Record<string, unknown> = {
-          estampoId: selectedEstampoId,
+          estampoTipo: selectedEstampoTipo,
           monto: montoNum,
         }
+
+        // Mantener compatibilidad: escribir estampoId si es legacy
+        if (selectedEstampoTipo.kind === 'LEGACY') {
+          metaUpdates.estampoId = selectedEstampoTipo.estampoId
+        }
+
         updateMeta.mutate(metaUpdates, {
           onSuccess: () => {
             if (continueToStep3) {
-              setStep(3)
+              // Si es wizard, abrir modal wizard y cerrar este wizard
+              if (selectedEstampoTipo.kind === 'WIZARD' && selectedEstampoTipo.categoria) {
+                onOpenWizard?.(diligencia.id, selectedEstampoTipo.categoria)
+                onClose()
+              } else if (selectedEstampoTipo.kind === 'LEGACY') {
+                // Si es legacy, avanzar a Step 3 como antes
+                setStep(3)
+              }
             } else {
               setSuccessMsg('Recibo generado correctamente.')
               onSuccess?.()
@@ -227,7 +268,12 @@ export default function EjecutarWizard({
           onError: () => {
             // Boleta was generated but meta update failed - still continue
             if (continueToStep3) {
-              setStep(3)
+              if (selectedEstampoTipo.kind === 'WIZARD' && selectedEstampoTipo.categoria) {
+                onOpenWizard?.(diligencia.id, selectedEstampoTipo.categoria)
+                onClose()
+              } else if (selectedEstampoTipo.kind === 'LEGACY') {
+                setStep(3)
+              }
             } else {
               onClose()
             }
@@ -266,11 +312,17 @@ export default function EjecutarWizard({
     })
   }
 
-  // Handle Step III: Generate Estampo
+  // Handle Step III: Generate Estampo (solo para legacy)
   const handleStepIIIGenerate = () => {
     setErrorMsg(null)
 
-    if (!selectedEstampoId) {
+    // Step 3 solo aplica para legacy
+    if (!selectedEstampoTipo || selectedEstampoTipo.kind !== 'LEGACY') {
+      setErrorMsg('No hay un estampo legacy seleccionado.')
+      return
+    }
+
+    if (!selectedEstampoTipo.estampoId) {
       setErrorMsg('No hay un estampo seleccionado.')
       return
     }
@@ -281,7 +333,7 @@ export default function EjecutarWizard({
     }
 
     const validation = EstampoGenerateSchema.safeParse({
-      estampoId: selectedEstampoId,
+      estampoId: selectedEstampoTipo.estampoId,
       contenidoPersonalizado: contenidoEstampo.trim(),
     })
 
@@ -389,16 +441,48 @@ export default function EjecutarWizard({
                   <select
                     id="tipo-estampo"
                     className="mt-1 w-full rounded border border-slate-300 p-2"
-                    value={selectedEstampoId}
-                    onChange={e => setSelectedEstampoId(e.target.value)}
+                    value={
+                      selectedEstampoTipo?.kind === 'WIZARD'
+                        ? `wizard:${selectedEstampoTipo.categoria}`
+                        : selectedEstampoTipo?.kind === 'LEGACY'
+                          ? `legacy:${selectedEstampoTipo.estampoId}`
+                          : ''
+                    }
+                    onChange={e => {
+                      const value = e.target.value
+                      if (value.startsWith('wizard:')) {
+                        const categoria = value.replace('wizard:', '')
+                        setSelectedEstampoTipo({ kind: 'WIZARD', categoria })
+                      } else if (value.startsWith('legacy:')) {
+                        const estampoId = value.replace('legacy:', '')
+                        setSelectedEstampoTipo({ kind: 'LEGACY', estampoId })
+                      } else {
+                        setSelectedEstampoTipo(null)
+                      }
+                    }}
                   >
-                    <option value="">Seleccione un estampo…</option>
-                    {estampos.map(item => (
-                      <option key={item.id} value={item.id}>
-                        {item.nombre}
-                        {item.tipo ? ` (${item.tipo})` : ''}
-                      </option>
-                    ))}
+                    <option value="">Seleccione un tipo de estampo…</option>
+                    {/* Grupo Wizard */}
+                    {estamposGrouped?.wizard && estamposGrouped.wizard.length > 0 && (
+                      <optgroup label="Wizard (Global)">
+                        {estamposGrouped.wizard.map(cat => (
+                          <option key={`wizard:${cat.categoria}`} value={`wizard:${cat.categoria}`}>
+                            {cat.label}
+                          </option>
+                        ))}
+                      </optgroup>
+                    )}
+                    {/* Grupo Legacy */}
+                    {estamposGrouped?.legacy && estamposGrouped.legacy.length > 0 && (
+                      <optgroup label="Mis Estampos (Manuales)">
+                        {estamposGrouped.legacy.map(item => (
+                          <option key={`legacy:${item.id}`} value={`legacy:${item.id}`}>
+                            {item.nombre}
+                            {item.tipo ? ` (${item.tipo})` : ''}
+                          </option>
+                        ))}
+                      </optgroup>
+                    )}
                   </select>
                 )}
               </div>
@@ -415,14 +499,16 @@ export default function EjecutarWizard({
                   onChange={e => setMonto(e.target.value)}
                 />
                 <p className="mt-1 text-xs text-slate-500">
-                  El monto se auto-completará si existe un arancel configurado.
+                  {selectedEstampoTipo?.kind === 'LEGACY'
+                    ? 'El monto se auto-completará si existe un arancel configurado.'
+                    : 'Ingresa el monto manualmente.'}
                 </p>
               </div>
             </>
           )}
 
-          {/* Step III: Contenido Estampo */}
-          {step === 3 && (
+          {/* Step III: Contenido Estampo (solo para legacy) */}
+          {step === 3 && selectedEstampoTipo?.kind === 'LEGACY' && (
             <div>
               <label className="block font-medium text-slate-700" htmlFor="contenido-estampo">
                 Contenido del estampo *
@@ -491,7 +577,7 @@ export default function EjecutarWizard({
                 type="button"
                 className="rounded bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-500 disabled:cursor-not-allowed disabled:bg-emerald-300"
                 onClick={() => handleStepIIGenerate(false)}
-                disabled={isLoading || !selectedEstampoId || !monto}
+                disabled={isLoading || !selectedEstampoTipo || !monto}
               >
                 {isLoading ? 'Generando…' : 'Generar recibo'}
               </button>
@@ -499,15 +585,15 @@ export default function EjecutarWizard({
                 type="button"
                 className="rounded bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:cursor-not-allowed disabled:bg-blue-300"
                 onClick={() => handleStepIIGenerate(true)}
-                disabled={isLoading || !selectedEstampoId || !monto}
+                disabled={isLoading || !selectedEstampoTipo || !monto}
               >
                 {isLoading ? 'Generando…' : 'Generar recibo y continuar'}
               </button>
             </>
           )}
 
-          {/* Step III buttons */}
-          {step === 3 && (
+          {/* Step III buttons (solo para legacy) */}
+          {step === 3 && selectedEstampoTipo?.kind === 'LEGACY' && (
             <>
               <button
                 type="button"

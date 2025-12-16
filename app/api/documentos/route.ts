@@ -53,6 +53,7 @@ export async function GET(req: NextRequest) {
       },
       include: {
         estampo: true,
+        estampoBase: true,
         diligencia: {
           select: {
             id: true,
@@ -154,6 +155,7 @@ export async function POST(req: NextRequest) {
         rolId: parsed.data.rolId,
         diligenciaId: parsed.data.diligenciaId || null,
         estampoId: parsed.data.estampoId || null,
+        estampoBaseId: parsed.data.estampoBaseId || null,
         nombre: parsed.data.nombre,
         tipo: parsed.data.tipo,
         pdfId: parsed.data.pdfId || null,
@@ -161,6 +163,7 @@ export async function POST(req: NextRequest) {
       },
       include: {
         estampo: true,
+        estampoBase: true,
         diligencia: {
           select: {
             id: true,
@@ -250,6 +253,7 @@ export async function PUT(req: NextRequest) {
       data: parsed.data,
       include: {
         estampo: true,
+        estampoBase: true,
         diligencia: {
           select: {
             id: true,

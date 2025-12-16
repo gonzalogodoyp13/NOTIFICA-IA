@@ -78,7 +78,7 @@ export default function DiligenciasTable({ rolId }: DiligenciasTableProps) {
   const [ejecutarTarget, setEjecutarTarget] = useState<DiligenciaItem | null>(null)
   const [ejecutarInitialStep, setEjecutarInitialStep] = useState<1 | 2 | 3 | undefined>(undefined)
   const [flashMessage, setFlashMessage] = useState<string | null>(null)
-  const [estampoWizardDiligenciaId, setEstampoWizardDiligenciaId] = useState<string | null>(null)
+  const [wizardModalOpen, setWizardModalOpen] = useState<{ diligenciaId: string; categoria: string } | null>(null)
 
   const sorted = useMemo(
     () =>
@@ -269,13 +269,6 @@ export default function DiligenciasTable({ rolId }: DiligenciasTableProps) {
                             >
                               Continuar con Estampo
                             </button>
-                            <button
-                              type="button"
-                              onClick={() => setEstampoWizardDiligenciaId(diligencia.id)}
-                              className="rounded border border-purple-200 bg-purple-50 px-3 py-1 text-purple-700 transition hover:bg-purple-100"
-                            >
-                              Generar estampo (nuevo)
-                            </button>
                             {progress.latestBoletaId && (
                               <button
                                 type="button"
@@ -348,18 +341,23 @@ export default function DiligenciasTable({ rolId }: DiligenciasTableProps) {
             setEjecutarTarget(null)
             setEjecutarInitialStep(undefined)
           }}
+          onOpenWizard={(diligenciaId, categoria) => {
+            setWizardModalOpen({ diligenciaId, categoria })
+          }}
         />
       )}
-      {estampoWizardDiligenciaId && (
+      {wizardModalOpen && (
         <EstampoWizardModal
           rolId={rolId}
-          diligenciaId={estampoWizardDiligenciaId}
+          diligenciaId={wizardModalOpen.diligenciaId}
+          categoria={wizardModalOpen.categoria}
           isOpen={true}
-          onClose={() => setEstampoWizardDiligenciaId(null)}
+          onClose={() => setWizardModalOpen(null)}
           onSuccess={() => {
             refetchDiligencias()
             refetchDocumentos()
             setFlashMessage('Estampo generado correctamente.')
+            setWizardModalOpen(null)
           }}
         />
       )}

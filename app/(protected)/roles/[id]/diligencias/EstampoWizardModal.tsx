@@ -10,6 +10,7 @@ interface EstampoWizardModalProps {
   isOpen: boolean
   onClose: () => void
   onSuccess?: () => void
+  categoria?: string // Opcional, default "BUSQUEDA_NEGATIVA" para compatibilidad
 }
 
 interface EstampoItem {
@@ -35,6 +36,7 @@ export default function EstampoWizardModal({
   isOpen,
   onClose,
   onSuccess,
+  categoria = 'BUSQUEDA_NEGATIVA', // Default para compatibilidad
 }: EstampoWizardModalProps) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -59,7 +61,9 @@ export default function EstampoWizardModal({
       setError(null)
 
       try {
-        const response = await fetch(`/api/diligencias/${diligenciaId}/estampos/wizard`, {
+        const url = new URL(`/api/diligencias/${diligenciaId}/estampos/wizard`, window.location.origin)
+        url.searchParams.set('categoria', categoria)
+        const response = await fetch(url.toString(), {
           credentials: 'include',
           cache: 'no-store',
         })
@@ -114,7 +118,7 @@ export default function EstampoWizardModal({
     return () => {
       active = false
     }
-  }, [isOpen, diligenciaId])
+  }, [isOpen, diligenciaId, categoria])
 
   // Reset state when modal closes
   useEffect(() => {
