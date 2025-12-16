@@ -170,6 +170,35 @@ export function computeDerivedVariables(
         // Incluye "NO_DEFINIR" y cualquier otro valor
         value = 'el(la) demandado(a)'
       }
+    } else if (variableDef.name === 'frase_persona_que_informa') {
+      const quienInforma = variables.quien_informa || ''
+      const numeroVecino = variables.numero_vecino || ''
+      
+      if (quienInforma === 'VECINA' || quienInforma === 'VECINO') {
+        if (numeroVecino.trim() !== '' && numeroVecino.toUpperCase() !== 'NINGUNO') {
+          value = `me informó persona adulta vecino/a de la casa signada con el Nº ${numeroVecino}`
+        } else {
+          value = 'me informó persona adulta vecino/a al domicilio'
+        }
+      } else if (quienInforma === 'GUARDIA_CONDOMINIO') {
+        value = 'me informó el guardia del condominio'
+      } else if (quienInforma === 'CONSERJE_EDIFICIO') {
+        value = 'me informó el conserje del edificio'
+      } else if (quienInforma === 'ADULTO_MISMO_INMUEBLE') {
+        value = 'me informó persona adulta del mismo inmueble'
+      } else {
+        // Fallback seguro si quien_informa no está en valores esperados
+        value = ''
+      }
+    } else if (variableDef.name === 'frase_identificacion') {
+      const seIdentifico = variables.se_identifico || ''
+      const nombreIdentificacion = variables.nombre_identificacion || ''
+      
+      if (seIdentifico === 'SI' && nombreIdentificacion.trim() !== '') {
+        value = `, que se identificó con el nombre ${nombreIdentificacion}`
+      } else {
+        value = ', que no se identificó'
+      }
     } else {
       // Para otras variables derivadas futuras, dejar vacío por ahora
       value = ''
