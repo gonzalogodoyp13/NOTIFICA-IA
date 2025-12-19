@@ -18,13 +18,22 @@ const DiligenciaTipoSchema = z.object({
   descripcion: z.string().nullable().optional(),
 })
 
+const NotificacionItemSchema = z.object({
+  id: z.string(),
+  diligenciaId: z.string(),
+  meta: z.unknown().nullable().optional(),
+  createdAt: z.string().nullable(),
+  updatedAt: z.string().nullable(),
+})
+
 const DiligenciaItemSchema = z.object({
   id: z.string(),
   tipo: DiligenciaTipoSchema,
   estado: estadoDiligenciaEnum,
   fecha: z.string(),
-  meta: z.record(z.string(), z.unknown()).nullable().optional(),
+  meta: z.unknown().nullable().optional(),
   createdAt: z.string(),
+  notificaciones: z.array(NotificacionItemSchema).default([]),
 })
 
 const DocumentoItemSchema = z.object({
@@ -34,6 +43,8 @@ const DocumentoItemSchema = z.object({
   version: z.number(),
   pdfId: z.string().nullable().optional(),
   createdAt: z.string(),
+  diligenciaId: z.string().nullable().optional(),
+  notificacionId: z.string().nullable().optional(),
   diligencia: z
     .object({
       id: z.string(),
@@ -210,6 +221,7 @@ export type DiligenciaItem = z.infer<typeof DiligenciaItemSchema>
 export type DocumentoItem = z.infer<typeof DocumentoItemSchema>
 export type NotaItem = z.infer<typeof NotaItemSchema>
 export type TimelineItem = z.infer<typeof TimelineItemSchema>
+export type NotificacionItem = z.infer<typeof NotificacionItemSchema>
 
 export function useRolData(rolId: string) {
   return useQuery({
@@ -365,6 +377,41 @@ export function useCreateDiligencia(
   })
 }
 
+async function createNotificacion(rolId: string, diligenciaId: string) {
+  const response = await fetch(
+    `/api/roles/${rolId}/diligencias/${diligenciaId}/notificaciones`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+    }
+  )
+
+  const result = await response.json().catch(() => null)
+
+  if (!response.ok || result?.ok !== true) {
+    throw new Error(
+      (result && typeof result.error === 'string' && result.error) ||
+        'Error al crear notificación'
+    )
+  }
+
+  return result.data as z.infer<typeof NotificacionItemSchema>
+}
+
+export function useCreateNotificacion(
+  rolId: string
+): UseMutationResult<z.infer<typeof NotificacionItemSchema>, Error, string> {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: (diligenciaId: string) => createNotificacion(rolId, diligenciaId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: diligenciasKey(rolId) })
+    },
+  })
+}
+
 export function useGenerateBoleta(
   rolId: string,
   diligenciaId: string
@@ -460,6 +507,96 @@ export function useUpdateDiligenciaMeta(
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: diligenciasKey(rolId) })
       queryClient.invalidateQueries({ queryKey: rolQueryKey(rolId) })
+    },
+  })
+}
+
+async function patchNotificacionMeta(
+  rolId: string,
+  diligenciaId: string,
+  notificacionId: string,
+  metaPatch: Record<string, unknown>
+): Promise<NotificacionItem> {
+  const response = await fetch(
+    `/api/roles/${rolId}/diligencias/${diligenciaId}/notificaciones/${notificacionId}`,
+    {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ meta: metaPatch }),
+      credentials: 'include',
+    }
+  )
+
+  const result = await response.json().catch(() => null)
+  if (!response.ok || result?.ok !== true) {
+    throw new Error(
+      (result && typeof result.error === 'string' && result.error) ||
+        'Error al actualizar notificación'
+    )
+  }
+
+  const parsed = NotificacionItemSchema.safeParse(result.data)
+  if (!parsed.success) {
+    throw new Error('Respuesta del servidor inválida')
+  }
+
+  return parsed.data
+}
+
+export function useUpdateNotificacionMeta(
+  rolId: string,
+  diligenciaId: string,
+  notificacionId: string
+): UseMutationResult<NotificacionItem, Error, Record<string, unknown>> {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: (metaPatch: Record<string, unknown>) =>
+      patchNotificacionMeta(rolId, diligenciaId, notificacionId, metaPatch),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: diligenciasKey(rolId) })
+    },
+  })
+}
+
+async function deleteNotificacion(
+  rolId: string,
+  diligenciaId: string,
+  notificacionId: string
+): Promise<void> {
+  const response = await fetch(
+    `/api/roles/${rolId}/diligencias/${diligenciaId}/notificaciones/${notificacionId}`,
+    {
+      method: 'DELETE',
+      credentials: 'include',
+    }
+  )
+
+  const result = await response.json().catch(() => null)
+
+  if (!response.ok || result?.ok !== true) {
+    const message =
+      (result && typeof result.error === 'string' && result.error) ||
+      'Error al eliminar notificación'
+
+    if (response.status === 409) {
+      throw new Error(`CONFLICT:${message}`)
+    }
+
+    throw new Error(message)
+  }
+}
+
+export function useDeleteNotificacion(
+  rolId: string
+): UseMutationResult<void, Error, { diligenciaId: string; notificacionId: string }> {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: ({ diligenciaId, notificacionId }: { diligenciaId: string; notificacionId: string }) =>
+      deleteNotificacion(rolId, diligenciaId, notificacionId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: diligenciasKey(rolId) })
     },
   })
 }

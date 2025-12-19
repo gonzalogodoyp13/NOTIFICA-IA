@@ -229,14 +229,28 @@ model Diligencia {
   rol        RolCausa         @relation(fields: [rolId], references: [id])
   tipo       DiligenciaTipo   @relation(fields: [tipoId], references: [id])
   documentos Documento[]
+  notificaciones Notificacion[]
 
   @@index([rolId, createdAt])
+}
+
+model Notificacion {
+  id           String     @id
+  diligenciaId String
+  meta         Json?
+  createdAt    DateTime?
+  updatedAt    DateTime?
+  diligencia   Diligencia @relation(fields: [diligenciaId], references: [id])
+  documentos   Documento[]
+
+  @@map("notificaciones")
 }
 
 model Documento {
   id            String       @id @default(cuid())
   rolId         String
   diligenciaId  String?
+  notificacionId String?
   estampoId     String?
   nombre        String
   tipo          String
@@ -246,6 +260,7 @@ model Documento {
   textoEditado  String?
   estampoBaseId Int?
   diligencia    Diligencia?  @relation(fields: [diligenciaId], references: [id])
+  notificacion  Notificacion? @relation(fields: [notificacionId], references: [id])
   estampoBase   EstampoBase? @relation(fields: [estampoBaseId], references: [id])
   estampo       Estampo?     @relation(fields: [estampoId], references: [id])
   rol           RolCausa     @relation(fields: [rolId], references: [id])

@@ -22,6 +22,7 @@ const GenerateEstampoSchema = z.object({
   estampoBaseId: z.number().int().positive(),
   wizardAnswers: z.record(z.string(), z.string()),
   textoEditado: z.string().optional(), // NEW
+  notificacionId: z.string().optional().nullable(),
 })
 
 export async function POST(
@@ -52,7 +53,7 @@ export async function POST(
       )
     }
 
-    const { estampoBaseId, wizardAnswers, textoEditado } = parsed.data
+    const { estampoBaseId, wizardAnswers, textoEditado, notificacionId } = parsed.data
 
     // Load diligencia with all relations (same pattern as wizard endpoint)
     const diligencia = await prisma.diligencia.findFirst({
@@ -112,6 +113,17 @@ export async function POST(
       )
     }
 
+    const noti = notificacionId
+      ? await prisma.notificacion.findFirst({
+          where: { id: notificacionId, diligenciaId: diligencia.id },
+          select: { id: true, meta: true },
+        })
+      : null
+
+    if (notificacionId && !noti) {
+      return NextResponse.json({ ok: false, error: 'Notificación no encontrada' }, { status: 404 })
+    }
+
     // Load EstampoCustom if exists
     const estampoCustom = await prisma.estampoCustom.findFirst({
       where: {
@@ -124,9 +136,22 @@ export async function POST(
     // Determine final textoTemplate (custom overrides base)
     const textoTemplate = estampoCustom?.textoTemplate ?? estampoBase.textoTemplate
 
+    const isPlainObject = (x: unknown): x is Record<string, unknown> =>
+      !!x && typeof x === 'object' && !Array.isArray(x)
+
+    const notiMeta = isPlainObject(noti?.meta) ? (noti!.meta as Record<string, unknown>) : null
+    const diliMeta = isPlainObject(diligencia.meta)
+      ? (diligencia.meta as Record<string, unknown>)
+      : null
+
+    const effectiveMeta =
+      notiMeta && Object.keys(notiMeta).length > 0 ? notiMeta : (diliMeta ?? {})
+
+    const diligenciaForVars = { ...diligencia, meta: effectiveMeta }
+
     // Build complete variables
     const initialVariables = buildInitialVariables({
-      diligencia: diligencia as unknown as DiligenciaWithRelations,
+      diligencia: diligenciaForVars as unknown as DiligenciaWithRelations,
       rol: diligencia.rol,
       estampoBase,
       estampoCustom,
@@ -207,6 +232,7 @@ export async function POST(
       data: {
         rolId: diligencia.rolId,
         diligenciaId: diligencia.id,
+        notificacionId: notificacionId ?? null,
         estampoBaseId: estampoBaseId,
         nombre: `Estampo ${estampoBase.nombreVisible}`,
         tipo: 'Estampo',

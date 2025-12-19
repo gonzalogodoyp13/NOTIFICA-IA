@@ -7,6 +7,7 @@ import type { VariableDef, WizardQuestion } from '@/lib/estampos/types'
 interface EstampoWizardModalProps {
   rolId: string
   diligenciaId: string
+  notificacionId: string
   isOpen: boolean
   onClose: () => void
   onSuccess?: () => void
@@ -33,6 +34,7 @@ interface WizardResponse {
 export default function EstampoWizardModal({
   rolId,
   diligenciaId,
+  notificacionId,
   isOpen,
   onClose,
   onSuccess,
@@ -220,6 +222,7 @@ export default function EstampoWizardModal({
           estampoBaseId: selectedEstampoId,
           wizardAnswers: answers,
           textoEditado: textoEditado || undefined, // NEW
+          notificacionId,
         }),
         credentials: 'include',
       })

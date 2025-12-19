@@ -74,6 +74,9 @@ export async function GET(
       where: { rolId: rol.id },
       include: {
         tipo: true,
+        notificaciones: {
+          orderBy: { createdAt: 'asc' },
+        },
       },
       orderBy: { createdAt: 'desc' },
     })
@@ -89,7 +92,21 @@ export async function GET(
       fecha: d.fecha.toISOString(),
       meta: d.meta,
       createdAt: d.createdAt.toISOString(),
+      notificaciones: d.notificaciones.map(n => ({
+        id: n.id,
+        diligenciaId: n.diligenciaId,
+        meta: n.meta,
+        createdAt: n.createdAt ? n.createdAt.toISOString() : null,
+        updatedAt: n.updatedAt ? n.updatedAt.toISOString() : null,
+      })),
     }))
+
+    // DEBUG TEMPORAL: Verificar que notificaciones están en respuesta
+    if (process.env.NODE_ENV === 'development' && data.length > 0) {
+      const sample = data[0]
+      console.log('[DEBUG] Sample diligencia keys:', Object.keys(sample))
+      console.log('[DEBUG] Sample notificaciones count:', sample.notificaciones?.length ?? 0)
+    }
 
     return NextResponse.json({ ok: true, data })
   } catch (error) {

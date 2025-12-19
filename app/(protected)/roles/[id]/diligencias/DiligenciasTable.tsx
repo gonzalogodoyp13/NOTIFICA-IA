@@ -3,6 +3,8 @@ import { useMemo, useState } from 'react'
 import {
   useDiligencias,
   useDocumentos,
+  useCreateNotificacion,
+  useDeleteNotificacion,
   type DiligenciaItem,
   type DocumentoItem,
 } from '@/lib/hooks/useRolWorkspace'
@@ -21,7 +23,9 @@ const estadoClases: Record<DiligenciaItem['estado'], string> = {
   fallida: 'rounded-full bg-rose-100 px-2 py-0.5 text-xs font-medium text-rose-800',
 }
 
-interface DiligenciaProgress {
+const TABLE_COLS = 4 // Tipo, Fecha encargo, Estado, Acciones
+
+interface NotificacionProgress {
   step1Done: boolean
   step2Done: boolean
   step3Done: boolean
@@ -29,30 +33,39 @@ interface DiligenciaProgress {
   latestEstampoId: string | null
 }
 
-function getDiligenciaProgress(
+function getNotificacionProgress(
   diligencia: DiligenciaItem,
+  notificacion: DiligenciaItem['notificaciones'][number],
   documentos: DocumentoItem[]
-): DiligenciaProgress {
-  const meta = (diligencia.meta as Record<string, unknown> | null) ?? {}
+): NotificacionProgress {
+  const meta = (notificacion.meta as Record<string, unknown> | null) ?? {}
+  // Step 1 hoy escribe `fechaEjecucion` (legacy key) en notificacion.meta.
+  // Mantener este check EXACTO; no cambiar a meta.ejecucion.* sin agregar fallback.
   const step1Done = !!meta.fechaEjecucion
 
-  // Filter documentos for this diligencia
-  const diligenciaDocs = documentos.filter(
-    doc => doc.diligencia?.id === diligencia.id && doc.pdfId
-  )
+  const docsForNotif = documentos
+    .filter(doc => (doc.diligencia?.id ?? doc.diligenciaId) === diligencia.id)
+    .filter(doc => doc.notificacionId === notificacion.id)
+    .filter(doc => !!doc.pdfId)
 
   // Find latest Boleta (Recibo)
-  const boletas = diligenciaDocs
+  const boletas = docsForNotif
     .filter(doc => doc.tipo === 'Recibo')
-    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+    .sort(
+      (a, b) =>
+        new Date((b as any).createdAt ?? 0).getTime() -
+        new Date((a as any).createdAt ?? 0).getTime()
+    )
   const step2Done = boletas.length > 0
   const latestBoletaId = step2Done ? boletas[0].id : null
 
-  // Find latest Estampo - ensure strict filtering
-  const estampos = diligenciaDocs
+  const estampos = docsForNotif
     .filter(doc => doc.tipo === 'Estampo')
-    .filter(doc => doc.pdfId != null && doc.pdfId !== '') // Explicit null/empty check
-    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+    .sort(
+      (a, b) =>
+        new Date((b as any).createdAt ?? 0).getTime() -
+        new Date((a as any).createdAt ?? 0).getTime()
+    )
   const step3Done = estampos.length > 0
   const latestEstampoId = step3Done && estampos[0]?.id ? estampos[0].id : null
 
@@ -74,11 +87,20 @@ export default function DiligenciasTable({ rolId }: DiligenciasTableProps) {
     refetch: refetchDocumentos,
   } = useDocumentos(rolId)
 
+  const createNotificacion = useCreateNotificacion(rolId)
+  const deleteNotificacion = useDeleteNotificacion(rolId)
+  const [creatingDiligenciaId, setCreatingDiligenciaId] = useState<string | null>(null)
+
   const [showWizard, setShowWizard] = useState(false)
   const [ejecutarTarget, setEjecutarTarget] = useState<DiligenciaItem | null>(null)
+  const [ejecutarNotificacionId, setEjecutarNotificacionId] = useState<string | null>(null)
   const [ejecutarInitialStep, setEjecutarInitialStep] = useState<1 | 2 | 3 | undefined>(undefined)
   const [flashMessage, setFlashMessage] = useState<string | null>(null)
-  const [wizardModalOpen, setWizardModalOpen] = useState<{ diligenciaId: string; categoria: string } | null>(null)
+  const [wizardModalOpen, setWizardModalOpen] = useState<{
+    diligenciaId: string
+    categoria: string
+    notificacionId: string
+  } | null>(null)
 
   const sorted = useMemo(
     () =>
@@ -160,160 +182,292 @@ export default function DiligenciasTable({ rolId }: DiligenciasTableProps) {
             {!isLoading &&
               !isError &&
               sorted.map(diligencia => {
-                const progress =
-                  documentosLoading || documentosError
-                    ? {
-                        step1Done: false,
-                        step2Done: false,
-                        step3Done: false,
-                        latestBoletaId: null,
-                        latestEstampoId: null,
-                      }
-                    : getDiligenciaProgress(diligencia, documentos)
-
-                const handleViewRecibo = (e: React.MouseEvent) => {
+                const handleViewDocumento = (e: React.MouseEvent, documentoId: string) => {
                   e.stopPropagation()
-                  if (progress.latestBoletaId) {
-                    window.open(`/api/documentos/${progress.latestBoletaId}/download?mode=inline`, '_blank')
-                  }
+                  window.open(`/api/documentos/${documentoId}/download?mode=inline`, '_blank')
                 }
 
-                const handleViewEstampo = (e: React.MouseEvent) => {
-                  e.stopPropagation()
-                  if (progress.latestEstampoId) {
-                    window.open(`/api/documentos/${progress.latestEstampoId}/download?mode=inline`, '_blank')
-                  }
-                }
-
-                const handleEjecutar = () => {
-                  setEjecutarInitialStep(1)
+                const openWizardForNotificacion = (
+                  notificacionId: string,
+                  step: 1 | 2 | 3
+                ) => {
                   setEjecutarTarget(diligencia)
+                  setEjecutarNotificacionId(notificacionId)
+                  setEjecutarInitialStep(step)
                 }
 
-                const handleEditar = () => {
-                  setEjecutarInitialStep(1)
-                  setEjecutarTarget(diligencia)
-                }
-
-                const handleContinuarRecibo = () => {
-                  setEjecutarInitialStep(2)
-                  setEjecutarTarget(diligencia)
-                }
-
-                const handleContinuarEstampo = () => {
-                  setEjecutarInitialStep(3)
-                  setEjecutarTarget(diligencia)
-                }
+                const notificaciones = diligencia.notificaciones || []
 
                 return (
-                  <tr key={diligencia.id}>
-                    <td className="px-4 py-3 text-slate-800">
-                      <div className="font-medium">{diligencia.tipo.nombre}</div>
-                      {diligencia.tipo.descripcion && (
-                        <div className="text-xs text-slate-500">{diligencia.tipo.descripcion}</div>
-                      )}
-                    </td>
-                    <td className="px-4 py-3 text-slate-700">
-                      {new Date(diligencia.fecha).toLocaleString('es-CL')}
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className={estadoClases[diligencia.estado]}>{diligencia.estado}</span>
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="flex justify-end gap-2 text-xs">
-                        {/* State A: Step I NOT completed */}
-                        {!progress.step1Done && (
+                  <>
+                    <tr key={diligencia.id}>
+                      <td className="px-4 py-3 text-slate-800">
+                        <div className="font-medium">{diligencia.tipo.nombre}</div>
+                        {diligencia.tipo.descripcion && (
+                          <div className="text-xs text-slate-500">{diligencia.tipo.descripcion}</div>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-slate-700">
+                        {new Date(diligencia.fecha).toLocaleString('es-CL')}
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className={estadoClases[diligencia.estado]}>{diligencia.estado}</span>
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex justify-end gap-2 text-xs">
+                          {/* Botón "Nueva notificación" - siempre visible */}
                           <button
                             type="button"
-                            onClick={handleEjecutar}
-                            className="rounded border border-slate-200 px-3 py-1 text-slate-600 transition hover:bg-slate-100"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              setCreatingDiligenciaId(diligencia.id)
+                              createNotificacion.mutate(diligencia.id, {
+                                onSuccess: () => {
+                                  setFlashMessage('Nueva notificación creada.')
+                                  setCreatingDiligenciaId(null)
+                                },
+                                onError: (err) => {
+                                  console.error('Error creando notificación:', err)
+                                  setFlashMessage('Error al crear notificación. Intenta nuevamente.')
+                                  setCreatingDiligenciaId(null)
+                                },
+                              })
+                            }}
+                            disabled={creatingDiligenciaId === diligencia.id}
+                            className="rounded border border-purple-200 bg-purple-50 px-3 py-1 text-purple-700 transition hover:bg-purple-100 disabled:opacity-50 disabled:cursor-not-allowed"
                           >
-                            Ejecutar
+                            {creatingDiligenciaId === diligencia.id ? 'Creando...' : 'Nueva notificación'}
                           </button>
-                        )}
+                        </div>
+                      </td>
+                    </tr>
+                    {/* Filas anidadas para notificaciones */}
+                    {notificaciones.length > 0 ? (
+                      notificaciones.map((notif, idx) => {
+                        const notifProgress: NotificacionProgress =
+                          documentosLoading || documentosError
+                            ? {
+                                step1Done: false,
+                                step2Done: false,
+                                step3Done: false,
+                                latestBoletaId: null,
+                                latestEstampoId: null,
+                              }
+                            : getNotificacionProgress(diligencia, notif, documentos)
 
-                        {/* State B: Step I done, Boleta NOT generated */}
-                        {progress.step1Done && !progress.step2Done && (
-                          <>
-                            <button
-                              type="button"
-                              onClick={handleEditar}
-                              className="rounded border border-slate-200 px-3 py-1 text-slate-600 transition hover:bg-slate-100"
-                            >
-                              Editar
-                            </button>
-                            <button
-                              type="button"
-                              onClick={handleContinuarRecibo}
-                              className="rounded border border-blue-200 bg-blue-50 px-3 py-1 text-blue-700 transition hover:bg-blue-100"
-                            >
-                              Continuar con Recibo
-                            </button>
-                          </>
-                        )}
+                        const meta = (notif.meta as Record<string, any> | null) ?? {}
+                        const estampoTipo = meta?.estampoTipo
+                        const isEstampoTipoObject =
+                          !!estampoTipo && typeof estampoTipo === 'object' && !Array.isArray(estampoTipo)
 
-                        {/* State C: Boleta generated, Estampo NOT generated */}
-                        {progress.step2Done && !progress.step3Done && (
-                          <>
-                            <button
-                              type="button"
-                              onClick={handleEditar}
-                              className="rounded border border-slate-200 px-3 py-1 text-slate-600 transition hover:bg-slate-100"
-                            >
-                              Editar
-                            </button>
-                            <button
-                              type="button"
-                              onClick={handleContinuarEstampo}
-                              className="rounded border border-blue-200 bg-blue-50 px-3 py-1 text-blue-700 transition hover:bg-blue-100"
-                            >
-                              Continuar con Estampo
-                            </button>
-                            {progress.latestBoletaId && (
-                              <button
-                                type="button"
-                                onClick={handleViewRecibo}
-                                className="rounded border border-emerald-200 bg-emerald-50 px-3 py-1 text-emerald-700 transition hover:bg-emerald-100"
-                              >
-                                Ver Recibo
-                              </button>
-                            )}
-                          </>
-                        )}
+                        const isWizard =
+                          isEstampoTipoObject &&
+                          (estampoTipo as any).kind === 'WIZARD' &&
+                          typeof (estampoTipo as any).categoria === 'string' &&
+                          (estampoTipo as any).categoria.length > 0
 
-                        {/* State D: Both generated */}
-                        {progress.step2Done && progress.step3Done && (
-                          <>
+                        return (
+                          <tr key={notif.id} className="bg-slate-50">
+                            <td colSpan={TABLE_COLS} className="px-4 py-2">
+                              <div className="flex items-center gap-3 pl-8 text-sm">
+                                <span className="font-medium text-slate-700">
+                                  Notificación #{idx + 1}
+                                </span>
+                                <span className="text-xs text-slate-500">
+                                  {notif.createdAt
+                                    ? new Date(notif.createdAt).toLocaleString('es-CL')
+                                    : '—'}
+                                </span>
+                                <div className="ml-auto flex items-center gap-2 text-xs">
+                                  {!notifProgress.step1Done && (
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation()
+                                      openWizardForNotificacion(notif.id, 1)
+                                    }}
+                                    className="rounded border border-slate-200 px-3 py-1 text-slate-600 transition hover:bg-slate-100"
+                                  >
+                                    Ejecutar
+                                  </button>
+                                )}
+
+                                {notifProgress.step1Done && !notifProgress.step2Done && (
+                                  <>
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation()
+                                        openWizardForNotificacion(notif.id, 1)
+                                      }}
+                                      className="rounded border border-slate-200 px-3 py-1 text-slate-600 transition hover:bg-slate-100"
+                                    >
+                                      Editar
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation()
+                                        openWizardForNotificacion(notif.id, 2)
+                                      }}
+                                      className="rounded border border-blue-200 bg-blue-50 px-3 py-1 text-blue-700 transition hover:bg-blue-100"
+                                    >
+                                      Continuar con Recibo
+                                    </button>
+                                  </>
+                                )}
+
+                                {notifProgress.step2Done && !notifProgress.step3Done && (
+                                  <>
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation()
+                                        openWizardForNotificacion(notif.id, 1)
+                                      }}
+                                      className="rounded border border-slate-200 px-3 py-1 text-slate-600 transition hover:bg-slate-100"
+                                    >
+                                      Editar
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation()
+                                        if (isWizard) {
+                                          const categoria = (estampoTipo as any).categoria as string
+                                          setWizardModalOpen({
+                                            diligenciaId: diligencia.id,
+                                            categoria,
+                                            notificacionId: notif.id,
+                                          })
+                                        } else {
+                                          openWizardForNotificacion(notif.id, 3)
+                                        }
+                                      }}
+                                      className="rounded border border-blue-200 bg-blue-50 px-3 py-1 text-blue-700 transition hover:bg-blue-100"
+                                    >
+                                      Continuar con Estampo
+                                    </button>
+                                    {notifProgress.latestBoletaId && (
+                                      <button
+                                        type="button"
+                                        onClick={(e) =>
+                                          handleViewDocumento(e, notifProgress.latestBoletaId!)
+                                        }
+                                        className="rounded border border-emerald-200 bg-emerald-50 px-3 py-1 text-emerald-700 transition hover:bg-emerald-100"
+                                      >
+                                        Ver Recibo
+                                      </button>
+                                    )}
+                                  </>
+                                )}
+
+                                {notifProgress.step2Done && notifProgress.step3Done && (
+                                  <>
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation()
+                                        openWizardForNotificacion(notif.id, 1)
+                                      }}
+                                      className="rounded border border-slate-200 px-3 py-1 text-slate-600 transition hover:bg-slate-100"
+                                    >
+                                      Editar
+                                    </button>
+                                    {notifProgress.latestBoletaId && (
+                                      <button
+                                        type="button"
+                                        onClick={(e) =>
+                                          handleViewDocumento(e, notifProgress.latestBoletaId!)
+                                        }
+                                        className="rounded border border-emerald-200 bg-emerald-50 px-3 py-1 text-emerald-700 transition hover:bg-emerald-100"
+                                      >
+                                        Ver Recibo
+                                      </button>
+                                    )}
+                                    {notifProgress.latestEstampoId && (
+                                      <button
+                                        type="button"
+                                        onClick={(e) =>
+                                          handleViewDocumento(e, notifProgress.latestEstampoId!)
+                                        }
+                                        className="rounded border border-emerald-200 bg-emerald-50 px-3 py-1 text-emerald-700 transition hover:bg-emerald-100"
+                                      >
+                                        Ver Estampo
+                                      </button>
+                                    )}
+                                  </>
+                                )}
+
+                                  <button
+                                    type="button"
+                                    disabled={documentosLoading || deleteNotificacion.isPending}
+                                    onClick={(e) => {
+                                      e.stopPropagation()
+                                      if (documentosLoading) return
+                                      const ok = window.confirm(
+                                        '¿Eliminar esta notificación? Esta acción no se puede deshacer.'
+                                      )
+                                      if (!ok) return
+
+                                      deleteNotificacion.mutate(
+                                        { diligenciaId: diligencia.id, notificacionId: notif.id },
+                                        {
+                                          onSuccess: () => {
+                                            setFlashMessage('Notificación eliminada.')
+                                          },
+                                          onError: (err) => {
+                                            const msg =
+                                              err.message.startsWith('CONFLICT:')
+                                                ? err.message.replace(/^CONFLICT:/, '')
+                                                : err.message
+                                            setFlashMessage(msg)
+                                          },
+                                        }
+                                      )
+                                    }}
+                                    className="rounded border border-rose-200 bg-rose-50 px-3 py-1 text-rose-700 transition hover:bg-rose-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                                  >
+                                    Eliminar
+                                  </button>
+                              </div>
+                            </div>
+                          </td>
+                          </tr>
+                        )
+                      })
+                    ) : (
+                      <tr className="bg-slate-50">
+                        <td colSpan={TABLE_COLS} className="px-4 py-2">
+                          <div className="flex items-center gap-3 pl-8 text-sm">
+                            <span className="text-slate-500">Sin ciclos de ejecución</span>
                             <button
                               type="button"
-                              onClick={handleEditar}
-                              className="rounded border border-slate-200 px-3 py-1 text-slate-600 transition hover:bg-slate-100"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                setCreatingDiligenciaId(diligencia.id)
+                                createNotificacion.mutate(diligencia.id, {
+                                  onSuccess: () => {
+                                    setFlashMessage('Nueva notificación creada.')
+                                    setCreatingDiligenciaId(null)
+                                  },
+                                  onError: (err) => {
+                                    console.error('Error creando notificación:', err)
+                                    setFlashMessage('Error al crear notificación. Intenta nuevamente.')
+                                    setCreatingDiligenciaId(null)
+                                  },
+                                })
+                              }}
+                              disabled={creatingDiligenciaId === diligencia.id}
+                              className="rounded border border-blue-200 bg-blue-50 px-2 py-1 text-xs text-blue-700 transition hover:bg-blue-100 disabled:opacity-50 disabled:cursor-not-allowed"
                             >
-                              Editar
+                              {creatingDiligenciaId === diligencia.id ? 'Creando...' : 'Nueva notificación'}
                             </button>
-                            {progress.latestBoletaId && (
-                              <button
-                                type="button"
-                                onClick={handleViewRecibo}
-                                className="rounded border border-emerald-200 bg-emerald-50 px-3 py-1 text-emerald-700 transition hover:bg-emerald-100"
-                              >
-                                Ver Recibo
-                              </button>
-                            )}
-                            {progress.latestEstampoId && (
-                              <button
-                                type="button"
-                                onClick={handleViewEstampo}
-                                className="rounded border border-emerald-200 bg-emerald-50 px-3 py-1 text-emerald-700 transition hover:bg-emerald-100"
-                              >
-                                Ver Estampo
-                              </button>
-                            )}
-                          </>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </>
                 )
               })}
           </tbody>
@@ -327,22 +481,25 @@ export default function DiligenciasTable({ rolId }: DiligenciasTableProps) {
           onCreated={() => setFlashMessage('Diligencia creada correctamente.')}
         />
       )}
-      {ejecutarTarget && (
+      {ejecutarTarget && ejecutarNotificacionId && (
         <EjecutarWizard
           rolId={rolId}
           diligencia={ejecutarTarget}
+          notificacionId={ejecutarNotificacionId}
           initialStep={ejecutarInitialStep}
           onClose={() => {
             setEjecutarTarget(null)
+            setEjecutarNotificacionId(null)
             setEjecutarInitialStep(undefined)
           }}
           onSuccess={() => {
             setFlashMessage(`Ejecución completada para ${ejecutarTarget.tipo.nombre}.`)
             setEjecutarTarget(null)
+            setEjecutarNotificacionId(null)
             setEjecutarInitialStep(undefined)
           }}
-          onOpenWizard={(diligenciaId, categoria) => {
-            setWizardModalOpen({ diligenciaId, categoria })
+          onOpenWizard={(diligenciaId, categoria, notificacionId) => {
+            setWizardModalOpen({ diligenciaId, categoria, notificacionId })
           }}
         />
       )}
@@ -351,6 +508,7 @@ export default function DiligenciasTable({ rolId }: DiligenciasTableProps) {
           rolId={rolId}
           diligenciaId={wizardModalOpen.diligenciaId}
           categoria={wizardModalOpen.categoria}
+          notificacionId={wizardModalOpen.notificacionId}
           isOpen={true}
           onClose={() => setWizardModalOpen(null)}
           onSuccess={() => {

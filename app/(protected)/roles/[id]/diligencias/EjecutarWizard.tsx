@@ -2,14 +2,15 @@
 
 import { useEffect, useMemo, useState } from 'react'
 
+import { useQueryClient } from '@tanstack/react-query'
+
 import { useEstamposGrouped } from '@/lib/hooks/useAjustes'
 import {
-  useGenerateBoleta,
-  useGenerateEstampo,
   useRolData,
-  useUpdateDiligenciaMeta,
   type DiligenciaItem,
+  type NotificacionItem,
   type RolWorkspaceData,
+  useUpdateNotificacionMeta,
 } from '@/lib/hooks/useRolWorkspace'
 import { BoletaGenerateSchema, EstampoGenerateSchema } from '@/lib/validations/rol-workspace'
 import { cleanCuantiaInput } from '@/lib/utils/cuantia'
@@ -18,11 +19,12 @@ import { parseEstampoTipo, type EstampoTipo } from '@/lib/estampos/selection'
 interface EjecutarWizardProps {
   rolId: string
   diligencia: DiligenciaItem
+  notificacionId: string
   rolData?: RolWorkspaceData
   initialStep?: 1 | 2 | 3
   onClose: () => void
   onSuccess?: () => void
-  onOpenWizard?: (diligenciaId: string, categoria: string) => void
+  onOpenWizard?: (diligenciaId: string, categoria: string, notificacionId: string) => void
 }
 
 interface EstampoCatalogItem {
@@ -35,6 +37,7 @@ interface EstampoCatalogItem {
 export default function EjecutarWizard({
   rolId,
   diligencia,
+  notificacionId,
   rolData: rolDataProp,
   initialStep,
   onClose,
@@ -45,10 +48,29 @@ export default function EjecutarWizard({
   const { data: rolDataFromHook } = useRolData(rolId)
   const rolData = rolDataProp || rolDataFromHook
 
+  const queryClient = useQueryClient()
+
+  const notificacion = useMemo<NotificacionItem | null>(() => {
+    const list = diligencia.notificaciones ?? []
+    return list.find(n => n.id === notificacionId) ?? null
+  }, [diligencia.notificaciones, notificacionId])
+
+  const effectiveMeta = useMemo<Record<string, unknown>>(() => {
+    const isPlainObject = (x: unknown): x is Record<string, unknown> =>
+      !!x && typeof x === 'object' && !Array.isArray(x)
+
+    const notiMeta = isPlainObject(notificacion?.meta) ? notificacion!.meta : null
+    const diliMeta = isPlainObject(diligencia.meta)
+      ? (diligencia.meta as Record<string, unknown>)
+      : null
+    const notiHasContent = notiMeta && Object.keys(notiMeta).length > 0
+    return ((notiHasContent ? notiMeta : diliMeta) ?? {}) as Record<string, unknown>
+  }, [notificacion?.meta, diligencia.meta])
+
   const { data: estamposGrouped, isLoading: estamposLoading } = useEstamposGrouped()
-  const updateMeta = useUpdateDiligenciaMeta(rolId, diligencia.id)
-  const generateBoleta = useGenerateBoleta(rolId, diligencia.id)
-  const generateEstampo = useGenerateEstampo(rolId, diligencia.id)
+  const updateMeta = useUpdateNotificacionMeta(rolId, diligencia.id, notificacionId)
+  const [creatingBoleta, setCreatingBoleta] = useState(false)
+  const [creatingEstampo, setCreatingEstampo] = useState(false)
 
   // Step state
   const [step, setStep] = useState<1 | 2 | 3>(initialStep ?? 1)
@@ -70,28 +92,47 @@ export default function EjecutarWizard({
 
   // Initialize from meta using parseEstampoTipo
   useEffect(() => {
-    const meta = diligencia.meta as Record<string, unknown> | null | undefined
-    if (meta) {
-      if (meta.fechaEjecucion) {
-        const date = new Date(meta.fechaEjecucion as string)
-        setFechaEjecucion(date.toISOString().split('T')[0])
+    if (effectiveMeta) {
+      const ejecucion =
+        effectiveMeta.ejecucion &&
+        typeof effectiveMeta.ejecucion === 'object' &&
+        !Array.isArray(effectiveMeta.ejecucion)
+          ? (effectiveMeta.ejecucion as Record<string, unknown>)
+          : null
+
+      const fechaRaw =
+        (typeof ejecucion?.fecha === 'string' && ejecucion.fecha) ||
+        (typeof effectiveMeta.fechaEjecucion === 'string' && effectiveMeta.fechaEjecucion) ||
+        null
+
+      if (fechaRaw) {
+        const date = new Date(fechaRaw)
+        if (!Number.isNaN(date.getTime())) {
+          setFechaEjecucion(date.toISOString().split('T')[0])
+        }
       }
-      if (meta.horaEjecucion) {
-        setHoraEjecucion(meta.horaEjecucion as string)
+
+      const horaRaw =
+        (typeof ejecucion?.hora === 'string' && ejecucion.hora) ||
+        (typeof effectiveMeta.horaEjecucion === 'string' && effectiveMeta.horaEjecucion) ||
+        ''
+
+      if (horaRaw) {
+        setHoraEjecucion(horaRaw)
       }
       // Use parseEstampoTipo for backward compatibility
-      const estampoTipo = parseEstampoTipo(meta)
+      const estampoTipo = parseEstampoTipo(effectiveMeta)
       if (estampoTipo) {
         setSelectedEstampoTipo(estampoTipo)
       }
-      if (meta.monto) {
-        setMonto(String(meta.monto))
+      if (effectiveMeta.monto) {
+        setMonto(String(effectiveMeta.monto))
       }
-      if (meta.estampoDraft) {
-        setContenidoEstampo(meta.estampoDraft as string)
+      if (effectiveMeta.estampoDraft) {
+        setContenidoEstampo(effectiveMeta.estampoDraft as string)
       }
     }
-  }, [diligencia.meta])
+  }, [effectiveMeta])
 
   // Get selected estampo (legacy only, for Step 3)
   const selectedEstampo = useMemo<EstampoCatalogItem | undefined>(() => {
@@ -145,18 +186,22 @@ export default function EjecutarWizard({
   // Pre-fill contenidoEstampo when entering Step III
   useEffect(() => {
     if (step === 3) {
-      const meta = diligencia.meta as Record<string, unknown> | null | undefined
-      if (meta?.estampoDraft) {
-        setContenidoEstampo(meta.estampoDraft as string)
+      if (effectiveMeta?.estampoDraft) {
+        setContenidoEstampo(effectiveMeta.estampoDraft as string)
       } else if (selectedEstampo?.contenido) {
         setContenidoEstampo(selectedEstampo.contenido)
       }
     }
-  }, [step, diligencia.meta, selectedEstampo])
+  }, [step, effectiveMeta, selectedEstampo])
 
   // Handle Step I: Save fecha/hora
   const handleStepISave = async (goToNext: boolean) => {
     setErrorMsg(null)
+
+    if (!notificacion) {
+      setErrorMsg('Notificación no encontrada.')
+      return
+    }
 
     if (!fechaEjecucion) {
       setErrorMsg('La fecha de ejecución es requerida.')
@@ -169,7 +214,10 @@ export default function EjecutarWizard({
     }
 
     const metaUpdates: Record<string, unknown> = {
-      fechaEjecucion: new Date(fechaEjecucion).toISOString(),
+      // Importante: fechaEjecucion en UI es "YYYY-MM-DD". Evitar shift por timezone.
+      fechaEjecucion: new Date(`${fechaEjecucion}T00:00:00`).toISOString(),
+      // opcional (nuevo)
+      ejecucion: { fecha: fechaEjecucion, hora: horaEjecucion || '' },
     }
     if (horaEjecucion) {
       metaUpdates.horaEjecucion = horaEjecucion
@@ -195,6 +243,11 @@ export default function EjecutarWizard({
   // Handle Step II: Generate Boleta
   const handleStepIIGenerate = async (continueToStep3: boolean) => {
     setErrorMsg(null)
+
+    if (!notificacion) {
+      setErrorMsg('Notificación no encontrada.')
+      return
+    }
 
     // Validar selección (wizard o legacy, no ambos)
     if (!selectedEstampoTipo) {
@@ -233,9 +286,26 @@ export default function EjecutarWizard({
       return
     }
 
-    generateBoleta.mutate(validation.data, {
-      onSuccess: () => {
-        // Guardar estampoTipo (nuevo formato) y monto
+    setCreatingBoleta(true)
+    try {
+      const response = await fetch(`/api/diligencias/${diligencia.id}/boleta`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ ...validation.data, notificacionId }),
+      })
+
+      const result = await response.json().catch(() => null)
+      if (!response.ok || result?.ok !== true) {
+        throw new Error(
+          (result && typeof result.error === 'string' && result.error) ||
+            'No se pudo generar el recibo.'
+        )
+      }
+
+      queryClient.invalidateQueries({ queryKey: ['rol', rolId, 'documentos'] })
+
+      // Guardar estampoTipo (nuevo formato) y monto
         const metaUpdates: Record<string, unknown> = {
           estampoTipo: selectedEstampoTipo,
           monto: montoNum,
@@ -246,49 +316,56 @@ export default function EjecutarWizard({
           metaUpdates.estampoId = selectedEstampoTipo.estampoId
         }
 
-        updateMeta.mutate(metaUpdates, {
-          onSuccess: () => {
-            if (continueToStep3) {
-              // Si es wizard, abrir modal wizard y cerrar este wizard
-              if (selectedEstampoTipo.kind === 'WIZARD' && selectedEstampoTipo.categoria) {
-                onOpenWizard?.(diligencia.id, selectedEstampoTipo.categoria)
-                onClose()
-              } else if (selectedEstampoTipo.kind === 'LEGACY') {
-                // Si es legacy, avanzar a Step 3 como antes
-                setStep(3)
-              }
-            } else {
-              setSuccessMsg('Recibo generado correctamente.')
-              onSuccess?.()
-              setTimeout(() => {
-                onClose()
-              }, 1500)
-            }
-          },
-          onError: () => {
-            // Boleta was generated but meta update failed - still continue
-            if (continueToStep3) {
-              if (selectedEstampoTipo.kind === 'WIZARD' && selectedEstampoTipo.categoria) {
-                onOpenWizard?.(diligencia.id, selectedEstampoTipo.categoria)
-                onClose()
-              } else if (selectedEstampoTipo.kind === 'LEGACY') {
-                setStep(3)
-              }
-            } else {
+      updateMeta.mutate(metaUpdates, {
+        onSuccess: () => {
+          if (continueToStep3) {
+            queryClient.invalidateQueries({ queryKey: ['rol', rolId, 'documentos'] })
+            // Si es wizard, abrir modal wizard y cerrar este wizard
+            if (selectedEstampoTipo.kind === 'WIZARD' && selectedEstampoTipo.categoria) {
+                onOpenWizard?.(diligencia.id, selectedEstampoTipo.categoria, notificacionId)
               onClose()
+            } else if (selectedEstampoTipo.kind === 'LEGACY') {
+              // Si es legacy, avanzar a Step 3 como antes
+              setStep(3)
             }
-          },
-        })
-      },
-      onError: error => {
-        setErrorMsg(error.message || 'No se pudo generar el recibo.')
-      },
-    })
+          } else {
+            setSuccessMsg('Recibo generado correctamente.')
+            onSuccess?.()
+            setTimeout(() => {
+              onClose()
+            }, 1500)
+          }
+        },
+        onError: () => {
+          queryClient.invalidateQueries({ queryKey: ['rol', rolId, 'documentos'] })
+          // Boleta was generated but meta update failed - still continue
+          if (continueToStep3) {
+            if (selectedEstampoTipo.kind === 'WIZARD' && selectedEstampoTipo.categoria) {
+                onOpenWizard?.(diligencia.id, selectedEstampoTipo.categoria, notificacionId)
+              onClose()
+            } else if (selectedEstampoTipo.kind === 'LEGACY') {
+              setStep(3)
+            }
+          } else {
+            onClose()
+          }
+        },
+      })
+    } catch (error) {
+      setErrorMsg(error instanceof Error ? error.message : 'No se pudo generar el recibo.')
+    } finally {
+      setCreatingBoleta(false)
+    }
   }
 
   // Handle Step III: Save draft
   const handleStepIIISave = async () => {
     setErrorMsg(null)
+
+    if (!notificacion) {
+      setErrorMsg('Notificación no encontrada.')
+      return
+    }
 
     if (!contenidoEstampo.trim()) {
       setErrorMsg('El contenido del estampo no puede estar vacío.')
@@ -316,6 +393,11 @@ export default function EjecutarWizard({
   const handleStepIIIGenerate = () => {
     setErrorMsg(null)
 
+    if (!notificacion) {
+      setErrorMsg('Notificación no encontrada.')
+      return
+    }
+
     // Step 3 solo aplica para legacy
     if (!selectedEstampoTipo || selectedEstampoTipo.kind !== 'LEGACY') {
       setErrorMsg('No hay un estampo legacy seleccionado.')
@@ -342,9 +424,25 @@ export default function EjecutarWizard({
       return
     }
 
-    generateEstampo.mutate(validation.data, {
-      onSuccess: () => {
-        // Optionally update meta with final draft
+    setCreatingEstampo(true)
+    fetch(`/api/diligencias/${diligencia.id}/estampo`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ ...validation.data, notificacionId }),
+    })
+      .then(async res => {
+        const result = await res.json().catch(() => null)
+        if (!res.ok || result?.ok !== true) {
+          throw new Error(
+            (result && typeof result.error === 'string' && result.error) ||
+              'No se pudo generar el estampo.'
+          )
+        }
+        queryClient.invalidateQueries({ queryKey: ['rol', rolId, 'documentos'] })
+        return result.data
+      })
+      .then(() => {
         const metaUpdates: Record<string, unknown> = {
           estampoDraft: contenidoEstampo.trim(),
         }
@@ -357,19 +455,41 @@ export default function EjecutarWizard({
             }, 1500)
           },
           onError: () => {
-            // Estampo was generated but meta update failed - still close
+            queryClient.invalidateQueries({ queryKey: ['rol', rolId, 'documentos'] })
             onSuccess?.()
             onClose()
           },
         })
-      },
-      onError: error => {
-        setErrorMsg(error.message || 'No se pudo generar el estampo.')
-      },
-    })
+      })
+      .catch(error => {
+        setErrorMsg(error?.message || 'No se pudo generar el estampo.')
+      })
+      .finally(() => setCreatingEstampo(false))
   }
 
-  const isLoading = updateMeta.isPending || generateBoleta.isPending || generateEstampo.isPending
+  const isLoading = updateMeta.isPending || creatingBoleta || creatingEstampo
+
+  if (!notificacion) {
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+        <div className="w-full max-w-lg rounded-lg bg-white p-6 shadow-lg">
+          <header className="flex items-center justify-between">
+            <h2 className="text-lg font-semibold text-slate-800">Ejecución</h2>
+            <button
+              type="button"
+              className="text-sm text-slate-500 hover:text-slate-700"
+              onClick={onClose}
+            >
+              Cerrar
+            </button>
+          </header>
+          <div className="mt-4 text-sm text-slate-700">
+            Notificación no encontrada. Cierra y vuelve a abrir el wizard desde la tabla.
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">

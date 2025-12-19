@@ -146,13 +146,27 @@ export async function POST(
       )
     }
 
-    const parsed = EstampoGenerateSchema.safeParse(await req.json())
+    const raw = await req.json().catch(() => ({}))
+    const notificacionId = typeof raw?.notificacionId === 'string' ? raw.notificacionId : null
+
+    const parsed = EstampoGenerateSchema.safeParse(raw)
 
     if (!parsed.success) {
       return NextResponse.json({ ok: false, error: parsed.error.format() }, { status: 400 })
     }
 
     const data = parsed.data
+
+    if (notificacionId) {
+      const noti = await prisma.notificacion.findFirst({
+        where: { id: notificacionId, diligenciaId: diligencia.id },
+        select: { id: true },
+      })
+
+      if (!noti) {
+        return NextResponse.json({ ok: false, error: 'Notificación no encontrada' }, { status: 404 })
+      }
+    }
 
     const estampo = await prisma.estampo.findFirst({
       where: {
@@ -207,6 +221,7 @@ export async function POST(
       data: {
         rolId: diligencia.rolId,
         diligenciaId: diligencia.id,
+        notificacionId: notificacionId ?? null,
         estampoId: estampo.id,
         nombre: `Estampo ${estampo.nombre}`,
         tipo: 'Estampo',

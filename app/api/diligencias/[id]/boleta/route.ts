@@ -61,13 +61,27 @@ export async function POST(
       )
     }
 
-    const parsed = BoletaGenerateSchema.safeParse(await req.json())
+    const raw = await req.json().catch(() => ({}))
+    const notificacionId = typeof raw?.notificacionId === 'string' ? raw.notificacionId : null
+
+    const parsed = BoletaGenerateSchema.safeParse(raw)
 
     if (!parsed.success) {
       return NextResponse.json({ ok: false, error: parsed.error.format() }, { status: 400 })
     }
 
     const data = parsed.data
+
+    if (notificacionId) {
+      const noti = await prisma.notificacion.findFirst({
+        where: { id: notificacionId, diligenciaId: diligencia.id },
+        select: { id: true },
+      })
+
+      if (!noti) {
+        return NextResponse.json({ ok: false, error: 'Notificación no encontrada' }, { status: 404 })
+      }
+    }
 
     // Build Recibo variables
     const variables = buildReciboVariables(
@@ -89,6 +103,7 @@ export async function POST(
       data: {
         rolId: diligencia.rolId,
         diligenciaId: diligencia.id,
+        notificacionId: notificacionId ?? null,
         nombre: `Recibo ${variables.numero_recibo}`,
         tipo: 'Recibo',
         pdfId: pdfBase64,
