@@ -61,6 +61,9 @@ export async function GET(
       createdAt: doc.createdAt.toISOString(),
       diligenciaId: doc.diligenciaId ?? doc.diligencia?.id ?? null,
       notificacionId: (doc as any).notificacionId ?? null,
+      voidedAt: (doc as any).voidedAt ? (doc as any).voidedAt.toISOString() : null,
+      voidReason: (doc as any).voidReason ?? null,
+      voidedByUserId: (doc as any).voidedByUserId ?? null,
       diligencia: doc.diligencia
         ? {
             id: doc.diligencia.id,

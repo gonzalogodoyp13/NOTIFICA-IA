@@ -47,6 +47,7 @@ function getNotificacionProgress(
     .filter(doc => (doc.diligencia?.id ?? doc.diligenciaId) === diligencia.id)
     .filter(doc => doc.notificacionId === notificacion.id)
     .filter(doc => !!doc.pdfId)
+    .filter((doc: any) => !doc.voidedAt)
 
   // Find latest Boleta (Recibo)
   const boletas = docsForNotif
@@ -243,7 +244,9 @@ export default function DiligenciasTable({ rolId }: DiligenciasTableProps) {
                     </tr>
                     {/* Filas anidadas para notificaciones */}
                     {notificaciones.length > 0 ? (
-                      notificaciones.map((notif, idx) => {
+                      notificaciones
+                        .filter((notif: any) => !notif.voidedAt)
+                        .map((notif, idx) => {
                         const notifProgress: NotificacionProgress =
                           documentosLoading || documentosError
                             ? {
@@ -399,37 +402,35 @@ export default function DiligenciasTable({ rolId }: DiligenciasTableProps) {
                                   </>
                                 )}
 
-                                  <button
-                                    type="button"
-                                    disabled={documentosLoading || deleteNotificacion.isPending}
-                                    onClick={(e) => {
-                                      e.stopPropagation()
-                                      if (documentosLoading) return
-                                      const ok = window.confirm(
-                                        '¿Eliminar esta notificación? Esta acción no se puede deshacer.'
-                                      )
-                                      if (!ok) return
+                                  {!notif.voidedAt && (
+                                    <button
+                                      type="button"
+                                      disabled={documentosLoading || deleteNotificacion.isPending}
+                                      onClick={(e) => {
+                                        e.stopPropagation()
+                                        if (documentosLoading) return
+                                        const ok = window.confirm(
+                                          '¿Anular esta notificación? Los documentos asociados también serán anulados y ocultados de la vista normal. Esta acción puede revertirse en el futuro para auditoría.'
+                                        )
+                                        if (!ok) return
 
-                                      deleteNotificacion.mutate(
-                                        { diligenciaId: diligencia.id, notificacionId: notif.id },
-                                        {
-                                          onSuccess: () => {
-                                            setFlashMessage('Notificación eliminada.')
-                                          },
-                                          onError: (err) => {
-                                            const msg =
-                                              err.message.startsWith('CONFLICT:')
-                                                ? err.message.replace(/^CONFLICT:/, '')
-                                                : err.message
-                                            setFlashMessage(msg)
-                                          },
-                                        }
-                                      )
-                                    }}
-                                    className="rounded border border-rose-200 bg-rose-50 px-3 py-1 text-rose-700 transition hover:bg-rose-100 disabled:opacity-50 disabled:cursor-not-allowed"
-                                  >
-                                    Eliminar
-                                  </button>
+                                        deleteNotificacion.mutate(
+                                          { diligenciaId: diligencia.id, notificacionId: notif.id },
+                                          {
+                                            onSuccess: () => {
+                                              setFlashMessage('Notificación anulada.')
+                                            },
+                                            onError: (err) => {
+                                              setFlashMessage(err.message || 'Error al anular notificación')
+                                            },
+                                          }
+                                        )
+                                      }}
+                                      className="rounded border border-rose-200 bg-rose-50 px-3 py-1 text-rose-700 transition hover:bg-rose-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                                    >
+                                      Anular
+                                    </button>
+                                  )}
                               </div>
                             </div>
                           </td>

@@ -240,6 +240,9 @@ model Notificacion {
   meta         Json?
   createdAt    DateTime?
   updatedAt    DateTime?
+  voidedAt     DateTime?
+  voidReason   String?
+  voidedByUserId String?
   diligencia   Diligencia @relation(fields: [diligenciaId], references: [id])
   documentos   Documento[]
 
@@ -259,6 +262,9 @@ model Documento {
   createdAt     DateTime     @default(now())
   textoEditado  String?
   estampoBaseId Int?
+  voidedAt      DateTime?
+  voidReason    String?
+  voidedByUserId String?
   diligencia    Diligencia?  @relation(fields: [diligenciaId], references: [id])
   notificacion  Notificacion? @relation(fields: [notificacionId], references: [id])
   estampoBase   EstampoBase? @relation(fields: [estampoBaseId], references: [id])

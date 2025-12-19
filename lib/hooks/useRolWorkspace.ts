@@ -24,6 +24,9 @@ const NotificacionItemSchema = z.object({
   meta: z.unknown().nullable().optional(),
   createdAt: z.string().nullable(),
   updatedAt: z.string().nullable(),
+  voidedAt: z.string().nullable().optional(),
+  voidReason: z.string().nullable().optional(),
+  voidedByUserId: z.string().nullable().optional(),
 })
 
 const DiligenciaItemSchema = z.object({
@@ -45,6 +48,9 @@ const DocumentoItemSchema = z.object({
   createdAt: z.string(),
   diligenciaId: z.string().nullable().optional(),
   notificacionId: z.string().nullable().optional(),
+  voidedAt: z.string().nullable().optional(),
+  voidReason: z.string().nullable().optional(),
+  voidedByUserId: z.string().nullable().optional(),
   diligencia: z
     .object({
       id: z.string(),
@@ -562,13 +568,18 @@ export function useUpdateNotificacionMeta(
 async function deleteNotificacion(
   rolId: string,
   diligenciaId: string,
-  notificacionId: string
+  notificacionId: string,
+  reason?: string
 ): Promise<void> {
+  const body = reason ? { reason } : undefined
+
   const response = await fetch(
     `/api/roles/${rolId}/diligencias/${diligenciaId}/notificaciones/${notificacionId}`,
     {
       method: 'DELETE',
+      headers: body ? { 'Content-Type': 'application/json' } : {},
       credentials: 'include',
+      body: body ? JSON.stringify(body) : undefined,
     }
   )
 
@@ -577,26 +588,22 @@ async function deleteNotificacion(
   if (!response.ok || result?.ok !== true) {
     const message =
       (result && typeof result.error === 'string' && result.error) ||
-      'Error al eliminar notificación'
-
-    if (response.status === 409) {
-      throw new Error(`CONFLICT:${message}`)
-    }
-
+      'Error al anular notificación'
     throw new Error(message)
   }
 }
 
 export function useDeleteNotificacion(
   rolId: string
-): UseMutationResult<void, Error, { diligenciaId: string; notificacionId: string }> {
+): UseMutationResult<void, Error, { diligenciaId: string; notificacionId: string; reason?: string }> {
   const queryClient = useQueryClient()
 
   return useMutation({
-    mutationFn: ({ diligenciaId, notificacionId }: { diligenciaId: string; notificacionId: string }) =>
-      deleteNotificacion(rolId, diligenciaId, notificacionId),
+    mutationFn: ({ diligenciaId, notificacionId, reason }: { diligenciaId: string; notificacionId: string; reason?: string }) =>
+      deleteNotificacion(rolId, diligenciaId, notificacionId, reason),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: diligenciasKey(rolId) })
+      queryClient.invalidateQueries({ queryKey: documentosKey(rolId) })
     },
   })
 }
