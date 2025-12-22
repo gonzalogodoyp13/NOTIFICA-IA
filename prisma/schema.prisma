@@ -173,6 +173,7 @@ model Ejecutado {
   rvm       Json?
   comunas   Comuna? @relation(fields: [comunaId], references: [id])
   demandas  Demanda @relation(fields: [demandaId], references: [id])
+  notificaciones Notificacion[]
 
   @@map("ejecutados")
 }
@@ -243,9 +244,12 @@ model Notificacion {
   voidedAt     DateTime?
   voidReason   String?
   voidedByUserId String?
+  ejecutadoId  String?
   diligencia   Diligencia @relation(fields: [diligenciaId], references: [id])
+  ejecutado    Ejecutado? @relation(fields: [ejecutadoId], references: [id], onDelete: Restrict)
   documentos   Documento[]
 
+  @@index([ejecutadoId])
   @@map("notificaciones")
 }
 
