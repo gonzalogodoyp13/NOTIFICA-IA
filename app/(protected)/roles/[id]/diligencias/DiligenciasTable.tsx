@@ -102,6 +102,11 @@ export default function DiligenciasTable({ rolId }: DiligenciasTableProps) {
     categoria: string
     notificacionId: string
   } | null>(null)
+  const [ejecutadoModalOpen, setEjecutadoModalOpen] = useState<{
+    diligenciaId: string
+    ejecutados: Array<{ id: string; nombre: string; direccion: string }>
+  } | null>(null)
+  const [selectedEjecutadoId, setSelectedEjecutadoId] = useState<string>('')
 
   const sorted = useMemo(
     () =>
@@ -110,6 +115,64 @@ export default function DiligenciasTable({ rolId }: DiligenciasTableProps) {
       }),
     [data]
   )
+
+  const handleCreateNotificacion = (diligencia: DiligenciaItem) => {
+    const ejecutados = diligencia.ejecutados ?? []
+    const ejecutadosCount = ejecutados.length
+
+    if (ejecutadosCount === 0) {
+      setFlashMessage('No se puede crear notificación: la demanda no tiene ejecutados registrados.')
+      return
+    }
+
+    if (ejecutadosCount === 1) {
+      // Auto-create with the only ejecutado
+      setCreatingDiligenciaId(diligencia.id)
+      createNotificacion.mutate(
+        { diligenciaId: diligencia.id, ejecutadoId: ejecutados[0].id },
+        {
+          onSuccess: () => {
+            setFlashMessage('Nueva notificación creada.')
+            setCreatingDiligenciaId(null)
+          },
+          onError: (err) => {
+            console.error('Error creando notificación:', err)
+            setFlashMessage(err.message || 'Error al crear notificación. Intenta nuevamente.')
+            setCreatingDiligenciaId(null)
+          },
+        }
+      )
+    } else {
+      // Multiple ejecutados: open modal
+      setEjecutadoModalOpen({
+        diligenciaId: diligencia.id,
+        ejecutados: ejecutados,
+      })
+      setSelectedEjecutadoId('')
+    }
+  }
+
+  const handleConfirmEjecutadoSelection = () => {
+    if (!ejecutadoModalOpen || !selectedEjecutadoId) return
+
+    setCreatingDiligenciaId(ejecutadoModalOpen.diligenciaId)
+    createNotificacion.mutate(
+      { diligenciaId: ejecutadoModalOpen.diligenciaId, ejecutadoId: selectedEjecutadoId },
+      {
+        onSuccess: () => {
+          setFlashMessage('Nueva notificación creada.')
+          setCreatingDiligenciaId(null)
+          setEjecutadoModalOpen(null)
+          setSelectedEjecutadoId('')
+        },
+        onError: (err) => {
+          console.error('Error creando notificación:', err)
+          setFlashMessage(err.message || 'Error al crear notificación. Intenta nuevamente.')
+          setCreatingDiligenciaId(null)
+        },
+      }
+    )
+  }
 
   return (
     <section className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
@@ -221,18 +284,7 @@ export default function DiligenciasTable({ rolId }: DiligenciasTableProps) {
                             type="button"
                             onClick={(e) => {
                               e.stopPropagation()
-                              setCreatingDiligenciaId(diligencia.id)
-                              createNotificacion.mutate(diligencia.id, {
-                                onSuccess: () => {
-                                  setFlashMessage('Nueva notificación creada.')
-                                  setCreatingDiligenciaId(null)
-                                },
-                                onError: (err) => {
-                                  console.error('Error creando notificación:', err)
-                                  setFlashMessage('Error al crear notificación. Intenta nuevamente.')
-                                  setCreatingDiligenciaId(null)
-                                },
-                              })
+                              handleCreateNotificacion(diligencia)
                             }}
                             disabled={creatingDiligenciaId === diligencia.id}
                             className="rounded border border-purple-200 bg-purple-50 px-3 py-1 text-purple-700 transition hover:bg-purple-100 disabled:opacity-50 disabled:cursor-not-allowed"
@@ -281,6 +333,11 @@ export default function DiligenciasTable({ rolId }: DiligenciasTableProps) {
                                     ? new Date(notif.createdAt).toLocaleString('es-CL')
                                     : '—'}
                                 </span>
+                                {!notif.ejecutadoId && (
+                                  <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">
+                                    Requiere selección
+                                  </span>
+                                )}
                                 <div className="ml-auto flex items-center gap-2 text-xs">
                                   {!notifProgress.step1Done && (
                                   <button
@@ -446,18 +503,7 @@ export default function DiligenciasTable({ rolId }: DiligenciasTableProps) {
                               type="button"
                               onClick={(e) => {
                                 e.stopPropagation()
-                                setCreatingDiligenciaId(diligencia.id)
-                                createNotificacion.mutate(diligencia.id, {
-                                  onSuccess: () => {
-                                    setFlashMessage('Nueva notificación creada.')
-                                    setCreatingDiligenciaId(null)
-                                  },
-                                  onError: (err) => {
-                                    console.error('Error creando notificación:', err)
-                                    setFlashMessage('Error al crear notificación. Intenta nuevamente.')
-                                    setCreatingDiligenciaId(null)
-                                  },
-                                })
+                                handleCreateNotificacion(diligencia)
                               }}
                               disabled={creatingDiligenciaId === diligencia.id}
                               className="rounded border border-blue-200 bg-blue-50 px-2 py-1 text-xs text-blue-700 transition hover:bg-blue-100 disabled:opacity-50 disabled:cursor-not-allowed"
@@ -519,6 +565,52 @@ export default function DiligenciasTable({ rolId }: DiligenciasTableProps) {
             setWizardModalOpen(null)
           }}
         />
+      )}
+      {ejecutadoModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+          <div className="w-full max-w-md rounded-lg bg-white p-6 shadow-lg">
+            <h3 className="text-lg font-semibold text-slate-800 mb-4">
+              Seleccionar Ejecutado
+            </h3>
+            <div className="space-y-3">
+              <label className="block text-sm font-medium text-slate-700">
+                Ejecutado *
+              </label>
+              <select
+                value={selectedEjecutadoId}
+                onChange={(e) => setSelectedEjecutadoId(e.target.value)}
+                className="w-full rounded border border-slate-300 p-2 text-sm"
+              >
+                <option value="">Seleccione un ejecutado...</option>
+                {ejecutadoModalOpen.ejecutados.map((e) => (
+                  <option key={e.id} value={e.id}>
+                    {e.nombre} — {e.direccion}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="mt-6 flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setEjecutadoModalOpen(null)
+                  setSelectedEjecutadoId('')
+                }}
+                className="rounded bg-slate-200 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-300"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmEjecutadoSelection}
+                disabled={!selectedEjecutadoId || creatingDiligenciaId === ejecutadoModalOpen.diligenciaId}
+                className="rounded bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:cursor-not-allowed disabled:bg-blue-300"
+              >
+                Crear
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </section>
   )

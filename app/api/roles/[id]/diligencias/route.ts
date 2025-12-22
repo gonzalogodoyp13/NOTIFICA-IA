@@ -74,6 +74,24 @@ export async function GET(
       where: { rolId: rol.id },
       include: {
         tipo: true,
+        rol: {
+          include: {
+            demanda: {
+              include: {
+                ejecutados: {
+                  include: {
+                    comunas: {
+                      select: {
+                        id: true,
+                        nombre: true,
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
         notificaciones: {
           orderBy: { createdAt: 'asc' },
         },
@@ -92,10 +110,16 @@ export async function GET(
       fecha: d.fecha.toISOString(),
       meta: d.meta,
       createdAt: d.createdAt.toISOString(),
+      ejecutados: (d.rol?.demanda?.ejecutados ?? []).map(e => ({
+        id: e.id,
+        nombre: e.nombre,
+        direccion: [e.direccion, e.comunas?.nombre].filter(Boolean).join(', '),
+      })),
       notificaciones: d.notificaciones.map(n => ({
         id: n.id,
         diligenciaId: n.diligenciaId,
         meta: n.meta,
+        ejecutadoId: (n as any).ejecutadoId ?? null,
         createdAt: n.createdAt ? n.createdAt.toISOString() : null,
         updatedAt: n.updatedAt ? n.updatedAt.toISOString() : null,
         voidedAt: (n as any).voidedAt ? (n as any).voidedAt.toISOString() : null,

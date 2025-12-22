@@ -22,11 +22,18 @@ const NotificacionItemSchema = z.object({
   id: z.string(),
   diligenciaId: z.string(),
   meta: z.unknown().nullable().optional(),
+  ejecutadoId: z.string().nullable().optional(),
   createdAt: z.string().nullable(),
   updatedAt: z.string().nullable(),
   voidedAt: z.string().nullable().optional(),
   voidReason: z.string().nullable().optional(),
   voidedByUserId: z.string().nullable().optional(),
+})
+
+const EjecutadoItemSchema = z.object({
+  id: z.string(),
+  nombre: z.string(),
+  direccion: z.string(),
 })
 
 const DiligenciaItemSchema = z.object({
@@ -36,6 +43,7 @@ const DiligenciaItemSchema = z.object({
   fecha: z.string(),
   meta: z.unknown().nullable().optional(),
   createdAt: z.string(),
+  ejecutados: z.array(EjecutadoItemSchema).default([]),
   notificaciones: z.array(NotificacionItemSchema).default([]),
 })
 
@@ -383,13 +391,23 @@ export function useCreateDiligencia(
   })
 }
 
-async function createNotificacion(rolId: string, diligenciaId: string) {
+async function createNotificacion(
+  rolId: string,
+  diligenciaId: string,
+  ejecutadoId?: string | null
+) {
+  const body: { ejecutadoId?: string } = {}
+  if (ejecutadoId) {
+    body.ejecutadoId = ejecutadoId
+  }
+
   const response = await fetch(
     `/api/roles/${rolId}/diligencias/${diligenciaId}/notificaciones`,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'include',
+      body: JSON.stringify(body),
     }
   )
 
@@ -407,11 +425,16 @@ async function createNotificacion(rolId: string, diligenciaId: string) {
 
 export function useCreateNotificacion(
   rolId: string
-): UseMutationResult<z.infer<typeof NotificacionItemSchema>, Error, string> {
+): UseMutationResult<
+  z.infer<typeof NotificacionItemSchema>,
+  Error,
+  { diligenciaId: string; ejecutadoId?: string | null }
+> {
   const queryClient = useQueryClient()
 
   return useMutation({
-    mutationFn: (diligenciaId: string) => createNotificacion(rolId, diligenciaId),
+    mutationFn: ({ diligenciaId, ejecutadoId }: { diligenciaId: string; ejecutadoId?: string | null }) =>
+      createNotificacion(rolId, diligenciaId, ejecutadoId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: diligenciasKey(rolId) })
     },
