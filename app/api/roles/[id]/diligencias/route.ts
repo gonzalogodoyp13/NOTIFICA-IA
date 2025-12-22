@@ -98,6 +98,9 @@ export async function GET(
         meta: n.meta,
         createdAt: n.createdAt ? n.createdAt.toISOString() : null,
         updatedAt: n.updatedAt ? n.updatedAt.toISOString() : null,
+        voidedAt: (n as any).voidedAt ? (n as any).voidedAt.toISOString() : null,
+        voidReason: (n as any).voidReason ?? null,
+        voidedByUserId: (n as any).voidedByUserId ?? null,
       })),
     }))
 

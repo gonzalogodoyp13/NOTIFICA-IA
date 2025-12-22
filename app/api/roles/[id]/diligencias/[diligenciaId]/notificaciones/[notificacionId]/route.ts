@@ -128,7 +128,7 @@ export async function PATCH(
 }
 
 export async function DELETE(
-  _req: NextRequest,
+  req: NextRequest,
   {
     params,
   }: { params: { id: string; diligenciaId: string; notificacionId: string } }
@@ -185,23 +185,49 @@ export async function DELETE(
       )
     }
 
+    // Obtener body opcional con razón
+    const body = await req.json().catch(() => null)
+    const reason = (body && typeof body === 'object' && !Array.isArray(body) && typeof (body as any).reason === 'string')
+      ? (body as any).reason
+      : 'Anulado por usuario'
+
+    // Contar documentos asociados
     const count = await prisma.documento.count({
       where: { notificacionId: params.notificacionId } as any,
     })
 
     if (count > 0) {
-      return NextResponse.json(
-        {
-          ok: false,
-          error: 'No se puede eliminar: la notificación tiene documentos asociados.',
-        },
-        { status: 409 }
-      )
+      // CASO 1: Hay documentos → ANULAR (soft delete con cascade)
+      const now = new Date()
+      await prisma.$transaction(async (tx) => {
+        // Anular notificación
+        await tx.notificacion.update({
+          where: { id: params.notificacionId },
+          data: {
+            voidedAt: now,
+            voidReason: reason,
+            voidedByUserId: user.id,
+            updatedAt: now,
+          } as any,
+        })
+
+        // Anular todos los documentos asociados (mismo timestamp)
+        await tx.documento.updateMany({
+          where: { notificacionId: params.notificacionId } as any,
+          data: {
+            voidedAt: now,
+            voidReason: reason,
+            voidedByUserId: user.id,
+          } as any,
+        })
+      })
+
+      return NextResponse.json({ ok: true, mode: 'VOIDED' })
+    } else {
+      // CASO 2: No hay documentos → HARD DELETE (como antes)
+      await prisma.notificacion.delete({ where: { id: params.notificacionId } })
+      return NextResponse.json({ ok: true, mode: 'DELETED' })
     }
-
-    await prisma.notificacion.delete({ where: { id: params.notificacionId } })
-
-    return NextResponse.json({ ok: true })
   } catch (error) {
     console.error('Error eliminando notificación:', error)
     return NextResponse.json(
