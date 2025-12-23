@@ -28,6 +28,14 @@ const NotificacionItemSchema = z.object({
   voidedAt: z.string().nullable().optional(),
   voidReason: z.string().nullable().optional(),
   voidedByUserId: z.string().nullable().optional(),
+  latestEstampo: z
+    .object({
+      documentoId: z.string(),
+      slug: z.string().nullable(), // Legacy no tiene slug
+      nombreVisible: z.string(),
+    })
+    .nullable()
+    .optional(),
 })
 
 const EjecutadoItemSchema = z.object({

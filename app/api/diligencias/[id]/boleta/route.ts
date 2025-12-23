@@ -88,7 +88,7 @@ export async function POST(
               },
             },
           },
-        },
+        } as any,
       })
 
       if (!noti) {

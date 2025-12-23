@@ -94,6 +94,31 @@ export async function GET(
         },
         notificaciones: {
           orderBy: { createdAt: 'asc' },
+          include: {
+            documentos: {
+              where: {
+                tipo: 'Estampo',
+                voidedAt: null, // Solo documentos no eliminados
+              },
+              orderBy: { createdAt: 'desc' },
+              take: 1,
+              include: {
+                estampoBase: {
+                  select: {
+                    id: true,
+                    slug: true,
+                    nombreVisible: true,
+                  },
+                },
+                estampo: {
+                  select: {
+                    id: true,
+                    nombre: true,
+                  },
+                },
+              },
+            },
+          },
         },
       },
       orderBy: { createdAt: 'desc' },
@@ -115,17 +140,43 @@ export async function GET(
         nombre: e.nombre,
         direccion: [e.direccion, e.comunas?.nombre].filter(Boolean).join(', '),
       })),
-      notificaciones: d.notificaciones.map(n => ({
-        id: n.id,
-        diligenciaId: n.diligenciaId,
-        meta: n.meta,
-        ejecutadoId: (n as any).ejecutadoId ?? null,
-        createdAt: n.createdAt ? n.createdAt.toISOString() : null,
-        updatedAt: n.updatedAt ? n.updatedAt.toISOString() : null,
-        voidedAt: (n as any).voidedAt ? (n as any).voidedAt.toISOString() : null,
-        voidReason: (n as any).voidReason ?? null,
-        voidedByUserId: (n as any).voidedByUserId ?? null,
-      })),
+      notificaciones: d.notificaciones.map(n => {
+        const latestEstampoDoc = n.documentos?.[0] ?? null
+        return {
+          id: n.id,
+          diligenciaId: n.diligenciaId,
+          meta: n.meta,
+          ejecutadoId: (n as any).ejecutadoId ?? null,
+          createdAt: n.createdAt ? n.createdAt.toISOString() : null,
+          updatedAt: n.updatedAt ? n.updatedAt.toISOString() : null,
+          voidedAt: (n as any).voidedAt ? (n as any).voidedAt.toISOString() : null,
+          voidReason: (n as any).voidReason ?? null,
+          voidedByUserId: (n as any).voidedByUserId ?? null,
+          latestEstampo: (() => {
+            if (!latestEstampoDoc) return null
+            
+            // Wizard path: tiene estampoBase
+            if (latestEstampoDoc.estampoBase) {
+              return {
+                documentoId: latestEstampoDoc.id,
+                slug: latestEstampoDoc.estampoBase.slug,
+                nombreVisible: latestEstampoDoc.estampoBase.nombreVisible,
+              }
+            }
+            
+            // Legacy path: tiene estampo pero no estampoBase
+            if (latestEstampoDoc.estampo) {
+              return {
+                documentoId: latestEstampoDoc.id,
+                slug: null, // Legacy no tiene slug
+                nombreVisible: latestEstampoDoc.estampo.nombre,
+              }
+            }
+            
+            return null
+          })(),
+        }
+      }),
     }))
 
     // DEBUG TEMPORAL: Verificar que notificaciones están en respuesta
