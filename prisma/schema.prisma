@@ -101,20 +101,23 @@ model Arancel {
   officeId  Int
   bancoId   Int
   abogadoId Int?
-  estampoId String
+  estampoId String?
+  estampoBaseCategoria String?
   monto     Int
   activo    Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   abogado   Abogado? @relation("AbogadoAranceles", fields: [abogadoId], references: [id], onDelete: Cascade)
   banco     Banco    @relation("BancoAranceles", fields: [bancoId], references: [id], onDelete: Cascade)
-  estampo   Estampo  @relation("EstampoAranceles", fields: [estampoId], references: [id], onDelete: Cascade)
+  estampo   Estampo? @relation("EstampoAranceles", fields: [estampoId], references: [id], onDelete: Cascade)
 
-  @@unique([officeId, bancoId, abogadoId, estampoId])
+  @@unique([officeId, bancoId, abogadoId, estampoId], name: "aranceles_legacy_unique")
+  @@unique([officeId, bancoId, abogadoId, estampoBaseCategoria], name: "aranceles_wizard_unique")
   @@index([officeId, bancoId, estampoId])
   @@index([officeId, abogadoId, estampoId])
   @@index([officeId, bancoId])
   @@index([estampoId])
+  @@index([officeId, bancoId, estampoBaseCategoria])
   @@map("aranceles")
 }
 

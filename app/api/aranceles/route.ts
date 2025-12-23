@@ -91,10 +91,19 @@ export async function GET(req: NextRequest) {
     }
     // Si abogadoId es undefined, retorna ambos (banco-wide + abogado-specific)
 
-    // Query con includes
+    // Query con select (incluye estampoBaseCategoria)
     const aranceles = await prisma.arancel.findMany({
       where,
-      include: {
+      select: {
+        id: true,
+        bancoId: true,
+        abogadoId: true,
+        estampoId: true,
+        estampoBaseCategoria: true,
+        monto: true,
+        activo: true,
+        createdAt: true,
+        updatedAt: true,
         estampo: {
           select: { id: true, nombre: true, tipo: true, activo: true },
         },
@@ -105,12 +114,19 @@ export async function GET(req: NextRequest) {
           : false,
       },
       orderBy: [
-        { abogadoId: 'asc' }, // NULL primero (banco-wide), luego abogados
-        { estampo: { nombre: 'asc' } },
+        { abogadoId: 'asc' },
+        { estampoId: 'asc' },
+        { estampoBaseCategoria: 'asc' },
       ],
     })
 
-    return NextResponse.json({ ok: true, data: aranceles })
+    // Mapear respuesta con tipo (sin generar labels aquí - UI los obtiene del endpoint)
+    const mapped = aranceles.map(a => ({
+      ...a,
+      tipo: a.estampoId ? 'legacy' : 'wizard',
+    }))
+
+    return NextResponse.json({ ok: true, data: mapped })
   } catch (error) {
     console.error('Error fetching aranceles:', error)
     const errorMessage = error instanceof Error ? error.message : 'Error al obtener los aranceles'
@@ -168,20 +184,36 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    // Verificar estampo
-    const estampo = await prisma.estampo.findFirst({
-      where: {
-        id: parsed.data.estampoId,
-        officeId: user.officeId,
-        activo: true,
-      },
-    })
-
-    if (!estampo) {
-      return NextResponse.json(
-        { ok: false, message: 'Estampo no encontrado o está inactivo', error: 'Estampo no encontrado o inactivo' },
-        { status: 400 }
-      )
+    // Validación condicional según tipo
+    if (parsed.data.estampoId) {
+      // LEGACY: validar estampo existe
+      const estampo = await prisma.estampo.findFirst({
+        where: {
+          id: parsed.data.estampoId,
+          officeId: user.officeId,
+          activo: true,
+        },
+      })
+      if (!estampo) {
+        return NextResponse.json(
+          { ok: false, message: 'Estampo no encontrado o está inactivo', error: 'Estampo no encontrado o inactivo' },
+          { status: 400 }
+        )
+      }
+    } else if (parsed.data.estampoBaseCategoria) {
+      // WIZARD: validar categoria existe en EstampoBase activos
+      const categoriaExists = await prisma.estampoBase.findFirst({
+        where: {
+          categoria: parsed.data.estampoBaseCategoria,
+          isActive: true,
+        },
+      })
+      if (!categoriaExists) {
+        return NextResponse.json(
+          { ok: false, message: 'Categoría wizard no encontrada o está inactiva', error: 'Categoría no encontrada' },
+          { status: 400 }
+        )
+      }
     }
 
     // Si abogadoId está presente, verificar relación
@@ -202,19 +234,31 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Verificar unicidad (evitar duplicados)
+    // Verificar unicidad (adaptar para ambos tipos)
     const existing = await prisma.arancel.findFirst({
-      where: {
-        officeId: user.officeId,
-        bancoId: parsed.data.bancoId,
-        abogadoId: parsed.data.abogadoId ?? null,
-        estampoId: parsed.data.estampoId,
-      },
+      where: parsed.data.estampoId
+        ? {
+            officeId: user.officeId,
+            bancoId: parsed.data.bancoId,
+            abogadoId: parsed.data.abogadoId ?? null,
+            estampoId: parsed.data.estampoId,
+          }
+        : {
+            officeId: user.officeId,
+            bancoId: parsed.data.bancoId,
+            abogadoId: parsed.data.abogadoId ?? null,
+            estampoBaseCategoria: parsed.data.estampoBaseCategoria,
+          },
     })
 
     if (existing) {
       return NextResponse.json(
-        { ok: false, message: 'Ya existe un arancel para esta combinación de Banco/Abogado/Estampo', error: 'Duplicado' },
+        { 
+          ok: false, 
+          message: 'Ya existe un arancel para esta combinación de Banco/Abogado/Estampo', 
+          error: 'Duplicado',
+          errorCode: 'DUPLICATE'
+        },
         { status: 400 }
       )
     }
@@ -226,7 +270,8 @@ export async function POST(req: NextRequest) {
           officeId: user.officeId,
           bancoId: parsed.data.bancoId,
           abogadoId: parsed.data.abogadoId ?? null,
-          estampoId: parsed.data.estampoId,
+          estampoId: parsed.data.estampoId ?? null,
+          estampoBaseCategoria: parsed.data.estampoBaseCategoria ?? null,
           monto: montoParsed,
           activo: parsed.data.activo ?? true,
         },
@@ -251,6 +296,7 @@ export async function POST(req: NextRequest) {
             ok: false,
             message: 'Ya existe un arancel para esta combinación de Banco/Abogado/Estampo',
             error: 'Duplicado',
+            errorCode: 'DUPLICATE'
           },
           { status: 400 }
         )

@@ -75,6 +75,65 @@ export async function lookupArancel(
 }
 
 /**
+ * Busca el arancel correcto para un EstampoBase categoría dado un contexto de ROL
+ * 
+ * Orden de prioridad (igual que legacy):
+ * 1. Arancel específico del Abogado para esta categoría en este Banco
+ * 2. Arancel del Banco (banco-wide) para esta categoría
+ * 3. null (no encontrado, monto debe ser manual)
+ * 
+ * @param officeId - ID de la oficina
+ * @param bancoId - ID del banco (puede venir de demanda o abogado.bancoId)
+ * @param abogadoId - ID del abogado (de demanda.abogadoId)
+ * @param categoria - Categoría del EstampoBase (ej: 'BUSQUEDA_NEGATIVA')
+ * @returns Arancel encontrado con monto y fuente, o null si no se encontró
+ */
+export async function lookupArancelByCategoria(
+  officeId: number,
+  bancoId: number | null,
+  abogadoId: number | null,
+  categoria: string
+): Promise<{ monto: number; source: 'abogado' | 'banco' } | null> {
+  if (!bancoId || !categoria) {
+    return null
+  }
+
+  // Prioridad 1: Arancel específico del Abogado
+  if (abogadoId) {
+    const abogadoArancel = await prisma.arancel.findFirst({
+      where: {
+        officeId,
+        bancoId,
+        abogadoId,
+        estampoBaseCategoria: categoria,
+        activo: true,
+      },
+    })
+
+    if (abogadoArancel) {
+      return { monto: abogadoArancel.monto, source: 'abogado' }
+    }
+  }
+
+  // Prioridad 2: Arancel banco-wide
+  const bancoArancel = await prisma.arancel.findFirst({
+    where: {
+      officeId,
+      bancoId,
+      abogadoId: null,
+      estampoBaseCategoria: categoria,
+      activo: true,
+    },
+  })
+
+  if (bancoArancel) {
+    return { monto: bancoArancel.monto, source: 'banco' }
+  }
+
+  return null
+}
+
+/**
  * NOTA PARA INTEGRACIÓN FUTURA:
  * 
  * Esta función está lista para ser usada en:

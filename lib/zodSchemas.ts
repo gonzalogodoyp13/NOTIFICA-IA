@@ -50,10 +50,19 @@ export const EstampoSchema = z.object({
 export const ArancelSchema = z.object({
   bancoId: z.number().int().positive(),
   abogadoId: z.number().int().positive().nullable().optional(),
-  estampoId: z.string().min(1),
+  estampoId: z.string().min(1).optional(),
+  estampoBaseCategoria: z.string().min(1).optional(),
   monto: z.number().int().min(0),
   activo: z.boolean().optional().default(true),
-});
+}).refine(
+  (data) => {
+    // Validar XOR: exactamente uno de estampoId o estampoBaseCategoria
+    const hasEstampoId = !!data.estampoId
+    const hasCategoria = !!data.estampoBaseCategoria
+    return hasEstampoId !== hasCategoria  // XOR: uno u otro, no ambos ni ninguno
+  },
+  { message: "Debe proporcionar exactamente uno de: estampoId (legacy) o estampoBaseCategoria (wizard)" }
+);
 
 // Helper para parsear monto desde string chileno (usar antes de validar)
 export function parseArancelMonto(input: string | number): number {

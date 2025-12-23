@@ -109,10 +109,10 @@ export async function PUT(
     // Construir objeto de actualización solo con campos permitidos
     const updateData: any = {}
 
-    // NO permitir cambiar bancoId o abogadoId
-    if (body.bancoId !== undefined || body.abogadoId !== undefined) {
+    // NO permitir cambiar bancoId, abogadoId, estampoId o estampoBaseCategoria
+    if (body.bancoId !== undefined || body.abogadoId !== undefined || body.estampoId !== undefined || body.estampoBaseCategoria !== undefined) {
       return NextResponse.json(
-        { ok: false, message: 'No se puede cambiar bancoId o abogadoId. Elimina y crea un nuevo arancel.', error: 'Campos no modificables' },
+        { ok: false, message: 'No se puede cambiar el estampo o categoría. Elimina y crea un nuevo arancel si necesitas cambiar esto.', error: 'Campos no modificables' },
         { status: 400 }
       )
     }
@@ -126,44 +126,6 @@ export async function PUT(
         montoParsed = Math.floor(body.monto || 0)
       }
       updateData.monto = montoParsed
-    }
-
-    // Validar estampoId si se cambia
-    if (body.estampoId !== undefined) {
-      const estampo = await prisma.estampo.findFirst({
-        where: {
-          id: body.estampoId,
-          officeId: user.officeId,
-          activo: true,
-        },
-      })
-
-      if (!estampo) {
-        return NextResponse.json(
-          { ok: false, message: 'Estampo no encontrado o está inactivo', error: 'Estampo no encontrado o inactivo' },
-          { status: 400 }
-        )
-      }
-
-      // Verificar unicidad con nuevo estampoId
-      const existingWithNewEstampo = await prisma.arancel.findFirst({
-        where: {
-          officeId: user.officeId,
-          bancoId: existingArancel.bancoId,
-          abogadoId: existingArancel.abogadoId,
-          estampoId: body.estampoId,
-          id: { not: id }, // Excluir el arancel actual
-        },
-      })
-
-      if (existingWithNewEstampo) {
-        return NextResponse.json(
-          { ok: false, message: 'Ya existe un arancel para esta combinación con el nuevo estampo', error: 'Duplicado' },
-          { status: 400 }
-        )
-      }
-
-      updateData.estampoId = body.estampoId
     }
 
     // Actualizar activo si se proporciona

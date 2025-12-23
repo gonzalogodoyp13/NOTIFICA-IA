@@ -144,44 +144,75 @@ export default function EjecutarWizard({
     return undefined
   }, [selectedEstampoTipo, estamposGrouped])
 
-  // Auto-fill monto when legacy estampo is selected (Step II) - only for legacy
+  // Auto-fill monto when estampo is selected (Step II) - LEGACY y WIZARD
   useEffect(() => {
-    if (
-      step === 2 &&
-      selectedEstampoTipo?.kind === 'LEGACY' &&
-      selectedEstampoTipo.estampoId &&
-      rolData
-    ) {
-      const abogado = rolData.abogado
-      const bancoId = abogado?.banco?.id ?? null
-      const abogadoId = abogado?.id ?? null
-
-      if (bancoId && selectedEstampoTipo.estampoId) {
-        // Call API to lookup arancel (auto-suggest only, doesn't block if fails)
-        const params = new URLSearchParams({
-          bancoId: String(bancoId),
-          estampoId: selectedEstampoTipo.estampoId,
-        })
-        if (abogadoId) {
-          params.append('abogadoId', String(abogadoId))
-        }
-
-        fetch(`/api/aranceles/lookup?${params.toString()}`, {
-          credentials: 'include',
-        })
-          .then(res => res.json())
-          .then(data => {
-            if (data.ok && data.data?.monto) {
-              setMonto(String(data.data.monto))
-            }
-          })
-          .catch(() => {
-            // Silently fail - user can enter monto manually
-          })
-      }
+    // Solo auto-fill si estamos en Step 2 y hay selección válida
+    if (step !== 2 || !selectedEstampoTipo || !rolData) {
+      return
     }
-    // Wizard doesn't do lookup - monto is entered manually
-  }, [step, selectedEstampoTipo, rolData])
+
+    // Guard: no sobrescribir si el usuario ya ingresó un monto
+    if (monto && monto.trim() !== '') {
+      return
+    }
+
+    const abogado = rolData.abogado
+    const bancoId = abogado?.banco?.id ?? null
+    const abogadoId = abogado?.id ?? null
+
+    if (!bancoId) {
+      return
+    }
+
+    // LEGACY path (sin cambios)
+    if (selectedEstampoTipo.kind === 'LEGACY' && selectedEstampoTipo.estampoId) {
+      const params = new URLSearchParams({
+        bancoId: String(bancoId),
+        estampoId: selectedEstampoTipo.estampoId,
+      })
+      if (abogadoId) {
+        params.append('abogadoId', String(abogadoId))
+      }
+
+      fetch(`/api/aranceles/lookup?${params.toString()}`, {
+        credentials: 'include',
+      })
+        .then(res => res.json())
+        .then(data => {
+          if (data.ok && data.data?.monto) {
+            setMonto(String(data.data.monto))
+          }
+        })
+        .catch(() => {
+          // Silently fail - user can enter monto manually
+        })
+      return
+    }
+
+    // WIZARD path (NUEVO)
+    if (selectedEstampoTipo.kind === 'WIZARD' && selectedEstampoTipo.categoria) {
+      const params = new URLSearchParams({
+        bancoId: String(bancoId),
+        categoria: selectedEstampoTipo.categoria,
+      })
+      if (abogadoId) {
+        params.append('abogadoId', String(abogadoId))
+      }
+
+      fetch(`/api/aranceles/lookup?${params.toString()}`, {
+        credentials: 'include',
+      })
+        .then(res => res.json())
+        .then(data => {
+          if (data.ok && data.data?.monto) {
+            setMonto(String(data.data.monto))
+          }
+        })
+        .catch(() => {
+          // Silently fail - user can enter monto manually
+        })
+    }
+  }, [step, selectedEstampoTipo, rolData, monto])
 
   // Pre-fill contenidoEstampo when entering Step III
   useEffect(() => {

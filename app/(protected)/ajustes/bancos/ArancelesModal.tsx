@@ -25,8 +25,10 @@ interface Abogado {
 interface ArancelRow {
   id?: number
   tempId?: string
-  estampoId: string
+  estampoId?: string
+  estampoBaseCategoria?: string
   estampoNombre?: string
+  tipo?: 'legacy' | 'wizard'
   monto: string
   activo: boolean
   isNew?: boolean
@@ -37,19 +39,27 @@ interface ArancelResponse {
   id: number
   bancoId: number
   abogadoId: number | null
-  estampoId: string
+  estampoId: string | null
+  estampoBaseCategoria: string | null
   monto: number
   activo: boolean
+  tipo: 'legacy' | 'wizard'
   estampo: {
     id: string
     nombre: string
     tipo: string
     activo: boolean
-  }
+  } | null
   abogado?: {
     id: number
     nombre: string | null
   } | null
+}
+
+interface WizardCategoria {
+  categoria: string
+  label: string
+  count: number
 }
 
 export function ArancelesModal({ bancoId, bancoNombre, isOpen, onClose }: ArancelesModalProps) {
@@ -58,9 +68,12 @@ export function ArancelesModal({ bancoId, bancoNombre, isOpen, onClose }: Arance
   const [aranceles, setAranceles] = useState<ArancelRow[]>([])
   const [abogados, setAbogados] = useState<Abogado[]>([])
   const [estampos, setEstampos] = useState<Estampo[]>([])
+  const [wizardCategorias, setWizardCategorias] = useState<WizardCategoria[]>([])
+  const [categoriaLabelMap, setCategoriaLabelMap] = useState<Map<string, string>>(new Map())
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [savingId, setSavingId] = useState<string | number | null>(null)
+  const [isSavingAny, setIsSavingAny] = useState(false)
 
   // Fetch estampos (solo tipo "modelo" y activo)
   const fetchEstampos = async () => {
@@ -73,6 +86,25 @@ export function ArancelesModal({ bancoId, bancoNombre, isOpen, onClose }: Arance
       }
     } catch (err) {
       console.error('Error fetching estampos:', err)
+    }
+  }
+
+  // Fetch categorías wizard
+  const fetchWizardCategorias = async () => {
+    try {
+      const response = await fetch('/api/estampos/wizard/categorias', { credentials: 'include' })
+      const data = await response.json()
+      if (data.ok && data.data) {
+        setWizardCategorias(data.data)
+        // Crear mapa de labels para lookup rápido
+        const labelMap = new Map<string, string>()
+        data.data.forEach((cat: WizardCategoria) => {
+          labelMap.set(cat.categoria, cat.label)
+        })
+        setCategoriaLabelMap(labelMap)
+      }
+    } catch (err) {
+      console.error('Error fetching wizard categorias:', err)
     }
   }
 
@@ -107,8 +139,10 @@ export function ArancelesModal({ bancoId, bancoNombre, isOpen, onClose }: Arance
       if (data.ok && data.data) {
         const rows: ArancelRow[] = data.data.map((a: ArancelResponse) => ({
           id: a.id,
-          estampoId: a.estampoId,
-          estampoNombre: a.estampo.nombre,
+          estampoId: a.estampoId ?? undefined,
+          estampoBaseCategoria: a.estampoBaseCategoria ?? undefined,
+          estampoNombre: a.tipo === 'legacy' ? a.estampo?.nombre : undefined,
+          tipo: a.tipo,
           monto: formatCuantiaCLP(a.monto),
           activo: a.activo,
         }))
@@ -139,8 +173,10 @@ export function ArancelesModal({ bancoId, bancoNombre, isOpen, onClose }: Arance
       if (data.ok && data.data) {
         const rows: ArancelRow[] = data.data.map((a: ArancelResponse) => ({
           id: a.id,
-          estampoId: a.estampoId,
-          estampoNombre: a.estampo.nombre,
+          estampoId: a.estampoId ?? undefined,
+          estampoBaseCategoria: a.estampoBaseCategoria ?? undefined,
+          estampoNombre: a.tipo === 'legacy' ? a.estampo?.nombre : undefined,
+          tipo: a.tipo,
           monto: formatCuantiaCLP(a.monto),
           activo: a.activo,
         }))
@@ -159,6 +195,7 @@ export function ArancelesModal({ bancoId, bancoNombre, isOpen, onClose }: Arance
   useEffect(() => {
     if (isOpen && bancoId) {
       fetchEstampos()
+      fetchWizardCategorias()
       if (activeTab === 'banco') {
         fetchArancelesBanco()
       } else {
@@ -193,13 +230,32 @@ export function ArancelesModal({ bancoId, bancoNombre, isOpen, onClose }: Arance
     return row.id ?? row.tempId ?? `temp-${index}`
   }
 
-  const handleAddRow = () => {
+  // Helper para generar key única de duplicado
+  // Scope: banco-wide (abogadoKey='null') vs abogado-específico (abogadoKey=number)
+  const getDuplicateKey = (row: ArancelRow): string | null => {
+    // Banco tab → abogadoKey = 'null' (banco-wide)
+    // Abogado tab → abogadoKey = selectedAbogadoId (abogado-específico)
+    const abogadoKey = activeTab === 'abogado' && selectedAbogadoId ? String(selectedAbogadoId) : 'null'
+    
+    if (row.tipo === 'legacy' || (row.estampoId && !row.estampoBaseCategoria)) {
+      if (!row.estampoId) return null
+      return `L|${bancoId}|${abogadoKey}|${row.estampoId}`
+    } else if (row.tipo === 'wizard' || (row.estampoBaseCategoria && !row.estampoId)) {
+      if (!row.estampoBaseCategoria) return null
+      return `W|${bancoId}|${abogadoKey}|${row.estampoBaseCategoria}`
+    }
+    return null
+  }
+
+  const handleAddRow = (tipo?: 'legacy' | 'wizard') => {
     const newRow: ArancelRow = {
-      estampoId: '',
+      estampoId: tipo === 'legacy' ? '' : undefined,
+      estampoBaseCategoria: tipo === 'wizard' ? '' : undefined,
       monto: '',
       activo: true,
       isNew: true,
       isDirty: true,
+      tipo: tipo,
       tempId: `temp-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
     }
     setAranceles([...aranceles, newRow])
@@ -218,9 +274,22 @@ export function ArancelesModal({ bancoId, bancoNombre, isOpen, onClose }: Arance
   }
 
   const handleSave = async (row: ArancelRow, index: number) => {
+    // Hard guard: prevenir guardado paralelo incluso si UI no ha re-renderizado
+    if (isSavingAny) {
+      return
+    }
+
     // Validaciones
-    if (!row.estampoId) {
-      setError('Selecciona un estampo')
+    const isLegacy = row.tipo === 'legacy' || (row.estampoId && !row.estampoBaseCategoria)
+    const isWizard = row.tipo === 'wizard' || (row.estampoBaseCategoria && !row.estampoId)
+
+    if (isLegacy && !row.estampoId) {
+      setError('Selecciona un estampo legacy')
+      return
+    }
+
+    if (isWizard && !row.estampoBaseCategoria) {
+      setError('Selecciona una categoría wizard')
       return
     }
 
@@ -229,26 +298,39 @@ export function ArancelesModal({ bancoId, bancoNombre, isOpen, onClose }: Arance
       return
     }
 
-    // Verificar duplicados en la lista
-    const duplicate = aranceles.some(
-      (r, i) => i !== index && r.estampoId === row.estampoId && r.id !== row.id
-    )
-    if (duplicate) {
-      setError('Este estampo ya tiene un arancel definido en la lista')
-      return
+    // Verificar duplicados en la lista (con scope completo)
+    const currentKey = getDuplicateKey(row)
+    if (currentKey) {
+      const duplicate = aranceles.some((r, i) => {
+        if (i === index || r.id === row.id) return false
+        const otherKey = getDuplicateKey(r)
+        return otherKey === currentKey
+      })
+      
+      if (duplicate) {
+        const tipoText = row.tipo === 'wizard' ? 'categoría wizard' : 'estampo'
+        setError(`Este ${tipoText} ya tiene un arancel definido para este ${activeTab === 'abogado' ? 'abogado' : 'banco'}`)
+        return
+      }
     }
 
     const rowKey = getRowKey(row, index)
     setError(null)
     setSavingId(rowKey)
+    setIsSavingAny(true)
 
     try {
       const montoParsed = cleanCuantiaInput(row.monto) ?? 0
       const payload: any = {
         bancoId,
-        estampoId: row.estampoId,
         monto: montoParsed,
         activo: row.activo,
+      }
+
+      if (isLegacy) {
+        payload.estampoId = row.estampoId
+      } else if (isWizard) {
+        payload.estampoBaseCategoria = row.estampoBaseCategoria
       }
 
       if (activeTab === 'abogado' && selectedAbogadoId) {
@@ -263,7 +345,7 @@ export function ArancelesModal({ bancoId, bancoNombre, isOpen, onClose }: Arance
         response = await fetch(`/api/aranceles/${row.id}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ monto: montoParsed, estampoId: row.estampoId, activo: row.activo }),
+          body: JSON.stringify({ monto: montoParsed, activo: row.activo }),
           credentials: 'include',
         })
       } else {
@@ -278,24 +360,63 @@ export function ArancelesModal({ bancoId, bancoNombre, isOpen, onClose }: Arance
 
       const data = await response.json()
       if (!data.ok) {
-        throw new Error(data.message || 'Error al guardar el arancel')
+        // Preservar errorCode en el error para detección en catch
+        const error = new Error(data.message || 'Error al guardar el arancel')
+        ;(error as any).errorCode = data.errorCode
+        throw error
       }
 
       // Actualizar la fila con los datos del servidor
       const updated = [...aranceles]
+      const responseData = data.data as ArancelResponse
       updated[index] = {
-        id: data.data.id,
-        estampoId: data.data.estampoId,
-        estampoNombre: data.data.estampo.nombre,
-        monto: formatCuantiaCLP(data.data.monto),
-        activo: data.data.activo,
-        // Remove tempId since we now have a real id
+        id: responseData.id,
+        estampoId: responseData.estampoId ?? undefined,
+        estampoBaseCategoria: responseData.estampoBaseCategoria ?? undefined,
+        estampoNombre: responseData.tipo === 'legacy' ? responseData.estampo?.nombre : undefined,
+        tipo: responseData.tipo,
+        monto: formatCuantiaCLP(responseData.monto),
+        activo: responseData.activo,
       }
       setAranceles(updated)
+
+      // Refetch para sincronizar con servidor (evita desincronización)
+      // Hacer refetch SOLO aquí, no en useEffect que dependa de aranceles
+      if (activeTab === 'banco') {
+        await fetchArancelesBanco()
+      } else if (selectedAbogadoId) {
+        await fetchArancelesAbogado()
+      }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Error al guardar el arancel')
+      const errorMessage = err instanceof Error ? err.message : 'Error al guardar el arancel'
+      
+      // Obtener errorCode del error (preservado en throw)
+      const errorCode = (err as any)?.errorCode
+      
+      // Detectar si es error de duplicado del servidor
+      const isDuplicateError = errorCode === 'DUPLICATE' || 
+                              errorMessage.includes('Ya existe') || 
+                              errorMessage.includes('Duplicado')
+      
+      if (isDuplicateError) {
+        // Mostrar error claro (NO mensaje suave)
+        setError('Ya existe un arancel para esta combinación. Verifica la lista actualizada.')
+        
+        // Refetch para sincronizar UI con DB (ayuda si uno de dos requests paralelos tuvo éxito)
+        if (activeTab === 'banco') {
+          await fetchArancelesBanco()
+        } else if (selectedAbogadoId) {
+          await fetchArancelesAbogado()
+        }
+        
+        // NO remover la fila - el usuario debe ver el error y decidir
+      } else {
+        // Error real - mostrar normalmente
+        setError(errorMessage)
+      }
     } finally {
       setSavingId(null)
+      setIsSavingAny(false)
     }
   }
 
@@ -409,10 +530,10 @@ export function ArancelesModal({ bancoId, bancoNombre, isOpen, onClose }: Arance
             <div className="text-center py-12">
               <p className="text-gray-600">Cargando aranceles...</p>
             </div>
-          ) : estampos.length === 0 ? (
+          ) : estampos.length === 0 && wizardCategorias.length === 0 ? (
             <div className="text-center py-12">
               <p className="text-gray-600">
-                No hay estampos disponibles. Crea estampos en Ajustes → Estampos primero.
+                No hay estampos ni categorías wizard disponibles. Crea estampos en Ajustes → Estampos primero.
               </p>
             </div>
           ) : (
@@ -422,7 +543,7 @@ export function ArancelesModal({ bancoId, bancoNombre, isOpen, onClose }: Arance
                   <thead className="bg-gray-50">
                     <tr>
                       <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                        Estampo
+                        Estampo / Categoría
                       </th>
                       <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
                         Monto (CLP)
@@ -443,19 +564,37 @@ export function ArancelesModal({ bancoId, bancoNombre, isOpen, onClose }: Arance
                       aranceles.map((row, index) => (
                         <tr key={row.id || `new-${index}`} className="hover:bg-gray-50">
                           <td className="px-4 py-3">
-                            <select
-                              value={row.estampoId}
-                              onChange={(e) => handleUpdateRow(index, 'estampoId', e.target.value)}
-                              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500"
-                              disabled={!!row.id && !row.isDirty}
-                            >
-                              <option value="">-- Selecciona estampo --</option>
-                              {estampos.map((estampo) => (
-                                <option key={estampo.id} value={estampo.id}>
-                                  {estampo.nombre}
-                                </option>
-                              ))}
-                            </select>
+                            {row.tipo === 'wizard' || (!row.estampoId && row.estampoBaseCategoria) ? (
+                              // Dropdown para categorías wizard
+                              <select
+                                value={row.estampoBaseCategoria || ''}
+                                onChange={(e) => handleUpdateRow(index, 'estampoBaseCategoria', e.target.value)}
+                                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500"
+                                disabled={!!row.id}
+                              >
+                                <option value="">-- Selecciona categoría wizard --</option>
+                                {wizardCategorias.map((cat) => (
+                                  <option key={cat.categoria} value={cat.categoria}>
+                                    {cat.label}
+                                  </option>
+                                ))}
+                              </select>
+                            ) : (
+                              // Dropdown para estampos legacy
+                              <select
+                                value={row.estampoId || ''}
+                                onChange={(e) => handleUpdateRow(index, 'estampoId', e.target.value)}
+                                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500"
+                                disabled={!!row.id}
+                              >
+                                <option value="">-- Selecciona estampo --</option>
+                                {estampos.map((estampo) => (
+                                  <option key={estampo.id} value={estampo.id}>
+                                    {estampo.nombre}
+                                  </option>
+                                ))}
+                              </select>
+                            )}
                           </td>
                           <td className="px-4 py-3">
                             <input
@@ -474,7 +613,7 @@ export function ArancelesModal({ bancoId, bancoNombre, isOpen, onClose }: Arance
                               return (
                                 <button
                                   onClick={() => handleSave(row, index)}
-                                  disabled={isSaving}
+                                  disabled={isSaving || isSavingAny}
                                   className="px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 transition text-sm disabled:opacity-50"
                                 >
                                   {isSaving ? 'Guardando...' : 'Guardar'}
@@ -497,13 +636,20 @@ export function ArancelesModal({ bancoId, bancoNombre, isOpen, onClose }: Arance
                 </table>
               </div>
 
-              <div className="mt-4">
+              <div className="mt-4 flex gap-2">
                 <button
-                  onClick={handleAddRow}
+                  onClick={() => handleAddRow('legacy')}
                   disabled={estampos.length === 0}
-                  className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  + Agregar Arancel
+                  + Agregar Arancel Legacy
+                </button>
+                <button
+                  onClick={() => handleAddRow('wizard')}
+                  disabled={wizardCategorias.length === 0}
+                  className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  + Agregar Arancel Wizard
                 </button>
               </div>
             </>
