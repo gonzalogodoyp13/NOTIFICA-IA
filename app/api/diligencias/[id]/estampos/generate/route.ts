@@ -113,15 +113,37 @@ export async function POST(
       )
     }
 
-    const noti = notificacionId
-      ? await prisma.notificacion.findFirst({
-          where: { id: notificacionId, diligenciaId: diligencia.id },
-          select: { id: true, meta: true },
-        })
-      : null
+    let ejecutadoFromNotificacion: any
 
-    if (notificacionId && !noti) {
-      return NextResponse.json({ ok: false, error: 'Notificación no encontrada' }, { status: 404 })
+    if (notificacionId) {
+      const noti = await prisma.notificacion.findFirst({
+        where: { id: notificacionId, diligenciaId: diligencia.id },
+        include: {
+          ejecutado: {
+            include: {
+              comunas: {
+                select: {
+                  id: true,
+                  nombre: true,
+                },
+              },
+            },
+          },
+        } as any,
+      })
+
+      if (!noti) {
+        return NextResponse.json({ ok: false, error: 'Notificación no encontrada' }, { status: 404 })
+      }
+
+      if (!(noti as any).ejecutadoId || !(noti as any).ejecutado) {
+        return NextResponse.json(
+          { ok: false, error: 'Esta notificación requiere seleccionar un ejecutado antes de generar documentos.' },
+          { status: 400 }
+        )
+      }
+
+      ejecutadoFromNotificacion = (noti as any).ejecutado
     }
 
     // Load EstampoCustom if exists
@@ -139,7 +161,15 @@ export async function POST(
     const isPlainObject = (x: unknown): x is Record<string, unknown> =>
       !!x && typeof x === 'object' && !Array.isArray(x)
 
-    const notiMeta = isPlainObject(noti?.meta) ? (noti!.meta as Record<string, unknown>) : null
+    // Get noti meta if notificacionId was provided (for meta merging, not for ejecutado)
+    const notiForMeta = notificacionId
+      ? await prisma.notificacion.findFirst({
+          where: { id: notificacionId, diligenciaId: diligencia.id },
+          select: { id: true, meta: true },
+        })
+      : null
+
+    const notiMeta = isPlainObject(notiForMeta?.meta) ? (notiForMeta!.meta as Record<string, unknown>) : null
     const diliMeta = isPlainObject(diligencia.meta)
       ? (diligencia.meta as Record<string, unknown>)
       : null
@@ -156,6 +186,7 @@ export async function POST(
       estampoBase,
       estampoCustom,
       dbUser,
+      ejecutadoFromNotificacion,
     })
 
     const combined = {

@@ -20,16 +20,28 @@ type DiligenciaWithRelations = NonNullable<
 
 function buildEstampoVariables(
   diligencia: DiligenciaWithRelations,
-  dbUser: { officeName: string } | null
+  dbUser: { officeName: string } | null,
+  ejecutadoFromNotificacion?: any
 ): Record<string, string> {
   const meta = diligencia.meta as Record<string, unknown> | null
   const ejecutadoId = meta?.ejecutadoId as string | undefined
 
-  // Seleccionar ejecutado (por meta o primero disponible)
+  // Seleccionar ejecutado
   const ejecutados = (diligencia as any).rol?.demanda?.ejecutados ?? []
-  const ejecutado = ejecutadoId
-    ? ejecutados.find((e: any) => e.id === ejecutadoId) ?? ejecutados[0]
-    : ejecutados[0]
+  let ejecutado: any
+  
+  if (ejecutadoFromNotificacion !== undefined) {
+    // ejecutadoFromNotificacion was passed (notificacionId was provided)
+    // If it's null, route should have already blocked, but handle gracefully
+    ejecutado = ejecutadoFromNotificacion ?? null
+  } else {
+    // Legacy: notificacionId was NOT provided, use legacy behavior
+    if (ejecutadoId) {
+      ejecutado = ejecutados.find((e: any) => e.id === ejecutadoId) ?? ejecutados[0]
+    } else {
+      ejecutado = ejecutados[0]
+    }
+  }
 
   // Datos del abogado
   const abogado = (diligencia as any).rol?.demanda?.abogados
@@ -56,6 +68,7 @@ function buildEstampoVariables(
     direccion_ejecutado: [ejecutado?.direccion, ejecutado?.comunas?.nombre]
       .filter(Boolean)
       .join(', '),
+    solo_direccion_ejecutado: ejecutado?.direccion ?? '',
     solo_comuna_ejecutado: ejecutado?.comunas?.nombre ?? '',
 
     // Abogado
@@ -157,15 +170,38 @@ export async function POST(
 
     const data = parsed.data
 
+    // Store ejecutado from notificación if available
+    let ejecutadoFromNotificacion: any
+
     if (notificacionId) {
       const noti = await prisma.notificacion.findFirst({
         where: { id: notificacionId, diligenciaId: diligencia.id },
-        select: { id: true },
+        include: {
+          ejecutado: {
+            include: {
+              comunas: {
+                select: {
+                  id: true,
+                  nombre: true,
+                },
+              },
+            },
+          },
+        } as any,
       })
 
       if (!noti) {
         return NextResponse.json({ ok: false, error: 'Notificación no encontrada' }, { status: 404 })
       }
+
+      if (!(noti as any).ejecutadoId || !(noti as any).ejecutado) {
+        return NextResponse.json(
+          { ok: false, error: 'Esta notificación requiere seleccionar un ejecutado antes de generar documentos.' },
+          { status: 400 }
+        )
+      }
+
+      ejecutadoFromNotificacion = (noti as any).ejecutado
     }
 
     const estampo = await prisma.estampo.findFirst({
@@ -187,7 +223,7 @@ export async function POST(
       : (estampo.contenido || 'Estampo generado para $rol')
 
     // Build complete variable map from diligencia data
-    const variableMap = buildEstampoVariables(diligencia, dbUser)
+    const variableMap = buildEstampoVariables(diligencia, dbUser, ejecutadoFromNotificacion)
     const filled = replaceVariables(template, variableMap)
 
     // Get ejecutadoNombre for header (from variableMap)

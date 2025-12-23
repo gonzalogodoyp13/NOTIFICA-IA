@@ -260,7 +260,19 @@ export default function DiligenciasTable({ rolId }: DiligenciasTableProps) {
                   setEjecutarInitialStep(step)
                 }
 
-                const notificaciones = diligencia.notificaciones || []
+                // Sort notificaciones for stable ordering
+                const notificaciones = (diligencia.notificaciones || []).slice().sort((a, b) => {
+                  // Primary: createdAt ascending (nulls last)
+                  const aDate = a.createdAt ? new Date(a.createdAt).getTime() : Infinity
+                  const bDate = b.createdAt ? new Date(b.createdAt).getTime() : Infinity
+                  
+                  if (aDate !== bDate) {
+                    return aDate - bDate
+                  }
+                  
+                  // Tie-break: id ascending (string comparison)
+                  return a.id.localeCompare(b.id)
+                })
 
                 return (
                   <>
@@ -326,12 +338,16 @@ export default function DiligenciasTable({ rolId }: DiligenciasTableProps) {
                             <td colSpan={TABLE_COLS} className="px-4 py-2">
                               <div className="flex items-center gap-3 pl-8 text-sm">
                                 <span className="font-medium text-slate-700">
-                                  Notificación #{idx + 1}
+                                  Notificación — {notif.id.slice(0, 6)}
                                 </span>
                                 <span className="text-xs text-slate-500">
                                   {notif.createdAt
                                     ? new Date(notif.createdAt).toLocaleString('es-CL')
                                     : '—'}
+                                </span>
+                                {/* DEBUG: Remove after confirming */}
+                                <span className="text-xs text-slate-400 font-mono">
+                                  [ID: {notif.id.slice(0, 6)} | Boleta: {notifProgress.latestBoletaId?.slice(0, 6) ?? '—'} | Estampo: {notifProgress.latestEstampoId?.slice(0, 6) ?? '—'}]
                                 </span>
                                 {!notif.ejecutadoId && (
                                   <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">

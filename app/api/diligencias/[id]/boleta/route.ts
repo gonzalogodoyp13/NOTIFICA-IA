@@ -72,15 +72,37 @@ export async function POST(
 
     const data = parsed.data
 
+    let ejecutadoFromNotificacion: any
+
     if (notificacionId) {
       const noti = await prisma.notificacion.findFirst({
         where: { id: notificacionId, diligenciaId: diligencia.id },
-        select: { id: true },
+        include: {
+          ejecutado: {
+            include: {
+              comunas: {
+                select: {
+                  id: true,
+                  nombre: true,
+                },
+              },
+            },
+          },
+        },
       })
 
       if (!noti) {
         return NextResponse.json({ ok: false, error: 'Notificación no encontrada' }, { status: 404 })
       }
+
+      if (!(noti as any).ejecutadoId || !(noti as any).ejecutado) {
+        return NextResponse.json(
+          { ok: false, error: 'Esta notificación requiere seleccionar un ejecutado antes de generar documentos.' },
+          { status: 400 }
+        )
+      }
+
+      ejecutadoFromNotificacion = (noti as any).ejecutado
     }
 
     // Build Recibo variables
@@ -90,7 +112,8 @@ export async function POST(
       data.monto,
       data.medio,
       data.referencia,
-      data.tipoEstampoNombre // Pasar el nombre del estampo
+      data.tipoEstampoNombre,
+      ejecutadoFromNotificacion
     )
 
     // Load stamp image

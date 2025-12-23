@@ -55,7 +55,8 @@ export function buildReciboVariables(
   monto: number,
   medio: string,
   referencia?: string,
-  tipoEstampoNombre?: string // Nuevo parámetro opcional
+  tipoEstampoNombre?: string,
+  ejecutadoFromNotificacion?: any
 ): ReciboVariables {
   const meta = diligencia.meta as Record<string, unknown> | null
   
@@ -87,11 +88,22 @@ export function buildReciboVariables(
   // Causa: ROL + " / " + tribunal.nombre
   const causa = `${diligencia.rol.rol} / ${tribunal?.nombre ?? ''}`
   
-  // Seleccionar ejecutado: meta.ejecutadoId si existe, sino primer ejecutado, sino null
+  // Seleccionar ejecutado
   const ejecutadoId = (meta?.ejecutadoId as string | undefined) ?? undefined
-  const ejecutado = ejecutadoId
-    ? ejecutados.find(e => e.id === ejecutadoId) ?? ejecutados[0] ?? null
-    : ejecutados[0] ?? null
+  let ejecutado: (typeof ejecutados[0]) | null
+  
+  if (ejecutadoFromNotificacion !== undefined) {
+    // ejecutadoFromNotificacion was passed (notificacionId was provided)
+    // If it's null, route should have already blocked, but handle gracefully
+    ejecutado = ejecutadoFromNotificacion ?? null
+  } else {
+    // Legacy: notificacionId was NOT provided, use legacy behavior
+    if (ejecutadoId) {
+      ejecutado = ejecutados.find(e => e.id === ejecutadoId) ?? ejecutados[0] ?? null
+    } else {
+      ejecutado = ejecutados[0] ?? null
+    }
+  }
   
   // Carátula: Banco / Ejecutado
   const caratula = [banco?.nombre, ejecutado?.nombre]

@@ -26,12 +26,14 @@ export function buildInitialVariables({
   estampoBase,
   estampoCustom,
   dbUser,
+  ejecutadoFromNotificacion,
 }: {
   diligencia: DiligenciaWithRelations
   rol: DiligenciaWithRelations['rol']
   estampoBase: EstampoBase
   estampoCustom?: EstampoCustom | null
   dbUser: { officeName: string } | null
+  ejecutadoFromNotificacion?: any
 }): Record<string, string> {
   const variablesSchema = estampoBase.variablesSchema as unknown as VariableDef[]
   const result: Record<string, string> = {}
@@ -39,11 +41,22 @@ export function buildInitialVariables({
   const meta = diligencia.meta as Record<string, unknown> | null
   const ejecutadoId = meta?.ejecutadoId as string | undefined
 
-  // Seleccionar ejecutado (por meta o primero disponible)
+  // Seleccionar ejecutado
   const ejecutados = rol?.demanda?.ejecutados ?? []
-  const ejecutado = ejecutadoId
-    ? ejecutados.find((e: any) => e.id === ejecutadoId) ?? ejecutados[0]
-    : ejecutados[0]
+  let ejecutado: any
+  
+  if (ejecutadoFromNotificacion !== undefined) {
+    // ejecutadoFromNotificacion was passed (notificacionId was provided)
+    // If it's null, route should have already blocked, but handle gracefully
+    ejecutado = ejecutadoFromNotificacion ?? null
+  } else {
+    // Legacy: notificacionId was NOT provided, use legacy behavior
+    if (ejecutadoId) {
+      ejecutado = ejecutados.find((e: any) => e.id === ejecutadoId) ?? ejecutados[0]
+    } else {
+      ejecutado = ejecutados[0]
+    }
+  }
 
   // Datos del abogado
   const abogado = rol?.demanda?.abogados
@@ -80,6 +93,9 @@ export function buildInitialVariables({
           value = [ejecutado?.direccion, ejecutado?.comunas?.nombre]
             .filter(Boolean)
             .join(', ')
+          break
+        case 'solo_direccion_ejecutado':
+          value = ejecutado?.direccion ?? ''
           break
         case 'solo_comuna_ejecutado':
           value = ejecutado?.comunas?.nombre ?? ''
