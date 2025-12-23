@@ -45,20 +45,21 @@ model AuditLog {
 }
 
 model Abogado {
-  id        Int            @id @default(autoincrement())
-  officeId  Int
-  nombre    String?
-  rut       String?
-  direccion String?
-  comuna    String?
-  telefono  String?
-  email     String?
-  bancoId   Int?
-  createdAt DateTime       @default(now())
-  bancos    AbogadoBanco[] @relation("AbogadoBancos")
-  banco     Banco?         @relation(fields: [bancoId], references: [id])
-  aranceles Arancel[]      @relation("AbogadoAranceles")
-  demandas  Demanda[]
+  id           Int            @id @default(autoincrement())
+  officeId     Int
+  nombre       String?
+  rut          String?
+  direccion    String?
+  comuna       String?
+  telefono     String?
+  email        String?
+  bancoId      Int?
+  createdAt    DateTime       @default(now())
+  bancos       AbogadoBanco[] @relation("AbogadoBancos")
+  banco        Banco?         @relation(fields: [bancoId], references: [id])
+  aranceles    Arancel[]      @relation("AbogadoAranceles")
+  demandas     Demanda[]
+  procuradores Procurador[]   @relation("AbogadoProcuradores")
 
   @@index([bancoId])
   @@index([officeId])
@@ -66,17 +67,57 @@ model Abogado {
 }
 
 model Banco {
-  id            Int            @id @default(autoincrement())
-  officeId      Int
-  nombre        String
-  cuenta        String?
-  createdAt     DateTime       @default(now())
-  abogadoBancos AbogadoBanco[] @relation("BancoAbogados")
-  abogados      Abogado[]
-  aranceles     Arancel[]      @relation("BancoAranceles")
+  id                Int               @id @default(autoincrement())
+  officeId          Int
+  nombre            String
+  cuenta            String?
+  createdAt         DateTime          @default(now())
+  abogadoBancos     AbogadoBanco[]    @relation("BancoAbogados")
+  abogados          Abogado[]
+  aranceles         Arancel[]         @relation("BancoAranceles")
+  bancoProcuradores BancoProcurador[]
 
   @@index([officeId])
   @@map("bancos")
+}
+
+model Procurador {
+  id        Int               @id @default(autoincrement())
+  officeId  Int
+  nombre    String
+  email     String?
+  telefono  String?
+  notas     String?
+  abogadoId Int?
+  activo    Boolean           @default(true)
+  createdAt DateTime          @default(now())
+  updatedAt DateTime          @updatedAt
+  abogado   Abogado?          @relation("AbogadoProcuradores", fields: [abogadoId], references: [id], onDelete: SetNull)
+  bancos    BancoProcurador[]
+
+  @@index([officeId])
+  @@index([abogadoId])
+  @@index([officeId, activo])
+  @@map("procuradores")
+}
+
+model BancoProcurador {
+  id           Int        @id @default(autoincrement())
+  officeId     Int
+  bancoId      Int
+  procuradorId Int
+  alias        String?
+  activo       Boolean    @default(true)
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+  banco        Banco      @relation(fields: [bancoId], references: [id], onDelete: Cascade)
+  procurador   Procurador @relation(fields: [procuradorId], references: [id], onDelete: Cascade)
+
+  @@unique([officeId, bancoId, procuradorId])
+  @@index([bancoId])
+  @@index([procuradorId])
+  @@index([officeId])
+  @@map("banco_procuradores")
 }
 
 model AbogadoBanco {
@@ -97,19 +138,19 @@ model AbogadoBanco {
 }
 
 model Arancel {
-  id        Int      @id @default(autoincrement())
-  officeId  Int
-  bancoId   Int
-  abogadoId Int?
-  estampoId String?
+  id                   Int      @id @default(autoincrement())
+  officeId             Int
+  bancoId              Int
+  abogadoId            Int?
+  estampoId            String?
   estampoBaseCategoria String?
-  monto     Int
-  activo    Boolean  @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  abogado   Abogado? @relation("AbogadoAranceles", fields: [abogadoId], references: [id], onDelete: Cascade)
-  banco     Banco    @relation("BancoAranceles", fields: [bancoId], references: [id], onDelete: Cascade)
-  estampo   Estampo? @relation("EstampoAranceles", fields: [estampoId], references: [id], onDelete: Cascade)
+  monto                Int
+  activo               Boolean  @default(true)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+  abogado              Abogado? @relation("AbogadoAranceles", fields: [abogadoId], references: [id], onDelete: Cascade)
+  banco                Banco    @relation("BancoAranceles", fields: [bancoId], references: [id], onDelete: Cascade)
+  estampo              Estampo? @relation("EstampoAranceles", fields: [estampoId], references: [id], onDelete: Cascade)
 
   @@unique([officeId, bancoId, abogadoId, estampoId], name: "aranceles_legacy_unique")
   @@unique([officeId, bancoId, abogadoId, estampoBaseCategoria], name: "aranceles_wizard_unique")
@@ -167,15 +208,15 @@ model Demanda {
 }
 
 model Ejecutado {
-  id        String  @id @default(cuid())
-  demandaId String
-  nombre    String
-  rut       String
-  direccion String?
-  comunaId  Int?
-  rvm       Json?
-  comunas   Comuna? @relation(fields: [comunaId], references: [id])
-  demandas  Demanda @relation(fields: [demandaId], references: [id])
+  id             String         @id @default(cuid())
+  demandaId      String
+  nombre         String
+  rut            String
+  direccion      String?
+  comunaId       Int?
+  rvm            Json?
+  comunas        Comuna?        @relation(fields: [comunaId], references: [id])
+  demandas       Demanda        @relation(fields: [demandaId], references: [id])
   notificaciones Notificacion[]
 
   @@map("ejecutados")
@@ -223,60 +264,60 @@ model RolCausa {
 }
 
 model Diligencia {
-  id         String           @id @default(cuid())
-  rolId      String
-  tipoId     String
-  estado     EstadoDiligencia @default(pendiente)
-  fecha      DateTime
-  meta       Json?
-  createdAt  DateTime         @default(now())
-  rol        RolCausa         @relation(fields: [rolId], references: [id])
-  tipo       DiligenciaTipo   @relation(fields: [tipoId], references: [id])
-  documentos Documento[]
+  id             String           @id @default(cuid())
+  rolId          String
+  tipoId         String
+  estado         EstadoDiligencia @default(pendiente)
+  fecha          DateTime
+  meta           Json?
+  createdAt      DateTime         @default(now())
+  rol            RolCausa         @relation(fields: [rolId], references: [id])
+  tipo           DiligenciaTipo   @relation(fields: [tipoId], references: [id])
+  documentos     Documento[]
   notificaciones Notificacion[]
 
   @@index([rolId, createdAt])
 }
 
 model Notificacion {
-  id           String     @id
-  diligenciaId String
-  meta         Json?
-  createdAt    DateTime?
-  updatedAt    DateTime?
-  voidedAt     DateTime?
-  voidReason   String?
+  id             String      @id
+  diligenciaId   String
+  meta           Json?
+  createdAt      DateTime?
+  updatedAt      DateTime?
+  voidedAt       DateTime?
+  voidReason     String?
   voidedByUserId String?
-  ejecutadoId  String?
-  diligencia   Diligencia @relation(fields: [diligenciaId], references: [id])
-  ejecutado    Ejecutado? @relation(fields: [ejecutadoId], references: [id], onDelete: Restrict)
-  documentos   Documento[]
+  ejecutadoId    String?
+  diligencia     Diligencia  @relation(fields: [diligenciaId], references: [id])
+  ejecutado      Ejecutado?  @relation(fields: [ejecutadoId], references: [id], onDelete: Restrict)
+  documentos     Documento[]
 
   @@index([ejecutadoId])
   @@map("notificaciones")
 }
 
 model Documento {
-  id            String       @id @default(cuid())
-  rolId         String
-  diligenciaId  String?
+  id             String        @id @default(cuid())
+  rolId          String
+  diligenciaId   String?
   notificacionId String?
-  estampoId     String?
-  nombre        String
-  tipo          String
-  pdfId         String?
-  version       Int          @default(1)
-  createdAt     DateTime     @default(now())
-  textoEditado  String?
-  estampoBaseId Int?
-  voidedAt      DateTime?
-  voidReason    String?
+  estampoId      String?
+  nombre         String
+  tipo           String
+  pdfId          String?
+  version        Int           @default(1)
+  createdAt      DateTime      @default(now())
+  textoEditado   String?
+  estampoBaseId  Int?
+  voidedAt       DateTime?
+  voidReason     String?
   voidedByUserId String?
-  diligencia    Diligencia?  @relation(fields: [diligenciaId], references: [id])
-  notificacion  Notificacion? @relation(fields: [notificacionId], references: [id])
-  estampoBase   EstampoBase? @relation(fields: [estampoBaseId], references: [id])
-  estampo       Estampo?     @relation(fields: [estampoId], references: [id])
-  rol           RolCausa     @relation(fields: [rolId], references: [id])
+  diligencia     Diligencia?   @relation(fields: [diligenciaId], references: [id])
+  notificacion   Notificacion? @relation(fields: [notificacionId], references: [id])
+  estampoBase    EstampoBase?  @relation(fields: [estampoBaseId], references: [id])
+  estampo        Estampo?      @relation(fields: [estampoId], references: [id])
+  rol            RolCausa      @relation(fields: [rolId], references: [id])
 
   @@index([rolId, createdAt])
 }

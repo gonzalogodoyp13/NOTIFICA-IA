@@ -70,3 +70,30 @@ export function parseArancelMonto(input: string | number): number {
   return cleanCuantiaInput(input) ?? 0;
 }
 
+export const ProcuradorSchema = z.object({
+  nombre: z.string().min(2, "Nombre requerido"),
+  email: z.string().email("Email inválido").optional(),
+  telefono: z.string().optional(),
+  notas: z.string().optional(),
+  abogadoId: z.number().int().positive().nullable().optional(),
+  bancoId: z.number().int().positive().optional(), // Para crear + link en POST
+  alias: z.string().optional(), // Para alias en relación banco
+});
+
+export const ProcuradorUpdateSchema = z.object({
+  nombre: z.string().min(2, "Nombre requerido").optional(),
+  email: z.string().email("Email inválido").optional().nullable(),
+  telefono: z.string().optional().nullable(),
+  notas: z.string().optional().nullable(),
+  abogadoId: z.number().int().positive().nullable().optional(),
+});
+
+export const LinkBancoSchema = z.object({
+  bancoId: z.number().int().positive(),
+  alias: z.string().optional(),
+});
+
+export const ToggleActivoSchema = z.object({
+  activo: z.boolean().optional(), // Si no se envía, hace toggle
+});
+
