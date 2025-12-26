@@ -55,17 +55,17 @@ export async function PATCH(
       )
     }
 
-    // Normalize email: convert empty string to null
+    // Normalize optional fields: "" -> null, undefined -> null, null stays null
     const updateData: any = {}
     if (parsed.data.nombre !== undefined) updateData.nombre = parsed.data.nombre
     if (parsed.data.email !== undefined) {
-      updateData.email = parsed.data.email === '' ? null : parsed.data.email
+      updateData.email = parsed.data.email?.trim() || null
     }
     if (parsed.data.telefono !== undefined) {
-      updateData.telefono = parsed.data.telefono || null
+      updateData.telefono = parsed.data.telefono?.trim() || null
     }
     if (parsed.data.notas !== undefined) {
-      updateData.notas = parsed.data.notas || null
+      updateData.notas = parsed.data.notas?.trim() || null
     }
 
     // Validate abogadoId if provided

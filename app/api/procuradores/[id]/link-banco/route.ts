@@ -93,7 +93,7 @@ export async function POST(
           officeId: user.officeId,
           bancoId: parsed.data.bancoId,
           procuradorId: id,
-          alias: parsed.data.alias || null,
+          alias: parsed.data.alias?.trim() || null,
           activo: true,
         },
       })

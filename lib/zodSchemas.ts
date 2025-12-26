@@ -72,17 +72,23 @@ export function parseArancelMonto(input: string | number): number {
 
 export const ProcuradorSchema = z.object({
   nombre: z.string().min(2, "Nombre requerido"),
-  email: z.string().email("Email inválido").optional(),
-  telefono: z.string().optional(),
-  notas: z.string().optional(),
+  email: z.preprocess(
+    (val) => val === "" ? null : val,
+    z.string().email("Email inválido").optional().nullable()
+  ),
+  telefono: z.string().optional().nullable(),
+  notas: z.string().optional().nullable(),
   abogadoId: z.number().int().positive().nullable().optional(),
   bancoId: z.number().int().positive().optional(), // Para crear + link en POST
-  alias: z.string().optional(), // Para alias en relación banco
+  alias: z.string().optional().nullable(), // Para alias en relación banco
 });
 
 export const ProcuradorUpdateSchema = z.object({
   nombre: z.string().min(2, "Nombre requerido").optional(),
-  email: z.string().email("Email inválido").optional().nullable(),
+  email: z.preprocess(
+    (val) => val === "" ? null : val,
+    z.string().email("Email inválido").optional().nullable()
+  ),
   telefono: z.string().optional().nullable(),
   notas: z.string().optional().nullable(),
   abogadoId: z.number().int().positive().nullable().optional(),
@@ -90,7 +96,7 @@ export const ProcuradorUpdateSchema = z.object({
 
 export const LinkBancoSchema = z.object({
   bancoId: z.number().int().positive(),
-  alias: z.string().optional(),
+  alias: z.string().optional().nullable(),
 });
 
 export const ToggleActivoSchema = z.object({

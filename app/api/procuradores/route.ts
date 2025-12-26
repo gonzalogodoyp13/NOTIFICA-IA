@@ -148,8 +148,10 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    // Normalize email: convert empty string to null
-    const email = parsed.data.email === '' ? null : parsed.data.email
+    // Normalize optional fields: "" -> null, undefined -> null, null stays null
+    const email = parsed.data.email?.trim() || null
+    const telefono = parsed.data.telefono?.trim() || null
+    const notas = parsed.data.notas?.trim() || null
 
     // Validate abogadoId if provided
     if (parsed.data.abogadoId) {
@@ -173,9 +175,9 @@ export async function POST(req: NextRequest) {
       data: {
         officeId: user.officeId,
         nombre: parsed.data.nombre,
-        email,
-        telefono: parsed.data.telefono || null,
-        notas: parsed.data.notas || null,
+        email,  // Already normalized
+        telefono,  // Already normalized
+        notas,  // Already normalized
         abogadoId: parsed.data.abogadoId || null,
       },
     })
@@ -221,7 +223,7 @@ export async function POST(req: NextRequest) {
             officeId: user.officeId,
             bancoId: parsed.data.bancoId,
             procuradorId: procurador.id,
-            alias: parsed.data.alias || null,
+            alias: parsed.data.alias?.trim() || null,
             activo: true,
           },
         })

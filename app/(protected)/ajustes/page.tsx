@@ -65,6 +65,14 @@ export default async function AjustesPage() {
       disabled: false,
     },
     {
+      id: 'procuradores',
+      title: 'Gestionar Procuradores',
+      description: 'Administrar procuradores y su vinculación con bancos',
+      icon: '👔',
+      href: '/ajustes/procuradores',
+      disabled: false,
+    },
+    {
       id: 'estampos',
       title: 'Gestionar Estampos',
       description: 'Configurar estampos (Fase 5)',
