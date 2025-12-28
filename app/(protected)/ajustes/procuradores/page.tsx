@@ -46,6 +46,8 @@ export default function ProcuradoresPage() {
   const [togglingId, setTogglingId] = useState<number | null>(null)
   const [togglingBancoProcuradorForProcuradorId, setTogglingBancoProcuradorForProcuradorId] = useState<number | null>(null)
   const [unlinkingId, setUnlinkingId] = useState<number | null>(null)
+  const [searchTerm, setSearchTerm] = useState('')
+  const [sortBy, setSortBy] = useState<'recent' | 'name'>('recent')
 
   useEffect(() => {
     fetchBancos()
@@ -54,6 +56,8 @@ export default function ProcuradoresPage() {
   useEffect(() => {
     if (!selectedBancoId) {
       setProcuradoresForBanco([])
+      setSearchTerm('')
+      setSortBy('recent')
       return
     }
 
@@ -332,6 +336,37 @@ export default function ProcuradoresPage() {
             </div>
           )}
 
+          {/* Search and Sort Controls */}
+          {selectedBancoId && (
+            <div className="mb-6 flex gap-4 items-end">
+              <div className="flex-1 max-w-md">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Buscar
+                </label>
+                <input
+                  type="text"
+                  placeholder="Buscar por nombre, email o teléfono..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500"
+                />
+              </div>
+              <div className="w-48">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Ordenar por
+                </label>
+                <select
+                  value={sortBy}
+                  onChange={(e) => setSortBy(e.target.value as 'recent' | 'name')}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500"
+                >
+                  <option value="recent">Más recientes</option>
+                  <option value="name">Nombre</option>
+                </select>
+              </div>
+            </div>
+          )}
+
           {/* Content */}
           {!selectedBancoId ? (
             <div className="bg-white rounded-lg shadow-md border border-gray-200 p-8">
@@ -360,30 +395,59 @@ export default function ProcuradoresPage() {
                 </p>
               </div>
             </div>
-          ) : (
-            <div className="bg-white rounded-lg shadow-md border border-gray-200 overflow-hidden">
-              <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Nombre
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Contacto
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Abogado
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Estado
-                    </th>
-                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Acciones
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
-                  {procuradoresForBanco.map((procurador) => (
+          ) : (() => {
+            // Filter and sort procuradores
+            const filteredAndSorted = procuradoresForBanco
+              .filter(p => {
+                if (!searchTerm) return true
+                const term = searchTerm.toLowerCase()
+                return (
+                  p.nombre.toLowerCase().includes(term) ||
+                  (p.email?.toLowerCase().includes(term)) ||
+                  (p.telefono?.toLowerCase().includes(term))
+                )
+              })
+              .sort((a, b) => {
+                if (sortBy === 'name') {
+                  return a.nombre.localeCompare(b.nombre)
+                }
+                // 'recent': sort by createdAt descending (bulletproof client-side sort)
+                const dateA = new Date(a.createdAt).getTime()
+                const dateB = new Date(b.createdAt).getTime()
+                return dateB - dateA // descending
+              })
+
+            return (
+              <div className="bg-white rounded-lg shadow-md border border-gray-200 overflow-hidden">
+                <table className="min-w-full divide-y divide-gray-200">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Nombre
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Contacto
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Abogado
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Estado
+                      </th>
+                      <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Acciones
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-200">
+                    {filteredAndSorted.length === 0 ? (
+                      <tr>
+                        <td colSpan={5} className="px-6 py-8 text-center text-gray-500">
+                          No se encontraron procuradores que coincidan con la búsqueda.
+                        </td>
+                      </tr>
+                    ) : (
+                      filteredAndSorted.map((procurador) => (
                     <tr key={procurador.id} className="hover:bg-gray-50">
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="text-sm font-medium text-gray-900">{procurador.nombre}</div>
@@ -451,11 +515,13 @@ export default function ProcuradoresPage() {
                         </div>
                       </td>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            )
+          })()}
 
           {/* Navigation Links */}
           <div className="mt-8 flex items-center gap-4 flex-wrap">

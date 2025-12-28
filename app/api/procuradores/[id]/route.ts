@@ -1,4 +1,5 @@
 // API route: /api/procuradores/[id]
+// GET: Get a single procurador
 // PATCH: Update a procurador
 import { NextRequest, NextResponse } from 'next/server'
 import { getCurrentUserWithOffice } from '@/lib/auth-server'
@@ -6,6 +7,68 @@ import { prisma } from '@/lib/prisma'
 import { ProcuradorUpdateSchema } from '@/lib/zodSchemas'
 
 export const dynamic = 'force-dynamic'
+
+export async function GET(
+  req: NextRequest,
+  { params }: { params: { id: string } }
+) {
+  try {
+    const user = await getCurrentUserWithOffice()
+
+    if (!user) {
+      return NextResponse.json(
+        { ok: false, message: 'No autorizado', error: 'No autorizado' },
+        { status: 401 }
+      )
+    }
+
+    const id = parseInt(params.id)
+    if (isNaN(id)) {
+      return NextResponse.json(
+        { ok: false, message: 'ID inválido', error: 'ID inválido' },
+        { status: 400 }
+      )
+    }
+
+    // Verify procurador exists and belongs to office
+    const procurador = await prisma.procurador.findFirst({
+      where: {
+        id,
+        officeId: user.officeId,
+      },
+      include: {
+        abogado: {
+          select: {
+            id: true,
+            nombre: true,
+          },
+        },
+        bancos: {
+          select: {
+            bancoId: true,
+            activo: true,
+          },
+        },
+      },
+    })
+
+    if (!procurador) {
+      return NextResponse.json(
+        { ok: false, message: 'Procurador no encontrado o no pertenece a tu oficina', error: 'Procurador no encontrado' },
+        { status: 404 }
+      )
+    }
+
+    return NextResponse.json({ ok: true, data: procurador })
+  } catch (error) {
+    console.error('Error fetching procurador:', error)
+    const errorMessage = error instanceof Error ? error.message : 'Error al obtener el procurador'
+    return NextResponse.json(
+      { ok: false, message: errorMessage, error: errorMessage },
+      { status: 500 }
+    )
+  }
+}
 
 export async function PATCH(
   req: NextRequest,
