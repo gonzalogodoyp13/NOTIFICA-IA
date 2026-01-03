@@ -94,6 +94,7 @@ model Procurador {
   updatedAt DateTime          @updatedAt
   abogado   Abogado?          @relation("AbogadoProcuradores", fields: [abogadoId], references: [id], onDelete: SetNull)
   bancos    BancoProcurador[]
+  demandas  Demanda[]
 
   @@index([officeId])
   @@index([abogadoId])
@@ -196,9 +197,11 @@ model Demanda {
   userId     String
   createdAt  DateTime    @default(now())
   materiaId  Int?
+  procuradorId Int?
   roles      RolCausa?
   abogados   Abogado     @relation(fields: [abogadoId], references: [id])
   materia    Materia?    @relation(fields: [materiaId], references: [id])
+  procurador Procurador? @relation(fields: [procuradorId], references: [id], onDelete: SetNull)
   offices    Office      @relation(fields: [officeId], references: [id])
   tribunales tribunales  @relation(fields: [tribunalId], references: [id])
   users      User        @relation(fields: [userId], references: [id])

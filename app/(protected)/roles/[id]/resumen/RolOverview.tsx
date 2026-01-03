@@ -117,6 +117,14 @@ export default function RolOverview({ rolData, isRolLoading, isRolError, rolId }
                 {rolData.abogado?.banco?.nombre ?? '—'}
               </p>
             </div>
+
+            {/* Procurador */}
+            <div>
+              <p className="text-xs text-slate-500">Procurador</p>
+              <p className="font-medium text-slate-900">
+                {rolData.demanda?.procurador?.nombre ?? '—'}
+              </p>
+            </div>
           </div>
 
           {/* Ejecutados */}

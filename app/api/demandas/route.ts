@@ -26,7 +26,7 @@ export async function POST(req: NextRequest) {
     const body = await req.json()
     console.log('[POST /api/demandas] Request body:', JSON.stringify(body, null, 2))
     
-    const { rol, tribunalId, caratula, cuantia, abogadoId, materiaId, ejecutados } = body
+    const { rol, tribunalId, caratula, cuantia, abogadoId, materiaId, ejecutados, procuradorId } = body
 
     // Validate required fields
     if (!rol || !tribunalId || !caratula || !abogadoId) {
@@ -117,6 +117,32 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // Verify procuradorId if provided
+    if (procuradorId !== null && procuradorId !== undefined) {
+      const procuradorIdInt = typeof procuradorId === 'string' ? parseInt(procuradorId, 10) : procuradorId
+      
+      if (isNaN(procuradorIdInt) || !Number.isInteger(procuradorIdInt)) {
+        return NextResponse.json(
+          { ok: false, error: 'procuradorId debe ser un número entero válido' },
+          { status: 400 }
+        )
+      }
+
+      const procurador = await prisma.procurador.findFirst({
+        where: {
+          id: procuradorIdInt,
+          officeId: user.officeId,
+        },
+      })
+
+      if (!procurador) {
+        return NextResponse.json(
+          { ok: false, error: 'Procurador no encontrado o no pertenece a tu oficina' },
+          { status: 400 }
+        )
+      }
+    }
+
     // Check if ROL already exists
     const existingDemanda = await prisma.demanda.findUnique({
       where: { rol },
@@ -177,6 +203,7 @@ export async function POST(req: NextRequest) {
           cuantia: parseCuantiaForStorage(cuantia),
           abogadoId: parseInt(abogadoId),
           materiaId: materiaId ? parseInt(materiaId) : null,
+          procuradorId: procuradorId ? (typeof procuradorId === 'string' ? parseInt(procuradorId, 10) : procuradorId) : null,
           officeId,
           userId: user.id,
           ejecutados: ejecutados && ejecutados.length > 0 ? {

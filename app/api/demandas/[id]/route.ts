@@ -30,7 +30,7 @@ export async function PUT(
     const body = await req.json()
     console.log(`[PUT /api/demandas/${params.id}] Request body:`, JSON.stringify(body, null, 2))
     
-    const { rol, tribunalId, caratula, cuantia, abogadoId, materiaId, ejecutados } = body
+    const { rol, tribunalId, caratula, cuantia, abogadoId, materiaId, ejecutados, procuradorId } = body
 
     // Validate required fields
     if (!rol || !tribunalId || !caratula) {
@@ -114,6 +114,32 @@ export async function PUT(
       }
     }
 
+    // Verify procuradorId if provided
+    if (procuradorId !== null && procuradorId !== undefined) {
+      const procuradorIdInt = typeof procuradorId === 'string' ? parseInt(procuradorId, 10) : procuradorId
+      
+      if (isNaN(procuradorIdInt) || !Number.isInteger(procuradorIdInt)) {
+        return NextResponse.json(
+          { ok: false, error: 'procuradorId debe ser un número entero válido' },
+          { status: 400 }
+        )
+      }
+
+      const procurador = await prisma.procurador.findFirst({
+        where: {
+          id: procuradorIdInt,
+          officeId: user.officeId,
+        },
+      })
+
+      if (!procurador) {
+        return NextResponse.json(
+          { ok: false, error: 'Procurador no encontrado o no pertenece a tu oficina' },
+          { status: 400 }
+        )
+      }
+    }
+
     // Validate ejecutados if provided
     if (ejecutados !== undefined) {
       if (!Array.isArray(ejecutados)) {
@@ -189,6 +215,9 @@ export async function PUT(
             : demanda.cuantia,
           abogadoId: abogadoId ? parseInt(abogadoId) : demanda.abogadoId,
           materiaId: materiaId ? parseInt(materiaId) : null,
+          procuradorId: procuradorId !== undefined 
+            ? (procuradorId ? (typeof procuradorId === 'string' ? parseInt(procuradorId, 10) : procuradorId) : null)
+            : demanda.procuradorId,
         },
         include: {
           tribunales: {

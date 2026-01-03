@@ -8,6 +8,7 @@ import { useEffect, useState, useMemo } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import Link from 'next/link'
 import { cleanCuantiaInput } from '@/lib/utils/cuantia'
+import { ProcuradorSelector } from '@/components/ProcuradorSelector'
 
 interface Banco {
   id: number
@@ -50,6 +51,10 @@ interface RolData {
     caratula: string | null
     cuantia: number | null
     materia: {
+      id: number
+      nombre: string
+    } | null
+    procurador: {
       id: number
       nombre: string
     } | null
@@ -107,6 +112,7 @@ export default function EditarDemandaPage() {
     cuantia: '',
     abogadoId: '',
     materiaId: '',
+    procuradorId: '',
   })
 
   // Calculate caratula from selected banco
@@ -148,6 +154,7 @@ export default function EditarDemandaPage() {
           cuantia: rol.demanda?.cuantia ? String(Math.floor(rol.demanda.cuantia)) : '',
           abogadoId: rol.abogado?.id ? String(rol.abogado.id) : '',
           materiaId: rol.demanda?.materia?.id ? String(rol.demanda.materia.id) : '',
+          procuradorId: rol.demanda?.procurador?.id ? String(rol.demanda.procurador.id) : '',
         })
 
         // Find matching tribunales by nombre
@@ -325,6 +332,10 @@ export default function EditarDemandaPage() {
     }
   }
 
+  const handleProcuradorChange = (id: number | null) => {
+    setFormData(prev => ({ ...prev, procuradorId: id?.toString() || '' }))
+  }
+
   const addEjecutado = () => {
     setEjecutados([...ejecutados, { nombre: '', rut: '', direccion: '', comunaId: '' }])
   }
@@ -371,6 +382,7 @@ export default function EditarDemandaPage() {
         cuantia: formData.cuantia ? cleanCuantiaInput(formData.cuantia) : null,
         abogadoId: formData.abogadoId ? Number(formData.abogadoId) : null,
         materiaId: formData.materiaId ? Number(formData.materiaId) : null,
+        procuradorId: formData.procuradorId ? Number(formData.procuradorId) : null,
         ejecutados: ejecutadosNormalized,
       }
 
@@ -538,6 +550,14 @@ export default function EditarDemandaPage() {
                   ))}
                 </select>
               </div>
+
+              {/* Procurador */}
+              <ProcuradorSelector
+                value={formData.procuradorId ? Number(formData.procuradorId) : null}
+                onChange={handleProcuradorChange}
+                label="Procurador (opcional)"
+                bancoId={bancoId ? Number(bancoId) : undefined}
+              />
 
               {/* Materia */}
               <div>

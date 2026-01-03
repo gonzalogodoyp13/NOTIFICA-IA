@@ -67,6 +67,12 @@ export async function GET(
                 },
               },
             },
+            procurador: {
+              select: {
+                id: true,
+                nombre: true,
+              },
+            },
           },
         },
         diligencias: {
@@ -193,6 +199,12 @@ export async function GET(
                   : null,
               }))
             : [],
+          procurador: rolCausa.demanda.procurador
+            ? {
+                id: rolCausa.demanda.procurador.id,
+                nombre: rolCausa.demanda.procurador.nombre,
+              }
+            : null,
         }
       : null
 

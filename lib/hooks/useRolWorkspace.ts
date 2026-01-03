@@ -150,6 +150,13 @@ const DemandaSchema = z
       .nullable()
       .optional(),
     ejecutados: z.array(EjecutadoSchema).optional(),
+    procurador: z
+      .object({
+        id: z.number(),
+        nombre: z.string(),
+      })
+      .nullable()
+      .optional(),
   })
   .nullable()
 

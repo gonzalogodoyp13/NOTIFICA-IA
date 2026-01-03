@@ -7,6 +7,7 @@ import { useRouter } from 'next/navigation'
 import Topbar from '@/components/Topbar'
 import Link from 'next/link'
 import { cleanCuantiaInput } from '@/lib/utils/cuantia'
+import { ProcuradorSelector } from '@/components/ProcuradorSelector'
 
 interface Banco {
   id: number
@@ -68,6 +69,7 @@ export default function NuevaDemandaPage() {
     cuantia: '',
     abogadoId: '',
     materiaId: '',
+    procuradorId: '',
   })
 
   // Calculate caratula from selected banco
@@ -142,7 +144,7 @@ export default function NuevaDemandaPage() {
     if (!newBancoId) {
       // Clear banco: reset abogados list and clear abogadoId
       setAbogados(allAbogados)
-      setFormData(prev => ({ ...prev, abogadoId: '' }))
+      setFormData(prev => ({ ...prev, abogadoId: '', procuradorId: '' }))
       return
     }
 
@@ -159,11 +161,15 @@ export default function NuevaDemandaPage() {
 
     // Auto-select if exactly 1 abogado
     if (filteredAbogados.length === 1) {
-      setFormData(prev => ({ ...prev, abogadoId: String(filteredAbogados[0].id) }))
+      setFormData(prev => ({ ...prev, abogadoId: String(filteredAbogados[0].id), procuradorId: '' }))
     } else {
       // Clear abogadoId if 0 or >1 abogados
-      setFormData(prev => ({ ...prev, abogadoId: '' }))
+      setFormData(prev => ({ ...prev, abogadoId: '', procuradorId: '' }))
     }
+  }
+
+  const handleProcuradorChange = (id: number | null) => {
+    setFormData(prev => ({ ...prev, procuradorId: id?.toString() || '' }))
   }
 
   const handleAbogadoChange = (newAbogadoId: string) => {
@@ -214,6 +220,7 @@ export default function NuevaDemandaPage() {
         cuantia: formData.cuantia ? cleanCuantiaInput(formData.cuantia) : null,
         abogadoId: formData.abogadoId ? Number(formData.abogadoId) : null,
         materiaId: formData.materiaId ? Number(formData.materiaId) : null,
+        procuradorId: formData.procuradorId ? Number(formData.procuradorId) : null,
         ejecutados: ejecutados.map((ejecutado) => ({
           nombre: ejecutado.nombre,
           rut: ejecutado.rut,
@@ -353,6 +360,14 @@ export default function NuevaDemandaPage() {
                   ))}
                 </select>
               </div>
+
+              {/* Procurador */}
+              <ProcuradorSelector
+                value={formData.procuradorId ? Number(formData.procuradorId) : null}
+                onChange={handleProcuradorChange}
+                label="Procurador (opcional)"
+                bancoId={bancoId ? Number(bancoId) : undefined}
+              />
 
               {/* Materia */}
               <div>
