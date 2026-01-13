@@ -1,0 +1,33 @@
+{
+    "mcpServers": {
+      "github": {
+        "command": "npx",
+        "args": ["-y", "@modelcontextprotocol/server-github"]
+      },
+     "prisma": {
+  "command": "npx",
+  "args": ["-y", "prisma@latest", "mcp", "--early-access"]
+},
+      "supabase": {
+        "type": "http",
+        "url": "https://mcp.supabase.com/mcp"
+      },
+      "playwright": {
+        "command": "npx",
+        "args": ["@playwright/mcp@latest"]
+      },
+      "context7": {
+        "command": "npx",
+        "args": ["-y", "@upstash/context7-mcp@latest"]
+      },
+      "next-devtools": {
+        "command": "npx",
+        "args": ["-y", "next-devtools-mcp@latest"]
+      },
+      "sentry": {
+        "command": "npx",
+        "args": ["-y", "sentry-mcp-stdio@latest"]
+      }
+    }
+  }
+  
