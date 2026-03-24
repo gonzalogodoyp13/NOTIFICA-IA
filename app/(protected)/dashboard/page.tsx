@@ -33,6 +33,14 @@ export default async function DashboardPage() {
       disabled: false,
     },
     {
+      id: 'gestion-recibos',
+      title: 'Gestión de Recibos',
+      description: 'Consulta recibos generados y exporta resultados',
+      href: '/recibos',
+      icon: 'ðŸ§¾',
+      disabled: false,
+    },
+    {
       id: 'ajustes-oficina',
       title: 'Ajustes de Oficina',
       description: 'Configura los parámetros de tu oficina',

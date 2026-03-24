@@ -122,25 +122,43 @@ export async function POST(
     // Generate PDF
     const pdfBase64 = await buildReciboPdf(variables, stampBytes)
 
-    const documento = await prisma.documento.create({
-      data: {
-        rolId: diligencia.rolId,
-        diligenciaId: diligencia.id,
-        notificacionId: notificacionId ?? null,
-        nombre: `Recibo ${variables.numero_recibo}`,
-        tipo: 'Recibo',
-        pdfId: pdfBase64,
-        version: 1,
-      },
-    })
+    const numeroBoleta = data.referencia?.trim() || variables.n_operacion.trim() || null
 
-    await prisma.recibo.create({
-      data: {
-        rolId: diligencia.rolId,
-        monto: data.monto,
-        medio: data.medio,
-        ref: data.referencia ?? null,
-      },
+    const documento = await prisma.$transaction(async tx => {
+      const createdDocumento = await tx.documento.create({
+        data: {
+          rolId: diligencia.rolId,
+          diligenciaId: diligencia.id,
+          notificacionId: notificacionId ?? null,
+          nombre: `Recibo ${variables.numero_recibo}`,
+          tipo: 'Recibo',
+          pdfId: pdfBase64,
+          version: 1,
+        },
+      })
+
+      await tx.recibo.create({
+        data: {
+          rolId: diligencia.rolId,
+          diligenciaId: diligencia.id,
+          notificacionId: notificacionId ?? null,
+          documentoId: createdDocumento.id,
+          numeroRecibo: variables.numero_recibo,
+          numeroBoleta,
+          monto: data.monto,
+          medio: data.medio,
+          ref: data.referencia ?? null,
+        },
+      })
+
+      await tx.diligencia.update({
+        where: { id: diligencia.id },
+        data: {
+          boletaEstado: 'PAGADO',
+        },
+      })
+
+      return createdDocumento
     })
 
     return NextResponse.json({ ok: true, data: documento })

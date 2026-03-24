@@ -153,63 +153,48 @@ export async function getCurrentUserWithOffice(): Promise<{
 
     console.log('[getCurrentUserWithOffice] Supabase user found:', data.user.email)
 
-    let dbUser = await prismaNoMiddleware.user.findUnique({
+    const dbUser = await prismaNoMiddleware.user.findUnique({
       where: { email: data.user.email! },
+      select: {
+        id: true,
+        email: true,
+        officeId: true,
+      },
     })
 
-    // If user doesn't exist in database, create it
     if (!dbUser) {
-      console.log('[getCurrentUserWithOffice] User not found in database, creating:', data.user.email)
-      try {
-        dbUser = await prismaNoMiddleware.user.create({
-          data: {
-            email: data.user.email!,
-            officeName: data.user.user_metadata?.officeName || data.user.email!.split('@')[0] || 'Default Office',
-          },
-        })
-        console.log('[getCurrentUserWithOffice] User created:', dbUser.id)
-      } catch (error) {
-        console.error('[getCurrentUserWithOffice] Error creating user:', error)
-        return null
-      }
+      console.error('[getCurrentUserWithOffice] User not provisioned in app database:', data.user.email)
+      return null
     }
 
-    // Find or create office based on officeName
-    let officeId = 1
-    
-    try {
-      // Try to find office by name
-      let office = await prismaNoMiddleware.office.findFirst({
-        where: { nombre: dbUser.officeName },
+    if (!dbUser.officeId) {
+      console.error('[getCurrentUserWithOffice] User has no office binding:', dbUser.email)
+      return null
+    }
+
+    const office = await prismaNoMiddleware.office.findUnique({
+      where: { id: dbUser.officeId },
+      select: { id: true },
+    })
+
+    if (!office) {
+      console.error('[getCurrentUserWithOffice] User office does not exist:', {
+        email: dbUser.email,
+        officeId: dbUser.officeId,
       })
-      
-      // If office doesn't exist, create it
-      if (!office) {
-        console.log('[getCurrentUserWithOffice] Office not found, creating:', dbUser.officeName)
-        office = await prismaNoMiddleware.office.create({
-          data: { nombre: dbUser.officeName },
-        })
-      }
-      
-      if (office) {
-        officeId = office.id
-      }
-    } catch (error) {
-      // If office lookup/creation fails, use default
-      console.error('[getCurrentUserWithOffice] Error with office lookup/creation:', error)
-      // Still return user with default officeId to allow access
+      return null
     }
 
     console.log('[getCurrentUserWithOffice] Success:', { 
       userId: dbUser.id, 
       email: dbUser.email, 
-      officeId 
+      officeId: dbUser.officeId,
     })
 
     return {
       id: dbUser.id,
       email: dbUser.email,
-      officeId,
+      officeId: dbUser.officeId,
     }
   } catch (error) {
     console.error('Error getting current user with office:', error)
@@ -232,4 +217,3 @@ export async function requireSession(): Promise<{ email: string }> {
 
   return session
 }
-

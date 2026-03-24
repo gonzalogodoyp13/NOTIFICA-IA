@@ -72,6 +72,13 @@ export default function TopBar() {
                 <span>Gestionar Demandas</span>
               </Link>
               <Link
+                href="/recibos"
+                className="flex items-center gap-2 text-gray-700 hover:text-blue-600 transition-colors font-medium"
+              >
+                <FileText className="h-5 w-5" />
+                <span>Gestión de Recibos</span>
+              </Link>
+              <Link
                 href="/ajustes"
                 className="flex items-center gap-2 text-gray-700 hover:text-blue-600 transition-colors font-medium"
               >

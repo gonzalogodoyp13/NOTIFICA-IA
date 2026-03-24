@@ -36,28 +36,17 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    // Ensure office exists (auto-create if missing)
-    let officeId = user.officeId
+    // Ensure office exists and fail closed if it does not
+    const officeId = user.officeId
     const office = await prisma.office.findUnique({
       where: { id: officeId },
     })
 
     if (!office) {
-      if (process.env.NODE_ENV === 'development') {
-        console.log(`[POST /api/demandas] Office ID ${officeId} not found, creating default office...`)
-      }
-      
-      const newOffice = await prisma.office.create({
-        data: {
-          nombre: 'Oficina Principal',
-        },
-      })
-      
-      officeId = newOffice.id
-      
-      if (process.env.NODE_ENV === 'development') {
-        console.log(`[POST /api/demandas] âœ… Created default office with ID: ${officeId}`)
-      }
+      return NextResponse.json(
+        { ok: false, error: 'Oficina no válida para el usuario autenticado' },
+        { status: 403 }
+      )
     }
 
     // Verify tribunalId belongs to user's office (Phase 3: tribunales table with Int id)
@@ -316,4 +305,5 @@ export async function POST(req: NextRequest) {
     )
   }
 }
+
 

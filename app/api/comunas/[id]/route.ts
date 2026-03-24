@@ -49,7 +49,9 @@ export async function PUT(
     const parsed = ComunaSchema.safeParse(body)
 
     if (!parsed.success) {
-      const errorMessage = parsed.error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')
+      const errorMessage = parsed.error.issues
+  .map((issue) => `${issue.path.join('.')}: ${issue.message}`)
+  .join(', ')
       return NextResponse.json(
         { ok: false, message: errorMessage, error: errorMessage },
         { status: 400 }

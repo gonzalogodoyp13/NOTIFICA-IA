@@ -11,10 +11,13 @@ model User {
   id         String     @id @default(cuid())
   email      String     @unique
   officeName String
+  officeId   Int
   createdAt  DateTime   @default(now())
   auditLogs  AuditLog[]
   demandas   Demanda[]
+  office     Office     @relation(fields: [officeId], references: [id], onDelete: Restrict, onUpdate: Cascade)
 
+  @@index([officeId])
   @@map("users")
 }
 
@@ -22,6 +25,20 @@ model Office {
   id             Int             @id @default(autoincrement())
   nombre         String
   createdAt      DateTime        @default(now())
+  users          User[]
+  abogados       Abogado[]
+  bancos         Banco[]
+  procuradores   Procurador[]
+  bancoProcuradores BancoProcurador[]
+  abogadoBancos  AbogadoBanco[]
+  aranceles      Arancel[]
+  comunas        Comuna[]
+  materias       Materia[]
+  diligenciaTiposLegacy diligencia_tipos[]
+  tribunalesLegacy tribunales[]
+  roles          RolCausa[]
+  tribunalesNuevos Tribunal[]
+  diligenciaTiposNuevos DiligenciaTipo[]
   estampos       Estampo[]       @relation("OfficeEstampos")
   auditLogs      AuditLog[]
   demandas       Demanda[]
@@ -60,6 +77,7 @@ model Abogado {
   aranceles    Arancel[]      @relation("AbogadoAranceles")
   demandas     Demanda[]
   procuradores Procurador[]   @relation("AbogadoProcuradores")
+  office       Office         @relation(fields: [officeId], references: [id], onDelete: Restrict, onUpdate: Cascade)
 
   @@index([bancoId])
   @@index([officeId])
@@ -76,6 +94,7 @@ model Banco {
   abogados          Abogado[]
   aranceles         Arancel[]         @relation("BancoAranceles")
   bancoProcuradores BancoProcurador[]
+  office            Office            @relation(fields: [officeId], references: [id], onDelete: Restrict, onUpdate: Cascade)
 
   @@index([officeId])
   @@map("bancos")
@@ -95,6 +114,7 @@ model Procurador {
   abogado   Abogado?          @relation("AbogadoProcuradores", fields: [abogadoId], references: [id], onDelete: SetNull)
   bancos    BancoProcurador[]
   demandas  Demanda[]
+  office    Office            @relation(fields: [officeId], references: [id], onDelete: Restrict, onUpdate: Cascade)
 
   @@index([officeId])
   @@index([abogadoId])
@@ -113,6 +133,7 @@ model BancoProcurador {
   updatedAt    DateTime   @updatedAt
   banco        Banco      @relation(fields: [bancoId], references: [id], onDelete: Cascade)
   procurador   Procurador @relation(fields: [procuradorId], references: [id], onDelete: Cascade)
+  office       Office     @relation(fields: [officeId], references: [id], onDelete: Restrict, onUpdate: Cascade)
 
   @@unique([officeId, bancoId, procuradorId])
   @@index([bancoId])
@@ -130,6 +151,7 @@ model AbogadoBanco {
   updatedAt DateTime @updatedAt
   abogado   Abogado  @relation("AbogadoBancos", fields: [abogadoId], references: [id], onDelete: Cascade)
   banco     Banco    @relation("BancoAbogados", fields: [bancoId], references: [id], onDelete: Cascade)
+  office    Office   @relation(fields: [officeId], references: [id], onDelete: Restrict, onUpdate: Cascade)
 
   @@unique([officeId, abogadoId, bancoId])
   @@index([abogadoId])
@@ -152,6 +174,7 @@ model Arancel {
   abogado              Abogado? @relation("AbogadoAranceles", fields: [abogadoId], references: [id], onDelete: Cascade)
   banco                Banco    @relation("BancoAranceles", fields: [bancoId], references: [id], onDelete: Cascade)
   estampo              Estampo? @relation("EstampoAranceles", fields: [estampoId], references: [id], onDelete: Cascade)
+  office               Office   @relation(fields: [officeId], references: [id], onDelete: Restrict, onUpdate: Cascade)
 
   @@unique([officeId, bancoId, abogadoId, estampoId], name: "aranceles_legacy_unique")
   @@unique([officeId, bancoId, abogadoId, estampoBaseCategoria], name: "aranceles_wizard_unique")
@@ -170,6 +193,7 @@ model Comuna {
   region     String?
   createdAt  DateTime    @default(now())
   ejecutados Ejecutado[]
+  office     Office      @relation(fields: [officeId], references: [id], onDelete: Restrict, onUpdate: Cascade)
 
   @@index([officeId])
   @@map("comunas")
@@ -181,6 +205,7 @@ model Materia {
   nombre    String
   createdAt DateTime  @default(now())
   demandas  Demanda[]
+  office    Office    @relation(fields: [officeId], references: [id], onDelete: Restrict, onUpdate: Cascade)
 
   @@index([officeId])
   @@map("materias")
@@ -231,6 +256,7 @@ model diligencia_tipos {
   descripcion String?
   officeId    Int
   createdAt   DateTime @default(now())
+  office      Office   @relation(fields: [officeId], references: [id], onDelete: Restrict, onUpdate: Cascade)
 
   @@index([officeId])
 }
@@ -243,6 +269,7 @@ model tribunales {
   comuna    String?
   createdAt DateTime  @default(now())
   demandas  Demanda[]
+  office    Office    @relation(fields: [officeId], references: [id], onDelete: Restrict, onUpdate: Cascade)
 
   @@index([officeId])
 }
@@ -261,6 +288,7 @@ model RolCausa {
   recibos     Recibo[]
   demanda     Demanda?     @relation(fields: [demandaId], references: [id])
   tribunal    Tribunal     @relation(fields: [tribunalId], references: [id])
+  office      Office       @relation(fields: [officeId], references: [id], onDelete: Restrict, onUpdate: Cascade)
 
   @@index([officeId, createdAt])
   @@index([rol])
@@ -273,6 +301,7 @@ model Diligencia {
   estado         EstadoDiligencia @default(pendiente)
   fecha          DateTime
   meta           Json?
+  boletaEstado   BoletaEstado     @default(NO_PAGADO)
   createdAt      DateTime         @default(now())
   rol            RolCausa         @relation(fields: [rolId], references: [id])
   tipo           DiligenciaTipo   @relation(fields: [tipoId], references: [id])
@@ -337,15 +366,24 @@ model Nota {
 }
 
 model Recibo {
-  id        String   @id @default(cuid())
-  rolId     String
-  monto     Float
-  medio     String
-  ref       String?
-  createdAt DateTime @default(now())
-  rol       RolCausa @relation(fields: [rolId], references: [id])
+  id             String   @id @default(cuid())
+  rolId          String
+  diligenciaId   String?
+  notificacionId String?
+  documentoId    String?
+  numeroRecibo   String?
+  numeroBoleta   String?
+  monto          Float
+  medio          String
+  ref            String?
+  createdAt      DateTime @default(now())
+  rol            RolCausa @relation(fields: [rolId], references: [id])
 
   @@index([rolId, createdAt])
+  @@index([createdAt])
+  @@index([diligenciaId])
+  @@index([notificacionId])
+  @@index([documentoId])
 }
 
 model Tribunal {
@@ -356,6 +394,7 @@ model Tribunal {
   comuna    String?
   createdAt DateTime   @default(now())
   roles     RolCausa[]
+  office    Office     @relation(fields: [officeId], references: [id], onDelete: Restrict, onUpdate: Cascade)
 }
 
 model DiligenciaTipo {
@@ -365,6 +404,7 @@ model DiligenciaTipo {
   descripcion String?
   createdAt   DateTime     @default(now())
   diligencias Diligencia[]
+  office      Office       @relation(fields: [officeId], references: [id], onDelete: Restrict, onUpdate: Cascade)
 }
 
 model Estampo {
@@ -434,4 +474,9 @@ enum EstadoDiligencia {
   pendiente
   completada
   fallida
+}
+
+enum BoletaEstado {
+  PAGADO
+  NO_PAGADO
 }
