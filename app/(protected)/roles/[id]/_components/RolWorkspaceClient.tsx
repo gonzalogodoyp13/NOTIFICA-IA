@@ -34,32 +34,34 @@ export default function RolWorkspaceClient({ rolId }: RolWorkspaceClientProps) {
   }, [activeTab])
 
   return (
-    <div className="flex min-h-screen flex-col bg-slate-50">
+    <div className="min-h-screen bg-transparent">
       <RolHeader data={rolData} isLoading={isLoading} />
-      <div className="border-b border-slate-200 bg-white shadow-sm">
+      <div className="mx-auto max-w-7xl">
         <RolTabs activeTab={activeTab} onTabChange={setActiveTab} />
       </div>
-      <main className="flex-1 space-y-4 p-6">
-        <div className="text-sm text-slate-500">
-          Trabajando en el ROL <span className="font-semibold text-slate-700">
-            {rolData?.rol?.numero ?? rolId}
-          </span>
-        </div>
-        {isError && (
-          <div className="rounded-md border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-            Error al cargar datos del ROL: {error?.message ?? 'intenta nuevamente más tarde.'}
+      <main className="page-frame pb-10">
+        <div className="app-section px-6 py-6">
+          <div className="mb-5 text-sm text-slate-500">
+            Trabajando en el ROL{' '}
+            <span className="font-semibold text-slate-700">
+              {rolData?.rol?.numero ?? rolId}
+            </span>
           </div>
-        )}
-        {ActiveTabComponent && (
-          <ActiveTabComponent
-            rolId={rolId}
-            rolData={rolData}
-            isRolLoading={isLoading}
-            isRolError={isError}
-          />
-        )}
+          {isError && (
+            <div className="mb-5 rounded-[24px] border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">
+              Error al cargar datos del ROL: {error?.message ?? 'intenta nuevamente mas tarde.'}
+            </div>
+          )}
+          {ActiveTabComponent && (
+            <ActiveTabComponent
+              rolId={rolId}
+              rolData={rolData}
+              isRolLoading={isLoading}
+              isRolError={isError}
+            />
+          )}
+        </div>
       </main>
     </div>
   )
 }
-

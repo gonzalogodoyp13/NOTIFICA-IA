@@ -1,143 +1,154 @@
-// Ajustes de Oficina - Hub page
-// Main configuration hub with cards for each configuration area
-// Protected route - authentication handled by (protected) layout
+import {
+  ArrowLeft,
+  BookOpenText,
+  Building2,
+  FileStack,
+  Landmark,
+  MapPinned,
+  Printer,
+  Scale,
+  ScrollText,
+  UserRoundCog,
+  UsersRound,
+} from 'lucide-react'
 import { getSession } from '@/lib/auth-server'
 import Topbar from '@/components/Topbar'
 import Link from 'next/link'
 
 export const dynamic = 'force-dynamic'
 
+const configAreas = [
+  {
+    id: 'materias',
+    title: 'Gestionar Materias',
+    description: 'Configurar materias legales.',
+    icon: BookOpenText,
+  },
+  {
+    id: 'abogados',
+    title: 'Gestionar Abogados',
+    description: 'Administrar abogados asociados.',
+    icon: UsersRound,
+  },
+  {
+    id: 'tribunales',
+    title: 'Gestionar Tribunales',
+    description: 'Gestionar tribunales del sistema.',
+    icon: Scale,
+  },
+  {
+    id: 'diligencias',
+    title: 'Gestionar Diligencias',
+    description: 'Configurar tipos de diligencias.',
+    icon: FileStack,
+  },
+  {
+    id: 'comunas',
+    title: 'Gestionar Comunas',
+    description: 'Administrar comunas disponibles.',
+    icon: MapPinned,
+  },
+  {
+    id: 'bancos',
+    title: 'Gestionar Bancos',
+    description: 'Configurar bancos del sistema.',
+    icon: Building2,
+  },
+  {
+    id: 'procuradores',
+    title: 'Gestionar Procuradores',
+    description: 'Administrar procuradores y sus vinculaciones.',
+    icon: UserRoundCog,
+  },
+  {
+    id: 'estampos',
+    title: 'Gestionar Estampos',
+    description: 'Configurar plantillas y estampos del proceso.',
+    icon: Printer,
+  },
+  {
+    id: 'logs',
+    title: 'Registros de Auditoria',
+    description: 'Ver historial de cambios del sistema.',
+    icon: ScrollText,
+  },
+]
+
 export default async function AjustesPage() {
-  // Get session (layout already verified authentication)
   const session = await getSession()
-  
+
   if (!session) {
-    return null // Layout will redirect
+    return null
   }
 
-  const configAreas = [
-    {
-      id: 'materias',
-      title: 'Gestionar Materias',
-      description: 'Configurar materias legales',
-      icon: '📚',
-      href: '/ajustes/materias',
-      disabled: false,
-    },
-    {
-      id: 'abogados',
-      title: 'Gestionar Abogados',
-      description: 'Administrar abogados asociados',
-      icon: '👨‍⚖️',
-      href: '/ajustes/abogados',
-      disabled: false,
-    },
-    {
-      id: 'tribunales',
-      title: 'Gestionar Tribunales',
-      description: 'Gestionar tribunales del sistema',
-      icon: '⚖️',
-      href: '/ajustes/tribunales',
-      disabled: false,
-    },
-    {
-      id: 'diligencias',
-      title: 'Gestionar Diligencias',
-      description: 'Configurar tipos de diligencias',
-      icon: '📋',
-      href: '/ajustes/diligencias',
-      disabled: false,
-    },
-    {
-      id: 'comunas',
-      title: 'Gestionar Comunas',
-      description: 'Administrar comunas disponibles',
-      icon: '🗺️',
-      href: '/ajustes/comunas',
-      disabled: false,
-    },
-    {
-      id: 'bancos',
-      title: 'Gestionar Bancos',
-      description: 'Configurar bancos del sistema',
-      icon: '🏦',
-      href: '/ajustes/bancos',
-      disabled: false,
-    },
-    {
-      id: 'procuradores',
-      title: 'Gestionar Procuradores',
-      description: 'Administrar procuradores y su vinculación con bancos',
-      icon: '👔',
-      href: '/ajustes/procuradores',
-      disabled: false,
-    },
-    {
-      id: 'estampos',
-      title: 'Gestionar Estampos',
-      description: 'Configurar estampos (Fase 5)',
-      icon: '🖨️',
-      href: '/ajustes/estampos',
-      disabled: false,
-    },
-    {
-      id: 'logs',
-      title: 'Registros de Auditoría',
-      description: 'Ver historial de cambios del sistema',
-      icon: '📋',
-      href: '/ajustes/logs',
-      disabled: false,
-    },
-  ]
-
   return (
-    <div className="min-h-screen bg-white">
+    <div className="app-shell">
       <Topbar />
-      
-      {/* Main content area with padding for fixed topbar */}
-      <main className="pt-20 pb-16">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          {/* Page header */}
-          <div className="mb-12">
-            <h1 className="text-3xl font-semibold text-gray-900 mb-2">
-              Ajustes de Oficina
-            </h1>
-            <p className="text-gray-600">
-              Configura los parámetros y datos maestros de tu oficina
+
+      <main className="page-frame page-stack">
+        <section className="page-header">
+          <div>
+            <div className="page-kicker">Administracion</div>
+            <h1 className="page-title">Ajustes de Oficina</h1>
+            <p className="page-copy">
+              Configura parametros y datos maestros con una presentacion mas clara para
+              tareas administrativas recurrentes.
             </p>
           </div>
 
-          {/* Configuration cards grid */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {configAreas.map((area) => (
+          <div className="app-panel-muted flex min-w-[260px] items-start gap-3 px-4 py-4">
+            <Landmark className="mt-0.5 h-5 w-5 text-blue-700" />
+            <p className="text-sm leading-6 text-slate-600">
+              El contenido y la navegacion se mantienen intactos; esta capa mejora solo la
+              apariencia y la legibilidad del modulo de configuracion.
+            </p>
+          </div>
+        </section>
+
+        <section className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-3">
+          {configAreas.map((area, index) => {
+            const Icon = area.icon
+            const tones = [
+              'from-blue-700 to-blue-500',
+              'from-slate-900 to-slate-700',
+              'from-emerald-700 to-emerald-500',
+              'from-amber-700 to-amber-500',
+            ]
+
+            return (
               <Link
                 key={area.id}
-                href={area.href}
-                className="bg-white rounded-lg shadow-md hover:shadow-lg transition-all duration-200 hover:scale-105 cursor-pointer border border-gray-200 p-6 text-center group"
+                href={`/ajustes/${area.id}`}
+                className="interactive-card app-section group relative overflow-hidden p-6"
               >
-                <div className="text-5xl mb-4">{area.icon}</div>
-                <h3 className="text-xl font-semibold text-gray-900 mb-2 group-hover:text-gray-700">
+                <div className={`absolute inset-x-0 top-0 h-1 bg-gradient-to-r ${tones[index % tones.length]}`} />
+                <div className="flex items-start justify-between gap-4">
+                  <div className={`rounded-2xl bg-gradient-to-br ${tones[index % tones.length]} p-3 text-white shadow-lg`}>
+                    <Icon className="h-5 w-5" />
+                  </div>
+                  <span className="rounded-full border border-slate-200 bg-white/90 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+                    Ajuste
+                  </span>
+                </div>
+                <h3 className="mt-8 text-xl font-semibold tracking-tight text-slate-950">
                   {area.title}
                 </h3>
-                <p className="text-gray-600 text-sm">
-                  {area.description}
-                </p>
+                <p className="mt-3 text-sm leading-6 text-slate-600">{area.description}</p>
               </Link>
-            ))}
-          </div>
+            )
+          })}
+        </section>
 
-          {/* Back to dashboard link */}
-          <div className="mt-8 text-center">
-            <Link
-              href="/dashboard"
-              className="text-blue-600 hover:text-blue-800 font-medium transition-colors inline-flex items-center gap-2"
-            >
-              ← Volver al Dashboard
-            </Link>
-          </div>
+        <div className="mt-8">
+          <Link
+            href="/dashboard"
+            className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white/90 px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm hover:border-slate-300 hover:bg-white"
+          >
+            <ArrowLeft className="h-4 w-4" />
+            Volver al Dashboard
+          </Link>
         </div>
       </main>
     </div>
   )
 }
-

@@ -1,5 +1,3 @@
-// Install App Button Component
-// Handles PWA installation prompt and displays install button
 'use client'
 
 import { useEffect, useState } from 'react'
@@ -22,7 +20,6 @@ export default function InstallAppButton() {
 
     window.addEventListener('beforeinstallprompt', handler)
 
-    // Check if app is already installed
     if (window.matchMedia('(display-mode: standalone)').matches) {
       setIsVisible(false)
     }
@@ -53,11 +50,10 @@ export default function InstallAppButton() {
   return (
     <button
       onClick={handleInstallClick}
-      className="text-xs sm:text-sm text-white bg-sky-500 hover:bg-sky-600 font-medium transition-colors px-2 sm:px-3 py-1.5 rounded-md whitespace-nowrap"
-      aria-label="Instalar aplicación"
+      className="rounded-full bg-blue-50 px-3 py-2 text-xs font-semibold text-blue-800 shadow-sm ring-1 ring-blue-100 hover:bg-blue-100 sm:text-sm whitespace-nowrap"
+      aria-label="Instalar aplicacion"
     >
       Instalar App
     </button>
   )
 }
-

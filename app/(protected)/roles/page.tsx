@@ -1,7 +1,6 @@
-// Gestionar Roles (Casos ROL) page
-// Lists all ROL cases for the current office
 'use client'
 
+import { ArrowLeft, FileSearch, Plus, Scale } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import Topbar from '@/components/Topbar'
 import Link from 'next/link'
@@ -31,10 +30,9 @@ export default function RolesPage() {
     const fetchRoles = async () => {
       try {
         const response = await fetch('/api/roles', {
-          credentials: 'include', // Ensure cookies are sent
+          credentials: 'include',
         })
         if (!response.ok) {
-          // Don't redirect - layout handles auth. Just show error
           const data = await response.json().catch(() => ({}))
           throw new Error(data.error || 'Error al cargar los roles')
         }
@@ -55,121 +53,127 @@ export default function RolesPage() {
   }, [])
 
   return (
-    <div className="min-h-screen bg-white">
+    <div className="app-shell">
       <Topbar />
-      
-      {/* Main content area with padding for fixed topbar */}
-      <main className="pt-20 pb-16">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          {/* Page header */}
-          <div className="mb-8 flex items-center justify-between flex-wrap gap-4">
-            <div>
-              <h1 className="text-3xl font-semibold text-gray-900 mb-2">
-                Gestionar Roles (Casos ROL)
-              </h1>
-              <p className="text-gray-600">
-                Visualiza y administra todos tus casos ROL
-              </p>
+
+      <main className="page-frame page-stack">
+        <section className="page-header">
+          <div>
+            <div className="page-kicker">Casos</div>
+            <h1 className="page-title">Gestionar Roles (Casos ROL)</h1>
+            <p className="page-copy">
+              Visualiza y administra todos los casos ROL en una tabla mas clara, sin
+              alterar el flujo actual de trabajo.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="app-panel-muted flex items-center gap-3 px-4 py-3">
+              <Scale className="h-4 w-4 text-blue-700" />
+              <span className="text-sm font-medium text-slate-600">
+                {loading ? 'Cargando listado...' : `${roles.length} casos visibles`}
+              </span>
             </div>
             <Link
               href="/demandas/nueva"
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
+              className="inline-flex items-center gap-2 rounded-full bg-blue-700 px-5 py-3 text-sm font-semibold text-white shadow-[0_18px_36px_-20px_rgba(29,78,216,0.75)] hover:bg-blue-800"
             >
-              + Nuevo Caso
+              <Plus className="h-4 w-4" />
+              Nuevo Caso
             </Link>
           </div>
+        </section>
 
-          {/* Loading state */}
-          {loading && (
-            <div className="bg-white rounded-lg shadow-md border border-gray-200 p-8">
-              <div className="text-center py-12">
-                <p className="text-gray-600">Cargando casos...</p>
+        {loading && (
+          <section className="app-section p-8">
+            <div className="space-y-4">
+              <div className="h-5 w-40 animate-pulse rounded-full bg-slate-200" />
+              <div className="space-y-3">
+                {Array.from({ length: 5 }).map((_, index) => (
+                  <div key={index} className="h-14 animate-pulse rounded-2xl bg-slate-100" />
+                ))}
               </div>
             </div>
-          )}
+          </section>
+        )}
 
-          {/* Error state */}
-          {error && !loading && (
-            <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6">
-              <p className="text-red-800">{error}</p>
-            </div>
-          )}
+        {error && !loading && (
+          <div className="mb-6 rounded-[24px] border border-rose-200 bg-rose-50 px-5 py-4 text-sm text-rose-700 shadow-sm">
+            {error}
+          </div>
+        )}
 
-          {/* Roles list */}
-          {!loading && !error && (
-            <>
-              {roles.length === 0 ? (
-                <div className="bg-white rounded-lg shadow-md border border-gray-200 p-8">
-                  <div className="text-center py-12">
-                    <div className="text-4xl mb-4">📋</div>
-                    <p className="text-gray-600 text-lg">
-                      No hay casos ROL registrados aún.
-                    </p>
-                    <p className="text-gray-500 text-sm mt-2">
-                      Crea tu primer caso desde el botón "Nuevo Caso" arriba.
+        {!loading && !error && (
+          <>
+            {roles.length === 0 ? (
+              <section className="app-section p-10 text-center">
+                <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-[22px] bg-slate-900 text-white shadow-lg">
+                  <FileSearch className="h-7 w-7" />
+                </div>
+                <h2 className="mt-6 text-2xl font-semibold text-slate-950">
+                  No hay casos ROL registrados aun.
+                </h2>
+                <p className="mx-auto mt-3 max-w-xl text-sm leading-6 text-slate-600">
+                  Crea tu primer caso desde el boton superior. La funcionalidad se mantiene
+                  igual; esta vista solo mejora la presentacion del listado.
+                </p>
+              </section>
+            ) : (
+              <section className="app-section overflow-hidden">
+                <div className="flex items-center justify-between border-b border-slate-200/80 px-6 py-4">
+                  <div>
+                    <h2 className="text-lg font-semibold text-slate-950">Listado de casos</h2>
+                    <p className="text-sm text-slate-500">
+                      Vista general de roles registrados en la oficina.
                     </p>
                   </div>
                 </div>
-              ) : (
-                <div className="bg-white rounded-lg shadow-md border border-gray-200 overflow-hidden">
-                  <table className="min-w-full divide-y divide-gray-200">
-                    <thead className="bg-gray-50">
+
+                <div className="overflow-x-auto">
+                  <table className="min-w-full text-sm">
+                    <thead className="bg-slate-50/90 text-left text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
                       <tr>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          ROL
-                        </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Carátula
-                        </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Tribunal
-                        </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Abogado
-                        </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Fecha
-                        </th>
-                        <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Acciones
-                        </th>
+                        <th className="px-6 py-4">ROL</th>
+                        <th className="px-6 py-4">Caratula</th>
+                        <th className="px-6 py-4">Tribunal</th>
+                        <th className="px-6 py-4">Abogado</th>
+                        <th className="px-6 py-4">Fecha</th>
+                        <th className="px-6 py-4 text-right">Acciones</th>
                       </tr>
                     </thead>
-                    <tbody className="bg-white divide-y divide-gray-200">
+                    <tbody className="divide-y divide-slate-100 bg-white">
                       {roles.map((rol) => (
-                        <tr key={rol.id} className="hover:bg-gray-50">
-                          <td className="px-6 py-4 whitespace-nowrap text-sm font-semibold text-blue-600">
+                        <tr key={rol.id} className="group hover:bg-slate-50/80">
+                          <td className="px-6 py-5 whitespace-nowrap">
                             <Link
                               href={`/roles/${rol.id}`}
-                              className="hover:underline"
+                              className="inline-flex rounded-full bg-blue-50 px-3 py-1.5 text-sm font-semibold text-blue-800 transition group-hover:bg-blue-100"
                             >
                               {rol.rol}
                             </Link>
                           </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
-                            {rol.caratula || 'Sin carátula'}
+                          <td className="px-6 py-5 text-sm text-slate-700">
+                            {rol.caratula || 'Sin caratula'}
                           </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                          <td className="px-6 py-5 text-sm text-slate-600">
                             {rol.tribunales?.nombre ?? 'Sin tribunal'}
                           </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                          <td className="px-6 py-5 text-sm text-slate-600">
                             {rol.abogados?.nombre ?? 'Sin abogado'}
                           </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                          <td className="px-6 py-5 whitespace-nowrap text-sm text-slate-500">
                             {new Date(rol.createdAt).toLocaleDateString('es-CL')}
                           </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                            <div className="flex items-center justify-end gap-3">
+                          <td className="px-6 py-5 whitespace-nowrap text-right">
+                            <div className="flex items-center justify-end gap-2">
                               <Link
                                 href={`/roles/${rol.id}/editar`}
-                                className="text-blue-600 hover:text-blue-900"
+                                className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-sm font-semibold text-slate-700 hover:border-slate-300 hover:bg-slate-50"
                               >
                                 Editar
                               </Link>
-                              <span className="text-gray-300">|</span>
                               <Link
                                 href={`/roles/${rol.id}`}
-                                className="text-blue-600 hover:text-blue-900"
+                                className="rounded-full bg-slate-900 px-3 py-1.5 text-sm font-semibold text-white hover:bg-slate-800"
                               >
                                 Ver detalles
                               </Link>
@@ -180,22 +184,21 @@ export default function RolesPage() {
                     </tbody>
                   </table>
                 </div>
-              )}
-            </>
-          )}
+              </section>
+            )}
+          </>
+        )}
 
-          {/* Back links */}
-          <div className="mt-8 flex items-center gap-4 flex-wrap">
-            <Link
-              href="/dashboard"
-              className="text-blue-600 hover:text-blue-800 font-medium transition-colors inline-flex items-center gap-2"
-            >
-              ← Volver al Dashboard
-            </Link>
-          </div>
+        <div className="mt-8 flex items-center gap-4 flex-wrap">
+          <Link
+            href="/dashboard"
+            className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white/90 px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm hover:border-slate-300 hover:bg-white"
+          >
+            <ArrowLeft className="h-4 w-4" />
+            Volver al Dashboard
+          </Link>
         </div>
       </main>
     </div>
   )
 }
-

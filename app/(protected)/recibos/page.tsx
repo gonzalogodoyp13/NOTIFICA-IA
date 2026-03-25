@@ -368,15 +368,14 @@ export default function RecibosPage() {
   const rows = data?.rows ?? []
 
   return (
-    <div className="min-h-screen bg-slate-100">
-      <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
-        <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+    <div className="app-shell">
+      <div className="page-frame page-stack">
+        <section className="app-section p-6">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
-              <h1 className="text-3xl font-semibold tracking-tight text-slate-900">
-                Gestión de Recibos
-              </h1>
-              <p className="mt-2 max-w-3xl text-sm text-slate-600">
+              <div className="page-kicker">Recibos</div>
+              <h1 className="page-title">Gestion de Recibos</h1>
+              <p className="page-copy">
                 Revisa recibos generados, filtra por responsables y exporta el resultado actual a Excel.
               </p>
             </div>
@@ -396,7 +395,7 @@ export default function RecibosPage() {
               <select
                 value={filters.procuradorId}
                 onChange={event => handleFilterChange('procuradorId', event.target.value)}
-                className="flex h-10 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900"
+                className="native-select"
               >
                 <option value="">Todos</option>
                 {options.procuradores.map(option => (
@@ -412,7 +411,7 @@ export default function RecibosPage() {
               <select
                 value={filters.bancoId}
                 onChange={event => handleFilterChange('bancoId', event.target.value)}
-                className="flex h-10 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900"
+                className="native-select"
               >
                 <option value="">Todos</option>
                 {options.bancos.map(option => (
@@ -428,7 +427,7 @@ export default function RecibosPage() {
               <select
                 value={filters.abogadoId}
                 onChange={event => handleFilterChange('abogadoId', event.target.value)}
-                className="flex h-10 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900"
+                className="native-select"
               >
                 <option value="">Todos</option>
                 {options.abogados.map(option => (
@@ -472,7 +471,7 @@ export default function RecibosPage() {
               Buscar
             </Button>
             <p className="text-xs text-slate-500">
-              Procurador, Banco y Abogado requieren rango de fechas. Número de ROL puede buscarse solo.
+              Procurador, Banco y Abogado requieren rango de fechas. Numero de ROL puede buscarse solo.
             </p>
           </div>
 
@@ -489,8 +488,8 @@ export default function RecibosPage() {
           )}
         </section>
 
-        <section className="mt-6 rounded-3xl border border-slate-200 bg-white shadow-sm">
-          <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-200 px-6 py-4">
+        <section className="mt-6 app-section overflow-hidden">
+          <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-200/80 px-6 py-4">
             <div>
               <h2 className="text-lg font-semibold text-slate-900">Resultados</h2>
               <p className="text-sm text-slate-500">
@@ -511,22 +510,22 @@ export default function RecibosPage() {
 
           <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-slate-200 text-sm">
-              <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+              <thead className="bg-slate-50/90 text-left text-xs uppercase tracking-[0.18em] text-slate-500">
                 <tr>
                   {[
-                    'Nº Recibo',
+                    'Nro Recibo',
                     'ROL',
                     'Tribunal',
-                    'Carátula',
-                    'Gestión',
+                    'Caratula',
+                    'Gestion',
                     'Resultado',
                     'Abogado',
                     'Procurador',
                     'Banco',
                     'Valor',
-                    'Fecha creación recibo',
+                    'Fecha creacion recibo',
                     'Estado',
-                    'Nº Boleta',
+                    'Nro Boleta',
                   ].map(column => (
                     <th key={column} className="px-4 py-3 font-semibold">
                       {column}
@@ -556,7 +555,7 @@ export default function RecibosPage() {
 
                 {!loading &&
                   rows.map(row => (
-                    <tr key={row.reciboId} className="hover:bg-slate-50">
+                    <tr key={row.reciboId} className="hover:bg-slate-50/80">
                       <td className="px-4 py-4 font-medium text-blue-700">
                         {row.documentoId ? (
                           <a
@@ -610,7 +609,7 @@ export default function RecibosPage() {
 
           <div className="flex flex-wrap items-center justify-between gap-4 border-t border-slate-200 px-6 py-4 text-sm text-slate-600">
             <div>
-              Página {data?.pagination.page ?? page} de {data?.pagination.totalPages ?? 1}
+              Pagina {data?.pagination.page ?? page} de {data?.pagination.totalPages ?? 1}
             </div>
             <div className="flex items-center gap-2">
               <Button

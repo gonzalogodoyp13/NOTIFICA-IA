@@ -54,7 +54,7 @@ export default function RolStatusActions({ rolId, current }: RolStatusActionsPro
   }
 
   return (
-    <div className="flex flex-col items-end gap-2">
+    <div className="flex flex-col items-start gap-2 sm:items-end">
       <div className="flex flex-wrap gap-2">
         {options.map(option => (
           <button
@@ -62,7 +62,7 @@ export default function RolStatusActions({ rolId, current }: RolStatusActionsPro
             type="button"
             disabled={isPending}
             onClick={() => handleChange(option)}
-            className="rounded bg-slate-200 px-2 py-1 text-xs font-medium text-slate-700 transition hover:bg-slate-300 disabled:cursor-not-allowed disabled:opacity-60"
+            className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
           >
             Cambiar a {option.replace('_', ' ')}
           </button>
@@ -73,4 +73,3 @@ export default function RolStatusActions({ rolId, current }: RolStatusActionsPro
     </div>
   )
 }
-
