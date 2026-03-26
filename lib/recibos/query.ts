@@ -35,7 +35,7 @@ export interface ReceiptListResult {
   }
 }
 
-const EMPTY_VALUE = '—'
+const EMPTY_VALUE = '-'
 
 function toDateRange(fechaDesde?: string, fechaHasta?: string) {
   if (!fechaDesde || !fechaHasta) {
@@ -134,9 +134,15 @@ function getEstadoLabel(recibo: any, documento: any, diligencia: any) {
 
 export function parseReceiptFilters(searchParams: URLSearchParams, defaults?: Partial<ReceiptFiltersInput>) {
   const parsed = ReceiptFilterSchema.safeParse({
-    procuradorId: searchParams.get('procuradorId') ?? defaults?.procuradorId,
-    bancoId: searchParams.get('bancoId') ?? defaults?.bancoId,
-    abogadoId: searchParams.get('abogadoId') ?? defaults?.abogadoId,
+    procuradorIds: searchParams.getAll('procuradorId').length
+      ? searchParams.getAll('procuradorId')
+      : defaults?.procuradorIds?.map(String),
+    bancoIds: searchParams.getAll('bancoId').length
+      ? searchParams.getAll('bancoId')
+      : defaults?.bancoIds?.map(String),
+    abogadoIds: searchParams.getAll('abogadoId').length
+      ? searchParams.getAll('abogadoId')
+      : defaults?.abogadoIds?.map(String),
     rol: searchParams.get('rol') ?? defaults?.rol,
     fechaDesde: searchParams.get('fechaDesde') ?? defaults?.fechaDesde,
     fechaHasta: searchParams.get('fechaHasta') ?? defaults?.fechaHasta,
@@ -145,7 +151,7 @@ export function parseReceiptFilters(searchParams: URLSearchParams, defaults?: Pa
   })
 
   if (!parsed.success) {
-    const message = parsed.error.issues[0]?.message ?? 'Filtros inválidos.'
+    const message = parsed.error.issues[0]?.message ?? 'Filtros invalidos.'
     throw new Error(message)
   }
 
@@ -161,20 +167,20 @@ export async function getReceiptList(
 
   const demandaConditions: Record<string, unknown>[] = []
 
-  if (typeof filters.abogadoId === 'number') {
-    demandaConditions.push({ abogadoId: filters.abogadoId })
+  if (filters.abogadoIds.length > 0) {
+    demandaConditions.push({ abogadoId: { in: filters.abogadoIds } })
   }
 
-  if (typeof filters.procuradorId === 'number') {
-    demandaConditions.push({ procuradorId: filters.procuradorId })
+  if (filters.procuradorIds.length > 0) {
+    demandaConditions.push({ procuradorId: { in: filters.procuradorIds } })
   }
 
-  if (typeof filters.bancoId === 'number') {
+  if (filters.bancoIds.length > 0) {
     demandaConditions.push({
       OR: [
-        { abogados: { is: { bancoId: filters.bancoId } } },
-        { abogados: { is: { bancos: { some: { bancoId: filters.bancoId } } } } },
-        { procurador: { is: { bancos: { some: { bancoId: filters.bancoId } } } } },
+        { abogados: { is: { bancoId: { in: filters.bancoIds } } } },
+        { abogados: { is: { bancos: { some: { bancoId: { in: filters.bancoIds } } } } } },
+        { procurador: { is: { bancos: { some: { bancoId: { in: filters.bancoIds } } } } } },
       ],
     })
   }

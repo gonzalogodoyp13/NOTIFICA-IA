@@ -1,27 +1,32 @@
 import { z } from 'zod'
 
-const optionalIntFromString = z
-  .string()
-  .trim()
-  .transform(value => (value ? Number.parseInt(value, 10) : undefined))
-  .refine(value => value === undefined || Number.isInteger(value), {
-    message: 'Valor numérico inválido',
-  })
+const optionalIntArrayFromStrings = z
+  .array(z.string().trim())
   .optional()
+  .default([])
+  .transform(values =>
+    values
+      .map(value => value.trim())
+      .filter(Boolean)
+      .map(value => Number.parseInt(value, 10))
+  )
+  .refine(values => values.every(value => Number.isInteger(value)), {
+    message: 'Valor numerico invalido',
+  })
 
 const optionalDateString = z
   .string()
   .trim()
   .refine(value => !value || !Number.isNaN(Date.parse(value)), {
-    message: 'Fecha inválida',
+    message: 'Fecha invalida',
   })
   .optional()
 
 export const ReceiptFilterSchema = z
   .object({
-    procuradorId: optionalIntFromString,
-    bancoId: optionalIntFromString,
-    abogadoId: optionalIntFromString,
+    procuradorIds: optionalIntArrayFromStrings,
+    bancoIds: optionalIntArrayFromStrings,
+    abogadoIds: optionalIntArrayFromStrings,
     rol: z.string().trim().max(100).optional(),
     fechaDesde: optionalDateString,
     fechaHasta: optionalDateString,
@@ -30,9 +35,9 @@ export const ReceiptFilterSchema = z
   })
   .superRefine((value, ctx) => {
     const requiresDateRange =
-      typeof value.procuradorId === 'number' ||
-      typeof value.bancoId === 'number' ||
-      typeof value.abogadoId === 'number'
+      value.procuradorIds.length > 0 ||
+      value.bancoIds.length > 0 ||
+      value.abogadoIds.length > 0
 
     if (requiresDateRange && (!value.fechaDesde || !value.fechaHasta)) {
       ctx.addIssue({

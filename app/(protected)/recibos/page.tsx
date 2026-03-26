@@ -1,7 +1,8 @@
 'use client'
 
-import { startTransition, useEffect, useMemo, useState } from 'react'
+import { startTransition, useEffect, useMemo, useRef, useState } from 'react'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
+import { ChevronDown } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -45,12 +46,22 @@ type ReceiptPayload = {
 }
 
 type FilterState = {
-  procuradorId: string
-  bancoId: string
-  abogadoId: string
+  abogadoIds: string[]
+  procuradorIds: string[]
+  bancoIds: string[]
   rol: string
   fechaDesde: string
   fechaHasta: string
+}
+
+type MultiSelectFilterProps = {
+  label: string
+  options: OptionItem[]
+  selectedIds: string[]
+  emptyLabel?: string
+  selectionNoun: string
+  onToggle: (value: string) => void
+  onClear: () => void
 }
 
 const PAGE_SIZE = 25
@@ -65,7 +76,7 @@ function formatCurrency(value: number) {
 
 function formatDateTime(value: string) {
   const date = new Date(value)
-  return Number.isNaN(date.getTime()) ? '—' : date.toLocaleString('es-CL')
+  return Number.isNaN(date.getTime()) ? '-' : date.toLocaleString('es-CL')
 }
 
 function getDefaultDateRange() {
@@ -81,9 +92,9 @@ function getDefaultDateRange() {
 
 function parseFilters(searchParams: URLSearchParams): FilterState {
   return {
-    procuradorId: searchParams.get('procuradorId') ?? '',
-    bancoId: searchParams.get('bancoId') ?? '',
-    abogadoId: searchParams.get('abogadoId') ?? '',
+    abogadoIds: searchParams.getAll('abogadoId'),
+    procuradorIds: searchParams.getAll('procuradorId'),
+    bancoIds: searchParams.getAll('bancoId'),
     rol: searchParams.get('rol') ?? '',
     fechaDesde: searchParams.get('fechaDesde') ?? '',
     fechaHasta: searchParams.get('fechaHasta') ?? '',
@@ -92,7 +103,9 @@ function parseFilters(searchParams: URLSearchParams): FilterState {
 
 function validateFilters(filters: FilterState) {
   const needsDateRange =
-    Boolean(filters.procuradorId) || Boolean(filters.bancoId) || Boolean(filters.abogadoId)
+    filters.abogadoIds.length > 0 ||
+    filters.procuradorIds.length > 0 ||
+    filters.bancoIds.length > 0
 
   if (needsDateRange && (!filters.fechaDesde || !filters.fechaHasta)) {
     return 'Debes indicar fecha desde y fecha hasta para filtrar por procurador, banco o abogado.'
@@ -108,9 +121,9 @@ function validateFilters(filters: FilterState) {
 function buildQueryString(filters: FilterState, page: number) {
   const params = new URLSearchParams()
 
-  if (filters.procuradorId) params.set('procuradorId', filters.procuradorId)
-  if (filters.bancoId) params.set('bancoId', filters.bancoId)
-  if (filters.abogadoId) params.set('abogadoId', filters.abogadoId)
+  filters.abogadoIds.forEach(value => params.append('abogadoId', value))
+  filters.procuradorIds.forEach(value => params.append('procuradorId', value))
+  filters.bancoIds.forEach(value => params.append('bancoId', value))
   if (filters.rol.trim()) params.set('rol', filters.rol.trim())
   if (filters.fechaDesde) params.set('fechaDesde', filters.fechaDesde)
   if (filters.fechaHasta) params.set('fechaHasta', filters.fechaHasta)
@@ -118,6 +131,105 @@ function buildQueryString(filters: FilterState, page: number) {
   params.set('pageSize', String(PAGE_SIZE))
 
   return params.toString()
+}
+
+function MultiSelectFilter({
+  label,
+  options,
+  selectedIds,
+  emptyLabel = 'Todos',
+  selectionNoun,
+  onToggle,
+  onClear,
+}: MultiSelectFilterProps) {
+  const [isOpen, setIsOpen] = useState(false)
+  const rootRef = useRef<HTMLDivElement | null>(null)
+
+  useEffect(() => {
+    function handlePointerDown(event: MouseEvent) {
+      if (!rootRef.current?.contains(event.target as Node)) {
+        setIsOpen(false)
+      }
+    }
+
+    document.addEventListener('mousedown', handlePointerDown)
+    return () => {
+      document.removeEventListener('mousedown', handlePointerDown)
+    }
+  }, [])
+
+  const selectedLabels = useMemo(() => {
+    const namesById = new Map(options.map(option => [String(option.id), option.nombre]))
+    return selectedIds.map(value => namesById.get(value)).filter((value): value is string => Boolean(value))
+  }, [options, selectedIds])
+
+  const triggerLabel =
+    selectedLabels.length === 0
+      ? emptyLabel
+      : selectedLabels.length === 1
+        ? selectedLabels[0]
+        : `${selectedLabels.length} ${selectionNoun}`
+
+  return (
+    <div ref={rootRef} className="relative space-y-2 text-sm text-slate-700">
+      <span className="block font-medium">{label}</span>
+      <button
+        type="button"
+        onClick={() => setIsOpen(open => !open)}
+        className="flex w-full items-center justify-between rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-left text-sm text-slate-700 shadow-sm transition hover:border-slate-300 focus:outline-none focus:ring-2 focus:ring-slate-200"
+      >
+        <span className="truncate">{triggerLabel}</span>
+        <ChevronDown
+          className={`h-4 w-4 shrink-0 text-slate-500 transition ${isOpen ? 'rotate-180' : ''}`}
+        />
+      </button>
+
+      {isOpen && (
+        <div className="absolute z-20 mt-2 w-full rounded-2xl border border-slate-200 bg-white p-3 shadow-xl">
+          <div className="mb-2 flex items-center justify-between gap-3 border-b border-slate-100 pb-2">
+            <p className="text-xs text-slate-500">
+              {selectedIds.length === 0 ? 'Sin filtros aplicados' : `${selectedIds.length} seleccionados`}
+            </p>
+            <button
+              type="button"
+              onClick={onClear}
+              className="text-xs font-medium text-blue-600 transition hover:text-blue-700"
+            >
+              Limpiar
+            </button>
+          </div>
+
+          <div className="max-h-64 space-y-1 overflow-y-auto pr-1">
+            {options.map(option => {
+              const value = String(option.id)
+              const checked = selectedIds.includes(value)
+
+              return (
+                <label
+                  key={option.id}
+                  className="flex cursor-pointer items-center gap-3 rounded-xl px-2 py-2 transition hover:bg-slate-50"
+                >
+                  <input
+                    type="checkbox"
+                    checked={checked}
+                    onChange={() => onToggle(value)}
+                    className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                  />
+                  <span className="truncate text-sm text-slate-700">{option.nombre}</span>
+                </label>
+              )
+            })}
+
+            {options.length === 0 && (
+              <div className="rounded-xl bg-slate-50 px-3 py-3 text-sm text-slate-500">
+                No hay opciones disponibles.
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  )
 }
 
 export default function RecibosPage() {
@@ -151,9 +263,9 @@ export default function RecibosPage() {
 
   useEffect(() => {
     const hasAnyFilters =
-      searchParams.get('procuradorId') ||
-      searchParams.get('bancoId') ||
-      searchParams.get('abogadoId') ||
+      searchParams.getAll('abogadoId').length > 0 ||
+      searchParams.getAll('procuradorId').length > 0 ||
+      searchParams.getAll('bancoId').length > 0 ||
       searchParams.get('rol') ||
       searchParams.get('fechaDesde') ||
       searchParams.get('fechaHasta')
@@ -224,9 +336,9 @@ export default function RecibosPage() {
 
     async function fetchRecibos() {
       const hasMeaningfulFilters =
-        searchParams.get('procuradorId') ||
-        searchParams.get('bancoId') ||
-        searchParams.get('abogadoId') ||
+        searchParams.getAll('abogadoId').length > 0 ||
+        searchParams.getAll('procuradorId').length > 0 ||
+        searchParams.getAll('bancoId').length > 0 ||
         searchParams.get('rol') ||
         searchParams.get('fechaDesde') ||
         searchParams.get('fechaHasta')
@@ -280,10 +392,35 @@ export default function RecibosPage() {
     }
   }, [searchParams])
 
-  const handleFilterChange = (key: keyof FilterState, value: string) => {
+  const handleTextFilterChange = (key: 'rol' | 'fechaDesde' | 'fechaHasta', value: string) => {
     const next = {
       ...filters,
       [key]: value,
+    }
+
+    setFilters(next)
+    setValidationError(validateFilters(next))
+  }
+
+  const handleMultiSelectToggle = (key: 'abogadoIds' | 'procuradorIds' | 'bancoIds', value: string) => {
+    const currentValues = filters[key]
+    const nextValues = currentValues.includes(value)
+      ? currentValues.filter(item => item !== value)
+      : [...currentValues, value]
+
+    const next = {
+      ...filters,
+      [key]: nextValues,
+    }
+
+    setFilters(next)
+    setValidationError(validateFilters(next))
+  }
+
+  const handleMultiSelectClear = (key: 'abogadoIds' | 'procuradorIds' | 'bancoIds') => {
+    const next = {
+      ...filters,
+      [key]: [],
     }
 
     setFilters(next)
@@ -307,9 +444,9 @@ export default function RecibosPage() {
   const clearFilters = () => {
     const defaults = getDefaultDateRange()
     const next = {
-      procuradorId: '',
-      bancoId: '',
-      abogadoId: '',
+      abogadoIds: [],
+      procuradorIds: [],
+      bancoIds: [],
       rol: '',
       fechaDesde: defaults.fechaDesde,
       fechaHasta: defaults.fechaHasta,
@@ -390,59 +527,38 @@ export default function RecibosPage() {
           </div>
 
           <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-            <label className="space-y-2 text-sm text-slate-700">
-              <span className="font-medium">Procurador</span>
-              <select
-                value={filters.procuradorId}
-                onChange={event => handleFilterChange('procuradorId', event.target.value)}
-                className="native-select"
-              >
-                <option value="">Todos</option>
-                {options.procuradores.map(option => (
-                  <option key={option.id} value={String(option.id)}>
-                    {option.nombre}
-                  </option>
-                ))}
-              </select>
-            </label>
+            <MultiSelectFilter
+              label="Abogado"
+              options={options.abogados}
+              selectedIds={filters.abogadoIds}
+              selectionNoun="abogados seleccionados"
+              onToggle={value => handleMultiSelectToggle('abogadoIds', value)}
+              onClear={() => handleMultiSelectClear('abogadoIds')}
+            />
+
+            <MultiSelectFilter
+              label="Procurador"
+              options={options.procuradores}
+              selectedIds={filters.procuradorIds}
+              selectionNoun="procuradores seleccionados"
+              onToggle={value => handleMultiSelectToggle('procuradorIds', value)}
+              onClear={() => handleMultiSelectClear('procuradorIds')}
+            />
+
+            <MultiSelectFilter
+              label="Banco"
+              options={options.bancos}
+              selectedIds={filters.bancoIds}
+              selectionNoun="bancos seleccionados"
+              onToggle={value => handleMultiSelectToggle('bancoIds', value)}
+              onClear={() => handleMultiSelectClear('bancoIds')}
+            />
 
             <label className="space-y-2 text-sm text-slate-700">
-              <span className="font-medium">Banco</span>
-              <select
-                value={filters.bancoId}
-                onChange={event => handleFilterChange('bancoId', event.target.value)}
-                className="native-select"
-              >
-                <option value="">Todos</option>
-                {options.bancos.map(option => (
-                  <option key={option.id} value={String(option.id)}>
-                    {option.nombre}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <label className="space-y-2 text-sm text-slate-700">
-              <span className="font-medium">Abogado</span>
-              <select
-                value={filters.abogadoId}
-                onChange={event => handleFilterChange('abogadoId', event.target.value)}
-                className="native-select"
-              >
-                <option value="">Todos</option>
-                {options.abogados.map(option => (
-                  <option key={option.id} value={String(option.id)}>
-                    {option.nombre}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <label className="space-y-2 text-sm text-slate-700">
-              <span className="font-medium">Número de ROL</span>
+              <span className="font-medium">Numero de ROL</span>
               <Input
                 value={filters.rol}
-                onChange={event => handleFilterChange('rol', event.target.value)}
+                onChange={event => handleTextFilterChange('rol', event.target.value)}
                 placeholder="C-1234-2025"
               />
             </label>
@@ -452,7 +568,7 @@ export default function RecibosPage() {
               <Input
                 type="date"
                 value={filters.fechaDesde}
-                onChange={event => handleFilterChange('fechaDesde', event.target.value)}
+                onChange={event => handleTextFilterChange('fechaDesde', event.target.value)}
               />
             </label>
 
@@ -461,7 +577,7 @@ export default function RecibosPage() {
               <Input
                 type="date"
                 value={filters.fechaHasta}
-                onChange={event => handleFilterChange('fechaHasta', event.target.value)}
+                onChange={event => handleTextFilterChange('fechaHasta', event.target.value)}
               />
             </label>
           </div>
