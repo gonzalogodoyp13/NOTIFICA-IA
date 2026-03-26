@@ -10,7 +10,7 @@ export const dynamic = 'force-dynamic'
 export async function POST(req: NextRequest) {
   try {
     console.log('[POST /api/demandas] Request received')
-    
+
     const user = await getCurrentUserWithOffice()
 
     if (!user) {
@@ -21,14 +21,17 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    console.log('[POST /api/demandas] User authenticated:', { id: user.id, email: user.email, officeId: user.officeId })
+    console.log('[POST /api/demandas] User authenticated:', {
+      id: user.id,
+      email: user.email,
+      officeId: user.officeId,
+    })
 
     const body = await req.json()
     console.log('[POST /api/demandas] Request body:', JSON.stringify(body, null, 2))
-    
+
     const { rol, tribunalId, caratula, cuantia, abogadoId, materiaId, ejecutados, procuradorId } = body
 
-    // Validate required fields
     if (!rol || !tribunalId || !caratula || !abogadoId) {
       return NextResponse.json(
         { ok: false, error: 'rol, tribunalId, caratula y abogadoId son requeridos' },
@@ -36,7 +39,6 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    // Ensure office exists and fail closed if it does not
     const officeId = user.officeId
     const office = await prisma.office.findUnique({
       where: { id: officeId },
@@ -44,18 +46,16 @@ export async function POST(req: NextRequest) {
 
     if (!office) {
       return NextResponse.json(
-        { ok: false, error: 'Oficina no v�lida para el usuario autenticado' },
+        { ok: false, error: 'Oficina no valida para el usuario autenticado' },
         { status: 403 }
       )
     }
 
-    // Verify tribunalId belongs to user's office (Phase 3: tribunales table with Int id)
-    // Parse tribunalId as integer (should already be a number, but ensure it)
     const tribunalIdInt = typeof tribunalId === 'string' ? parseInt(tribunalId, 10) : tribunalId
-    
+
     if (isNaN(tribunalIdInt) || !Number.isInteger(tribunalIdInt)) {
       return NextResponse.json(
-        { ok: false, error: 'tribunalId debe ser un número entero válido' },
+        { ok: false, error: 'tribunalId debe ser un numero entero valido' },
         { status: 400 }
       )
     }
@@ -63,7 +63,7 @@ export async function POST(req: NextRequest) {
     const tribunal = await prisma.tribunales.findFirst({
       where: {
         id: tribunalIdInt,
-        officeId: user.officeId, // Int officeId
+        officeId: user.officeId,
       },
     })
 
@@ -74,11 +74,10 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    // Verify abogadoId belongs to user's office (Phase 3: abogados table with Int id)
     const abogado = await prisma.abogado.findFirst({
       where: {
         id: parseInt(abogadoId),
-        officeId: user.officeId, // Int officeId
+        officeId: user.officeId,
       },
     })
 
@@ -89,7 +88,6 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    // Verify materiaId if provided
     if (materiaId) {
       const materia = await prisma.materia.findFirst({
         where: {
@@ -106,13 +104,12 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Verify procuradorId if provided
     if (procuradorId !== null && procuradorId !== undefined) {
       const procuradorIdInt = typeof procuradorId === 'string' ? parseInt(procuradorId, 10) : procuradorId
-      
+
       if (isNaN(procuradorIdInt) || !Number.isInteger(procuradorIdInt)) {
         return NextResponse.json(
-          { ok: false, error: 'procuradorId debe ser un número entero válido' },
+          { ok: false, error: 'procuradorId debe ser un numero entero valido' },
           { status: 400 }
         )
       }
@@ -132,7 +129,6 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Check if ROL already exists
     const existingDemanda = await prisma.demanda.findUnique({
       where: { rol },
     })
@@ -144,9 +140,7 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    // Helper function to find or create Tribunal from tribunales
-    const findOrCreateTribunal = async (tribunalesId: number, officeId: number) => {
-      // First, try to find existing Tribunal with same name and officeId
+    const findOrCreateTribunal = async (tribunalesId: number, currentOfficeId: number) => {
       const tribunalesRecord = await prisma.tribunales.findUnique({
         where: { id: tribunalesId },
       })
@@ -155,141 +149,145 @@ export async function POST(req: NextRequest) {
         throw new Error('Tribunal no encontrado')
       }
 
-      // Try to find existing Tribunal with same nombre and officeId
-      let tribunal = await prisma.tribunal.findFirst({
+      let tribunalMatch = await prisma.tribunal.findFirst({
         where: {
           nombre: tribunalesRecord.nombre,
-          officeId: officeId,
+          officeId: currentOfficeId,
         },
       })
 
-      // If not found, create new Tribunal
-      if (!tribunal) {
-        tribunal = await prisma.tribunal.create({
+      if (!tribunalMatch) {
+        tribunalMatch = await prisma.tribunal.create({
           data: {
             nombre: tribunalesRecord.nombre,
             direccion: tribunalesRecord.direccion,
             comuna: tribunalesRecord.comuna,
-            officeId: officeId,
+            officeId: currentOfficeId,
           },
         })
-        console.log(`[POST /api/demandas] Created new Tribunal:`, { id: tribunal.id, nombre: tribunal.nombre })
+
+        console.log('[POST /api/demandas] Created new Tribunal:', {
+          id: tribunalMatch.id,
+          nombre: tribunalMatch.nombre,
+        })
       }
 
-      return tribunal
+      return tribunalMatch
     }
 
-    // Create Demanda and RolCausa in a transaction
+    const normalizedTribunal = await findOrCreateTribunal(tribunalIdInt, officeId)
+
     console.log('[POST /api/demandas] Creating demanda and rolCausa...')
-    
-    const result = await prisma.$transaction(async (tx) => {
-      // 1. Create Demanda
-      const demanda = await tx.demanda.create({
-        data: {
-          rol,
-          tribunalId: tribunalIdInt, // Use validated Int tribunalId
-          caratula,
-          cuantia: parseCuantiaForStorage(cuantia),
-          abogadoId: parseInt(abogadoId),
-          materiaId: materiaId ? parseInt(materiaId) : null,
-          procuradorId: procuradorId ? (typeof procuradorId === 'string' ? parseInt(procuradorId, 10) : procuradorId) : null,
-          officeId,
-          userId: user.id,
-          ejecutados: ejecutados && ejecutados.length > 0 ? {
-            create: ejecutados.map((ej: any) => ({
-              nombre: ej.nombre,
-              rut: ej.rut,
-              direccion: ej.direccion || null,
-              comunaId: ej.comunaId ? parseInt(ej.comunaId) : null,
-            })),
-          } : undefined,
-        },
-        include: {
-          tribunales: {
-            select: {
-              id: true,
-              nombre: true,
-            },
+
+    const result = await prisma.$transaction(
+      async (tx) => {
+        const demanda = await tx.demanda.create({
+          data: {
+            rol,
+            tribunalId: tribunalIdInt,
+            caratula,
+            cuantia: parseCuantiaForStorage(cuantia),
+            abogadoId: parseInt(abogadoId),
+            materiaId: materiaId ? parseInt(materiaId) : null,
+            procuradorId: procuradorId ? (typeof procuradorId === 'string' ? parseInt(procuradorId, 10) : procuradorId) : null,
+            officeId,
+            userId: user.id,
+            ejecutados: ejecutados && ejecutados.length > 0 ? {
+              create: ejecutados.map((ej: any) => ({
+                nombre: ej.nombre,
+                rut: ej.rut,
+                direccion: ej.direccion || null,
+                comunaId: ej.comunaId ? parseInt(ej.comunaId) : null,
+              })),
+            } : undefined,
           },
-          abogados: {
-            select: {
-              id: true,
-              nombre: true,
+          include: {
+            tribunales: {
+              select: {
+                id: true,
+                nombre: true,
+              },
             },
-          },
-          ejecutados: {
-            include: {
-              comunas: {
-                select: {
-                  id: true,
-                  nombre: true,
+            abogados: {
+              select: {
+                id: true,
+                nombre: true,
+              },
+            },
+            ejecutados: {
+              include: {
+                comunas: {
+                  select: {
+                    id: true,
+                    nombre: true,
+                  },
                 },
               },
             },
           },
-        },
-      })
+        })
 
-      // 2. Find or create Tribunal (String ID) from tribunales (Int ID)
-      const tribunal = await findOrCreateTribunal(tribunalIdInt, officeId)
-
-      // 3. Check if RolCausa already exists (should not, but safety check)
-      const existingRolCausa = await tx.rolCausa.findUnique({
-        where: { id: demanda.id },
-      })
-
-      if (existingRolCausa) {
-        console.log(`[POST /api/demandas] ⚠️ RolCausa already exists for demanda.id ${demanda.id}, updating...`)
-        // Update existing RolCausa
-        await tx.rolCausa.update({
+        const existingRolCausa = await tx.rolCausa.findUnique({
           where: { id: demanda.id },
-          data: {
-            demandaId: demanda.id,
-            rol: demanda.rol,
-            officeId: demanda.officeId,
-            tribunalId: tribunal.id,
-            estado: 'pendiente',
-          },
         })
-      } else {
-        // 4. Create RolCausa with the same ID as Demanda
-        await tx.rolCausa.create({
-          data: {
-            id: demanda.id, // Same ID as Demanda
-            demandaId: demanda.id, // Auto-reference
-            rol: demanda.rol,
-            officeId: demanda.officeId,
-            tribunalId: tribunal.id, // String ID from Tribunal
-            estado: 'pendiente',
-            createdAt: demanda.createdAt,
-          },
-        })
-        console.log(`[POST /api/demandas] ✅ Created RolCausa with id: ${demanda.id}`)
-      }
 
-      return demanda
-    })
+        if (existingRolCausa) {
+          console.log(
+            `[POST /api/demandas] RolCausa already exists for demanda.id ${demanda.id}, updating...`
+          )
+
+          await tx.rolCausa.update({
+            where: { id: demanda.id },
+            data: {
+              demandaId: demanda.id,
+              rol: demanda.rol,
+              officeId: demanda.officeId,
+              tribunalId: normalizedTribunal.id,
+              estado: 'pendiente',
+            },
+          })
+        } else {
+          await tx.rolCausa.create({
+            data: {
+              id: demanda.id,
+              demandaId: demanda.id,
+              rol: demanda.rol,
+              officeId: demanda.officeId,
+              tribunalId: normalizedTribunal.id,
+              estado: 'pendiente',
+              createdAt: demanda.createdAt,
+            },
+          })
+
+          console.log(`[POST /api/demandas] Created RolCausa with id: ${demanda.id}`)
+        }
+
+        return demanda
+      },
+      {
+        timeout: 15000,
+      }
+    )
 
     const demanda = result
 
     if (process.env.NODE_ENV === 'development') {
-      console.log(`[POST /api/demandas] ✅ Demanda created successfully:`, {
+      console.log('[POST /api/demandas] Demanda created successfully:', {
         id: demanda.id,
         rol: demanda.rol,
         officeId: demanda.officeId,
-        rolId: demanda.id, // Same as demanda.id
+        rolId: demanda.id,
       })
     } else {
       console.log('[POST /api/demandas] Demanda created successfully:', demanda.id)
     }
 
-    // Return response with rolId for frontend
-    return NextResponse.json({ 
-      ok: true, 
+    return NextResponse.json({
+      ok: true,
       data: {
         ...demanda,
-        rolId: demanda.id, // Same ID as demanda.id for frontend navigation
-      }
+        rolId: demanda.id,
+      },
     })
   } catch (error: any) {
     console.error('[POST /api/demandas] Error creating demanda:', error)
@@ -298,12 +296,10 @@ export async function POST(req: NextRequest) {
       code: error?.code,
       meta: error?.meta,
     })
-    
+
     return NextResponse.json(
       { ok: false, error: error?.message || 'Error al crear la demanda' },
       { status: 500 }
     )
   }
 }
-
-
