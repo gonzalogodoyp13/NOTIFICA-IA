@@ -17,6 +17,18 @@ export const AbogadoSchema = z.object({
   email: z.string().email().optional(),
   bancoId: z.number().optional(),  // MANTENER para compatibilidad (opcional durante transición)
   bancoIds: z.array(z.number().int().positive()).optional(),  // NUEVO - array de IDs de bancos
+  procuradorIds: z.array(z.number().int().positive()).optional(),
+  newProcuradores: z.array(
+    z.object({
+      nombre: z.string().min(2, "Nombre requerido"),
+      email: z.preprocess(
+        (val) => val === "" ? null : val,
+        z.string().email("Email inválido").optional().nullable()
+      ),
+      telefono: z.string().optional().nullable(),
+      notas: z.string().optional().nullable(),
+    })
+  ).optional(),
 }).refine(
   (data) => {
     // Al menos uno de bancoId o bancoIds debe estar presente si se proporciona alguno

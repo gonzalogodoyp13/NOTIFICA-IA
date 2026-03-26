@@ -6,6 +6,18 @@ import { useEffect, useState } from 'react'
 import Topbar from '@/components/Topbar'
 import Link from 'next/link'
 
+interface Procurador {
+  id: number
+  nombre: string
+}
+
+interface NewProcuradorForm {
+  nombre: string
+  email: string
+  telefono: string
+  notas: string
+}
+
 interface Abogado {
   id: number
   nombre: string | null
@@ -24,6 +36,7 @@ interface Abogado {
       nombre: string
     }
   }>
+  procuradores?: Procurador[]
   createdAt: string
 }
 
@@ -32,30 +45,60 @@ interface Banco {
   nombre: string
 }
 
+const emptyNewProcurador = (): NewProcuradorForm => ({
+  nombre: '',
+  email: '',
+  telefono: '',
+  notas: '',
+})
+
+const initialFormData = {
+  nombre: '',
+  telefono: '',
+  email: '',
+  bancoIds: [] as number[],
+  procuradorIds: [] as number[],
+  newProcuradores: [] as NewProcuradorForm[],
+}
+
 export default function AbogadosPage() {
   const [abogados, setAbogados] = useState<Abogado[]>([])
   const [bancos, setBancos] = useState<Banco[]>([])
+  const [procuradores, setProcuradores] = useState<Procurador[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
+  const [searchTerm, setSearchTerm] = useState('')
   const [showModal, setShowModal] = useState(false)
-  const [formData, setFormData] = useState({
-    nombre: '',
-    telefono: '',
-    email: '',
-    bancoIds: [] as number[],
-  })
+  const [formData, setFormData] = useState(initialFormData)
   const [submitting, setSubmitting] = useState(false)
+
+  const normalizedSearchTerm = searchTerm.trim().toLowerCase()
+  const filteredAbogados = abogados.filter((abogado) => {
+    if (!normalizedSearchTerm) return true
+    return (abogado.nombre || '').toLowerCase().includes(normalizedSearchTerm)
+  })
 
   useEffect(() => {
     fetchAbogados()
     fetchBancos()
+    fetchProcuradores()
   }, [])
+
+  const resetForm = () => {
+    setFormData(initialFormData)
+    setError(null)
+  }
+
+  const closeModal = () => {
+    setShowModal(false)
+    resetForm()
+  }
 
   const fetchAbogados = async () => {
     try {
       const response = await fetch('/api/abogados', {
-        credentials: 'include', // Ensure cookies are sent
+        credentials: 'include',
       })
       const data = await response.json().catch(() => ({ ok: false }))
 
@@ -83,14 +126,29 @@ export default function AbogadosPage() {
       const data = await response.json().catch(() => ({ ok: false }))
 
       if (!data.ok) {
-        // Silenciosamente fallar, no es crítico
         return
       }
 
       setBancos(data.data || [])
     } catch (err) {
-      // Silenciosamente fallar, no es crítico
       console.error('Error loading bancos:', err)
+    }
+  }
+
+  const fetchProcuradores = async () => {
+    try {
+      const response = await fetch('/api/procuradores', {
+        credentials: 'include',
+      })
+      const data = await response.json().catch(() => ({ ok: false }))
+
+      if (!data.ok) {
+        return
+      }
+
+      setProcuradores(data.data || [])
+    } catch (err) {
+      console.error('Error loading procuradores:', err)
     }
   }
 
@@ -101,10 +159,40 @@ export default function AbogadosPage() {
     setSuccess(null)
 
     try {
-      const payload: any = { nombre: formData.nombre }
-      if (formData.telefono) payload.telefono = formData.telefono
-      if (formData.email) payload.email = formData.email
+      const cleanedNewProcuradores = formData.newProcuradores
+        .map((procurador) => ({
+          nombre: procurador.nombre.trim(),
+          email: procurador.email.trim(),
+          telefono: procurador.telefono.trim(),
+          notas: procurador.notas.trim(),
+        }))
+        .filter((procurador) => procurador.nombre.length > 0)
+        .map((procurador) => ({
+          nombre: procurador.nombre,
+          email: procurador.email || null,
+          telefono: procurador.telefono || null,
+          notas: procurador.notas || null,
+        }))
+
+      const payload: {
+        nombre: string
+        telefono?: string
+        email?: string
+        bancoIds?: number[]
+        procuradorIds?: number[]
+        newProcuradores?: Array<{
+          nombre: string
+          email: string | null
+          telefono: string | null
+          notas: string | null
+        }>
+      } = { nombre: formData.nombre.trim() }
+
+      if (formData.telefono.trim()) payload.telefono = formData.telefono.trim()
+      if (formData.email.trim()) payload.email = formData.email.trim()
       if (formData.bancoIds.length > 0) payload.bancoIds = formData.bancoIds
+      if (formData.procuradorIds.length > 0) payload.procuradorIds = formData.procuradorIds
+      if (cleanedNewProcuradores.length > 0) payload.newProcuradores = cleanedNewProcuradores
 
       const response = await fetch('/api/abogados', {
         method: 'POST',
@@ -120,17 +208,11 @@ export default function AbogadosPage() {
         throw new Error(errorMessage)
       }
 
-      // Actualización optimista
       if (data.data) {
-        setAbogados(prev => [data.data, ...prev])
+        setAbogados((prev) => [data.data, ...prev])
       }
-      setShowModal(false)
-      setFormData({
-        nombre: '',
-        telefono: '',
-        email: '',
-        bancoIds: [],
-      })
+      closeModal()
+      fetchProcuradores()
       setSuccess('Abogado creado exitosamente')
     } catch (err) {
       setSuccess(null)
@@ -146,9 +228,7 @@ export default function AbogadosPage() {
     }
 
     const previousAbogados = abogados
-
-    // Actualización optimista ANTES del fetch
-    setAbogados(prev => prev.filter(a => a.id !== id))
+    setAbogados((prev) => prev.filter((a) => a.id !== id))
 
     try {
       const response = await fetch(`/api/abogados/${id}`, {
@@ -159,7 +239,6 @@ export default function AbogadosPage() {
       const data = await response.json().catch(() => ({ ok: false }))
 
       if (!data.ok) {
-        // Revertir si falla
         setAbogados(previousAbogados)
         const errorMessage = data.message || data.error || 'Error al eliminar el abogado'
         setSuccess(null)
@@ -170,17 +249,61 @@ export default function AbogadosPage() {
       setSuccess('Abogado eliminado correctamente')
       setError(null)
     } catch (err) {
-      // Revertir si hay error de red
       setAbogados(previousAbogados)
       setSuccess(null)
       setError(err instanceof Error ? err.message : 'Error al eliminar el abogado')
     }
   }
 
+  const toggleBanco = (bancoId: number, checked: boolean) => {
+    setFormData((prev) => ({
+      ...prev,
+      bancoIds: checked
+        ? [...prev.bancoIds, bancoId]
+        : prev.bancoIds.filter((id) => id !== bancoId),
+    }))
+  }
+
+  const toggleProcurador = (procuradorId: number, checked: boolean) => {
+    setFormData((prev) => ({
+      ...prev,
+      procuradorIds: checked
+        ? [...prev.procuradorIds, procuradorId]
+        : prev.procuradorIds.filter((id) => id !== procuradorId),
+    }))
+  }
+
+  const addNewProcuradorRow = () => {
+    setFormData((prev) => ({
+      ...prev,
+      newProcuradores: [...prev.newProcuradores, emptyNewProcurador()],
+    }))
+  }
+
+  const updateNewProcurador = (
+    index: number,
+    field: keyof NewProcuradorForm,
+    value: string
+  ) => {
+    setFormData((prev) => ({
+      ...prev,
+      newProcuradores: prev.newProcuradores.map((procurador, procuradorIndex) =>
+        procuradorIndex === index ? { ...procurador, [field]: value } : procurador
+      ),
+    }))
+  }
+
+  const removeNewProcurador = (index: number) => {
+    setFormData((prev) => ({
+      ...prev,
+      newProcuradores: prev.newProcuradores.filter((_, procuradorIndex) => procuradorIndex !== index),
+    }))
+  }
+
   return (
     <div className="min-h-screen bg-white">
       <Topbar />
-      
+
       <main className="pt-20 pb-16">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="mb-8 flex items-center justify-between flex-wrap gap-4">
@@ -212,6 +335,22 @@ export default function AbogadosPage() {
             </div>
           )}
 
+          {!loading && abogados.length > 0 && (
+            <div className="mb-6">
+              <label htmlFor="buscar-abogados" className="block text-sm font-medium text-gray-700 mb-2">
+                Buscar abogados
+              </label>
+              <input
+                id="buscar-abogados"
+                type="text"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                placeholder="Escribe un nombre para filtrar..."
+                className="w-full max-w-md px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500"
+              />
+            </div>
+          )}
+
           {loading ? (
             <div className="bg-white rounded-lg shadow-md border border-gray-200 p-8">
               <div className="text-center py-12">
@@ -226,7 +365,18 @@ export default function AbogadosPage() {
                   No hay abogados registrados aún.
                 </p>
                 <p className="text-gray-500 text-sm mt-2">
-                  Haz clic en "Agregar" para crear tu primer abogado.
+                  Haz clic en &quot;Agregar&quot; para crear tu primer abogado.
+                </p>
+              </div>
+            </div>
+          ) : filteredAbogados.length === 0 ? (
+            <div className="bg-white rounded-lg shadow-md border border-gray-200 p-8">
+              <div className="text-center py-12">
+                <p className="text-gray-600 text-lg">
+                  No se encontraron abogados para esta búsqueda.
+                </p>
+                <p className="text-gray-500 text-sm mt-2">
+                  Intenta con otro nombre o borra el texto para ver todos los abogados.
                 </p>
               </div>
             </div>
@@ -237,17 +387,34 @@ export default function AbogadosPage() {
                   <tr>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Nombre</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Email</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Procuradores</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Banco</th>
                     <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Acciones</th>
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
-                  {abogados.map((abogado) => (
+                  {filteredAbogados.map((abogado) => (
                     <tr key={abogado.id} className="hover:bg-gray-50">
                       <td className="px-6 py-4 text-sm font-medium text-gray-900">
                         {abogado.nombre || 'Sin nombre'}
                       </td>
                       <td className="px-6 py-4 text-sm text-gray-600">{abogado.email || '-'}</td>
+                      <td className="px-6 py-4 text-sm text-gray-600">
+                        {abogado.procuradores && abogado.procuradores.length > 0 ? (
+                          <div className="flex flex-wrap gap-2">
+                            {abogado.procuradores.map((procurador) => (
+                              <span
+                                key={procurador.id}
+                                className="inline-flex items-center rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-700"
+                              >
+                                {procurador.nombre}
+                              </span>
+                            ))}
+                          </div>
+                        ) : (
+                          '-'
+                        )}
+                      </td>
                       <td className="px-6 py-4 text-sm text-gray-600">
                         {abogado.banco?.nombre || '-'}
                         {abogado.bancos && abogado.bancos.length > 1 && (
@@ -273,11 +440,11 @@ export default function AbogadosPage() {
 
           {showModal && (
             <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-              <div className="bg-white rounded-lg shadow-xl p-6 max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+              <div className="bg-white rounded-lg shadow-xl p-6 max-w-3xl w-full max-h-[90vh] overflow-y-auto">
                 <h2 className="text-xl font-semibold text-gray-900 mb-4">
                   Agregar Nuevo Abogado
                 </h2>
-                <form onSubmit={handleSubmit} className="space-y-4">
+                <form onSubmit={handleSubmit} className="space-y-6">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
                       Nombre
@@ -285,36 +452,44 @@ export default function AbogadosPage() {
                     <input
                       type="text"
                       value={formData.nombre}
-                      onChange={(e) => setFormData({ ...formData, nombre: e.target.value })}
+                      onChange={(e) => setFormData((prev) => ({ ...prev, nombre: e.target.value }))}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500"
                     />
                   </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Email
-                    </label>
-                    <input
-                      type="email"
-                      value={formData.email}
-                      onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500"
-                    />
+
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Email
+                      </label>
+                      <input
+                        type="email"
+                        value={formData.email}
+                        onChange={(e) => setFormData((prev) => ({ ...prev, email: e.target.value }))}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Teléfono
+                      </label>
+                      <input
+                        type="tel"
+                        value={formData.telefono}
+                        onChange={(e) => setFormData((prev) => ({ ...prev, telefono: e.target.value }))}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500"
+                      />
+                    </div>
                   </div>
+
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Teléfono
-                    </label>
-                    <input
-                      type="tel"
-                      value={formData.telefono}
-                      onChange={(e) => setFormData({ ...formData, telefono: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Bancos
-                    </label>
+                    <div className="flex items-center justify-between mb-2">
+                      <label className="block text-sm font-medium text-gray-700">
+                        Bancos
+                      </label>
+                      <span className="text-xs text-gray-500">Opcional</span>
+                    </div>
                     <div className="max-h-48 overflow-y-auto border border-gray-300 rounded-lg p-3 space-y-2">
                       {bancos.length === 0 ? (
                         <p className="text-sm text-gray-500">No hay bancos disponibles</p>
@@ -324,19 +499,7 @@ export default function AbogadosPage() {
                             <input
                               type="checkbox"
                               checked={formData.bancoIds.includes(banco.id)}
-                              onChange={(e) => {
-                                if (e.target.checked) {
-                                  setFormData({
-                                    ...formData,
-                                    bancoIds: [...formData.bancoIds, banco.id],
-                                  })
-                                } else {
-                                  setFormData({
-                                    ...formData,
-                                    bancoIds: formData.bancoIds.filter(id => id !== banco.id),
-                                  })
-                                }
-                              }}
+                              onChange={(e) => toggleBanco(banco.id, e.target.checked)}
                               className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                             />
                             <span className="text-sm text-gray-700">{banco.nombre}</span>
@@ -350,7 +513,132 @@ export default function AbogadosPage() {
                       </p>
                     )}
                   </div>
-                  <div className="flex items-center gap-4 pt-4">
+
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <label className="block text-sm font-medium text-gray-700">
+                        Procuradores existentes
+                      </label>
+                      <span className="text-xs text-gray-500">Opcional</span>
+                    </div>
+                    <div className="max-h-48 overflow-y-auto border border-gray-300 rounded-lg p-3 space-y-2">
+                      {procuradores.length === 0 ? (
+                        <p className="text-sm text-gray-500">No hay procuradores disponibles</p>
+                      ) : (
+                        procuradores.map((procurador) => (
+                          <label key={procurador.id} className="flex items-center space-x-2 cursor-pointer hover:bg-gray-50 p-2 rounded">
+                            <input
+                              type="checkbox"
+                              checked={formData.procuradorIds.includes(procurador.id)}
+                              onChange={(e) => toggleProcurador(procurador.id, e.target.checked)}
+                              className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                            />
+                            <span className="text-sm text-gray-700">{procurador.nombre}</span>
+                          </label>
+                        ))
+                      )}
+                    </div>
+                    {formData.procuradorIds.length > 0 && (
+                      <p className="mt-1 text-xs text-gray-500">
+                        {formData.procuradorIds.length} procurador(es) seleccionado(s)
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="border border-gray-200 rounded-lg p-4 space-y-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <h3 className="text-sm font-medium text-gray-900">Agregar nuevo procurador</h3>
+                        <p className="text-xs text-gray-500">
+                          Si no existe en la lista, puedes crearlo aquí mismo.
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={addNewProcuradorRow}
+                        className="px-3 py-2 bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200 transition-colors text-sm font-medium"
+                      >
+                        + Agregar procurador
+                      </button>
+                    </div>
+
+                    {formData.newProcuradores.length === 0 ? (
+                      <p className="text-sm text-gray-500">
+                        No hay nuevos procuradores agregados.
+                      </p>
+                    ) : (
+                      <div className="space-y-4">
+                        {formData.newProcuradores.map((procurador, index) => (
+                          <div key={index} className="rounded-lg border border-gray-200 p-4 space-y-4 bg-slate-50">
+                            <div className="flex items-center justify-between gap-3">
+                              <h4 className="text-sm font-medium text-gray-900">
+                                Nuevo procurador {index + 1}
+                              </h4>
+                              <button
+                                type="button"
+                                onClick={() => removeNewProcurador(index)}
+                                className="text-sm text-red-600 hover:text-red-700"
+                              >
+                                Eliminar
+                              </button>
+                            </div>
+
+                            <div>
+                              <label className="block text-sm font-medium text-gray-700 mb-2">
+                                Nombre
+                              </label>
+                              <input
+                                type="text"
+                                value={procurador.nombre}
+                                onChange={(e) => updateNewProcurador(index, 'nombre', e.target.value)}
+                                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500"
+                              />
+                            </div>
+
+                            <div className="grid gap-4 md:grid-cols-2">
+                              <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-2">
+                                  Email
+                                </label>
+                                <input
+                                  type="email"
+                                  value={procurador.email}
+                                  onChange={(e) => updateNewProcurador(index, 'email', e.target.value)}
+                                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500"
+                                />
+                              </div>
+
+                              <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-2">
+                                  Teléfono
+                                </label>
+                                <input
+                                  type="tel"
+                                  value={procurador.telefono}
+                                  onChange={(e) => updateNewProcurador(index, 'telefono', e.target.value)}
+                                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500"
+                                />
+                              </div>
+                            </div>
+
+                            <div>
+                              <label className="block text-sm font-medium text-gray-700 mb-2">
+                                Notas
+                              </label>
+                              <textarea
+                                value={procurador.notas}
+                                onChange={(e) => updateNewProcurador(index, 'notas', e.target.value)}
+                                rows={3}
+                                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500"
+                              />
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="flex items-center gap-4 pt-2">
                     <button
                       type="submit"
                       disabled={submitting}
@@ -360,16 +648,7 @@ export default function AbogadosPage() {
                     </button>
                     <button
                       type="button"
-                      onClick={() => {
-                        setShowModal(false)
-                        setFormData({
-                          nombre: '',
-                          telefono: '',
-                          email: '',
-                          bancoIds: [],
-                        })
-                        setError(null)
-                      }}
+                      onClick={closeModal}
                       className="flex-1 px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors font-medium"
                     >
                       Cancelar
