@@ -92,6 +92,7 @@ export const ProcuradorSchema = z.object({
   notas: z.string().optional().nullable(),
   abogadoId: z.number().int().positive().nullable().optional(),
   bancoId: z.number().int().positive().optional(), // Para crear + link en POST
+  bancoIds: z.array(z.number().int().positive()).optional(),
   alias: z.string().optional().nullable(), // Para alias en relación banco
 });
 
@@ -104,6 +105,7 @@ export const ProcuradorUpdateSchema = z.object({
   telefono: z.string().optional().nullable(),
   notas: z.string().optional().nullable(),
   abogadoId: z.number().int().positive().nullable().optional(),
+  bancoIds: z.array(z.number().int().positive()).optional(),
 });
 
 export const LinkBancoSchema = z.object({

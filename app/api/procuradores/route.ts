@@ -1,12 +1,51 @@
 // API route: /api/procuradores
 // GET: List all procuradores for the current office (optionally filtered by bancoId)
-// POST: Create a new procurador (optionally link to banco)
+// POST: Create a new procurador and optionally link it to one or many bancos
 import { NextRequest, NextResponse } from 'next/server'
 import { getCurrentUserWithOffice } from '@/lib/auth-server'
 import { prisma } from '@/lib/prisma'
 import { ProcuradorSchema } from '@/lib/zodSchemas'
 
 export const dynamic = 'force-dynamic'
+
+function normalizeName(value: string) {
+  return value.trim().replace(/\s+/g, ' ').toLowerCase()
+}
+
+function normalizeEmail(value: string | null | undefined) {
+  return value?.trim().toLowerCase() || null
+}
+
+function normalizeBancoIds(bancoId?: number, bancoIds?: number[]) {
+  const merged = [
+    ...(Array.isArray(bancoIds) ? bancoIds : []),
+    ...(typeof bancoId === 'number' ? [bancoId] : []),
+  ]
+
+  return Array.from(
+    new Set(
+      merged.filter((value): value is number => Number.isInteger(value) && value > 0)
+    )
+  )
+}
+
+async function getBancoIdsForOffice(officeId: number, bancoIds: number[]) {
+  if (bancoIds.length === 0) return []
+
+  const bancos = await prisma.banco.findMany({
+    where: {
+      id: { in: bancoIds },
+      officeId,
+    },
+    select: { id: true },
+  })
+
+  if (bancos.length !== bancoIds.length) {
+    throw new Error('Uno o mas bancos no encontrados o no pertenecen a tu oficina')
+  }
+
+  return bancoIds
+}
 
 export async function GET(req: NextRequest) {
   try {
@@ -23,16 +62,14 @@ export async function GET(req: NextRequest) {
     const bancoIdParam = searchParams.get('bancoId')
 
     if (bancoIdParam) {
-      // Filter by bancoId
-      const bancoId = parseInt(bancoIdParam)
-      if (isNaN(bancoId)) {
+      const bancoId = parseInt(bancoIdParam, 10)
+      if (Number.isNaN(bancoId)) {
         return NextResponse.json(
-          { ok: false, message: 'bancoId inválido', error: 'bancoId inválido' },
+          { ok: false, message: 'bancoId invalido', error: 'bancoId invalido' },
           { status: 400 }
         )
       }
 
-      // Validate banco exists and belongs to office
       const banco = await prisma.banco.findFirst({
         where: { id: bancoId, officeId: user.officeId },
       })
@@ -44,7 +81,6 @@ export async function GET(req: NextRequest) {
         )
       }
 
-      // Get procuradores for this banco
       const procuradores = await prisma.procurador.findMany({
         where: {
           officeId: user.officeId,
@@ -70,52 +106,84 @@ export async function GET(req: NextRequest) {
             select: {
               activo: true,
               alias: true,
+              bancoId: true,
+              banco: {
+                select: {
+                  id: true,
+                  nombre: true,
+                },
+              },
             },
           },
         },
         orderBy: { createdAt: 'desc' },
       })
 
-      // Map response: convert bancos array to single bancoProcurador object
-      const mapped = procuradores.map(p => ({
-        id: p.id,
-        nombre: p.nombre,
-        email: p.email,
-        telefono: p.telefono,
-        notas: p.notas,
-        abogadoId: p.abogadoId,
-        abogado: p.abogado,
-        activo: p.activo,
-        bancoProcurador: p.bancos[0] ?? null,
-        createdAt: p.createdAt.toISOString(),
-        updatedAt: p.updatedAt.toISOString(),
+      const mapped = procuradores.map((procurador) => ({
+        id: procurador.id,
+        nombre: procurador.nombre,
+        email: procurador.email,
+        telefono: procurador.telefono,
+        notas: procurador.notas,
+        abogadoId: procurador.abogadoId,
+        abogado: procurador.abogado,
+        activo: procurador.activo,
+        bancos: procurador.bancos,
+        bancoProcurador: procurador.bancos[0] ?? null,
+        createdAt: procurador.createdAt.toISOString(),
+        updatedAt: procurador.updatedAt.toISOString(),
       }))
 
       return NextResponse.json({ ok: true, data: mapped })
-    } else {
-      // Get all procuradores for office
-      const procuradores = await prisma.procurador.findMany({
-        where: { officeId: user.officeId },
-        include: {
-          abogado: {
-            select: {
-              id: true,
-              nombre: true,
+    }
+
+    const procuradores = await prisma.procurador.findMany({
+      where: { officeId: user.officeId },
+      include: {
+        abogado: {
+          select: {
+            id: true,
+            nombre: true,
+          },
+        },
+        bancos: {
+          select: {
+            activo: true,
+            alias: true,
+            bancoId: true,
+            banco: {
+              select: {
+                id: true,
+                nombre: true,
+              },
             },
           },
-          bancos: {
-            select: {
-              activo: true,
-              alias: true,
-              bancoId: true,
+          orderBy: {
+            banco: {
+              nombre: 'asc',
             },
           },
         },
-        orderBy: { createdAt: 'desc' },
-      })
+      },
+      orderBy: { createdAt: 'desc' },
+    })
 
-      return NextResponse.json({ ok: true, data: procuradores })
-    }
+    const mapped = procuradores.map((procurador) => ({
+      id: procurador.id,
+      nombre: procurador.nombre,
+      email: procurador.email,
+      telefono: procurador.telefono,
+      notas: procurador.notas,
+      abogadoId: procurador.abogadoId,
+      abogado: procurador.abogado,
+      activo: procurador.activo,
+      bancos: procurador.bancos,
+      bancoProcurador: null,
+      createdAt: procurador.createdAt.toISOString(),
+      updatedAt: procurador.updatedAt.toISOString(),
+    }))
+
+    return NextResponse.json({ ok: true, data: mapped })
   } catch (error) {
     console.error('Error fetching procuradores:', error)
     const errorMessage = error instanceof Error ? error.message : 'Error al obtener los procuradores'
@@ -141,19 +209,20 @@ export async function POST(req: NextRequest) {
     const parsed = ProcuradorSchema.safeParse(body)
 
     if (!parsed.success) {
-      const errorMessage = parsed.error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')
+      const errorMessage = parsed.error.errors.map((e) => `${e.path.join('.')}: ${e.message}`).join(', ')
       return NextResponse.json(
         { ok: false, message: errorMessage, error: errorMessage },
         { status: 400 }
       )
     }
 
-    // Normalize optional fields: "" -> null, undefined -> null, null stays null
-    const email = parsed.data.email?.trim() || null
+    const nombre = parsed.data.nombre.trim().replace(/\s+/g, ' ')
+    const normalizedNombre = normalizeName(nombre)
+    const email = normalizeEmail(parsed.data.email)
     const telefono = parsed.data.telefono?.trim() || null
     const notas = parsed.data.notas?.trim() || null
+    const bancoIds = normalizeBancoIds(parsed.data.bancoId, parsed.data.bancoIds)
 
-    // Validate abogadoId if provided
     if (parsed.data.abogadoId) {
       const abogado = await prisma.abogado.findFirst({
         where: {
@@ -170,99 +239,139 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Create procurador
-    const procurador = await prisma.procurador.create({
-      data: {
+    try {
+      await getBancoIdsForOffice(user.officeId, bancoIds)
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Bancos invalidos'
+      return NextResponse.json(
+        { ok: false, message: errorMessage, error: errorMessage },
+        { status: 400 }
+      )
+    }
+
+    const existingProcuradores = await prisma.procurador.findMany({
+      where: {
         officeId: user.officeId,
-        nombre: parsed.data.nombre,
-        email,  // Already normalized
-        telefono,  // Already normalized
-        notas,  // Already normalized
-        abogadoId: parsed.data.abogadoId || null,
+      },
+      select: {
+        id: true,
+        nombre: true,
+        email: true,
       },
     })
 
-    // If bancoId provided, create link
-    let bancoProcurador = null
-    if (parsed.data.bancoId) {
-      // Validate banco exists and belongs to office
-      const banco = await prisma.banco.findFirst({
-        where: {
-          id: parsed.data.bancoId,
-          officeId: user.officeId,
-        },
-      })
+    const existingProcurador = existingProcuradores.find((procurador) => {
+      if (normalizeName(procurador.nombre) !== normalizedNombre) return false
 
-      if (!banco) {
-        return NextResponse.json(
-          { ok: false, message: 'Banco no encontrado o no pertenece a tu oficina', error: 'Banco no encontrado' },
-          { status: 404 }
-        )
+      const existingEmail = normalizeEmail(procurador.email)
+
+      if (email && existingEmail) {
+        return existingEmail === email
       }
 
-      // Check if link already exists
-      const existing = await prisma.bancoProcurador.findFirst({
-        where: {
-          officeId: user.officeId,
-          bancoId: parsed.data.bancoId,
-          procuradorId: procurador.id,
-        },
-      })
+      return !email && !existingEmail
+    })
 
-      if (existing) {
-        return NextResponse.json(
-          { ok: false, message: 'Este procurador ya está vinculado a este banco', error: 'Ya está vinculado', errorCode: 'DUPLICATE' },
-          { status: 409 }
-        )
-      }
+    const result = await prisma.$transaction(async (tx) => {
+      const procurador =
+        existingProcurador
+          ? await tx.procurador.findUniqueOrThrow({
+              where: { id: existingProcurador.id },
+              include: {
+                abogado: {
+                  select: {
+                    id: true,
+                    nombre: true,
+                  },
+                },
+              },
+            })
+          : await tx.procurador.create({
+              data: {
+                officeId: user.officeId,
+                nombre,
+                email,
+                telefono,
+                notas,
+                abogadoId: parsed.data.abogadoId || null,
+              },
+              include: {
+                abogado: {
+                  select: {
+                    id: true,
+                    nombre: true,
+                  },
+                },
+              },
+            })
 
-      // Create link
-      try {
-        bancoProcurador = await prisma.bancoProcurador.create({
-          data: {
+      if (bancoIds.length > 0) {
+        await tx.bancoProcurador.createMany({
+          data: bancoIds.map((bancoId) => ({
             officeId: user.officeId,
-            bancoId: parsed.data.bancoId,
+            bancoId,
             procuradorId: procurador.id,
             alias: parsed.data.alias?.trim() || null,
             activo: true,
-          },
+          })),
+          skipDuplicates: true,
         })
-      } catch (error: any) {
-        if (error.code === 'P2002') {
-          return NextResponse.json(
-            { ok: false, message: 'Este procurador ya está vinculado a este banco', error: 'Ya está vinculado', errorCode: 'DUPLICATE' },
-            { status: 409 }
-          )
-        }
-        throw error
       }
-    }
 
-    // Fetch procurador with relations
-    const procuradorWithRelations = await prisma.procurador.findUnique({
-      where: { id: procurador.id },
-      include: {
-        abogado: {
-          select: {
-            id: true,
-            nombre: true,
+      const procuradorWithRelations = await tx.procurador.findUniqueOrThrow({
+        where: { id: procurador.id },
+        include: {
+          abogado: {
+            select: {
+              id: true,
+              nombre: true,
+            },
+          },
+          bancos: {
+            select: {
+              activo: true,
+              alias: true,
+              bancoId: true,
+              banco: {
+                select: {
+                  id: true,
+                  nombre: true,
+                },
+              },
+            },
+            orderBy: {
+              banco: {
+                nombre: 'asc',
+              },
+            },
           },
         },
-        bancos: bancoProcurador
-          ? {
-              where: {
-                id: bancoProcurador.id,
-              },
-              select: {
-                activo: true,
-                alias: true,
-              },
-            }
-          : false,
-      },
+      })
+
+      return {
+        procurador: {
+          id: procuradorWithRelations.id,
+          nombre: procuradorWithRelations.nombre,
+          email: procuradorWithRelations.email,
+          telefono: procuradorWithRelations.telefono,
+          notas: procuradorWithRelations.notas,
+          abogadoId: procuradorWithRelations.abogadoId,
+          abogado: procuradorWithRelations.abogado,
+          activo: procuradorWithRelations.activo,
+          bancos: procuradorWithRelations.bancos,
+          bancoProcurador: null,
+          createdAt: procuradorWithRelations.createdAt.toISOString(),
+          updatedAt: procuradorWithRelations.updatedAt.toISOString(),
+        },
+        reusedExisting: Boolean(existingProcurador),
+      }
     })
 
-    return NextResponse.json({ ok: true, data: procuradorWithRelations })
+    return NextResponse.json({
+      ok: true,
+      data: result.procurador,
+      reusedExisting: result.reusedExisting,
+    })
   } catch (error) {
     console.error('Error creating procurador:', error)
     const errorMessage = error instanceof Error ? error.message : 'Error al crear el procurador'
@@ -272,4 +381,3 @@ export async function POST(req: NextRequest) {
     )
   }
 }
-
