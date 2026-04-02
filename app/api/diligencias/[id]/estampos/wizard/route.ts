@@ -45,7 +45,11 @@ export async function GET(
               include: {
                 abogados: {
                   include: {
-                    banco: true,
+                    bancos: {
+                      include: {
+                        banco: true,
+                      },
+                    },
                   },
                 },
                 ejecutados: {

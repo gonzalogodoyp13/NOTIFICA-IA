@@ -70,7 +70,11 @@ export async function POST(
               include: {
                 abogados: {
                   include: {
-                    banco: true,
+                    bancos: {
+                      include: {
+                        banco: true,
+                      },
+                    },
                   },
                 },
                 ejecutados: {

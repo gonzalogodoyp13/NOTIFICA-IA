@@ -176,7 +176,7 @@ export default function TribunalesPage() {
                   No hay tribunales registrados aún.
                 </p>
                 <p className="text-gray-500 text-sm mt-2">
-                  Haz clic en "Agregar" para crear tu primer tribunal.
+                  Haz clic en &quot;Agregar&quot; para crear tu primer tribunal.
                 </p>
               </div>
             </div>

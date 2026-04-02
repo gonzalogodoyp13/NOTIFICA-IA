@@ -26,10 +26,6 @@ interface Abogado {
   comuna: string | null
   telefono: string | null
   email: string | null
-  banco: {
-    id: number
-    nombre: string
-  } | null
   bancos?: Array<{
     banco: {
       id: number
@@ -72,6 +68,7 @@ export default function AbogadosPage() {
   const [showModal, setShowModal] = useState(false)
   const [formData, setFormData] = useState(initialFormData)
   const [submitting, setSubmitting] = useState(false)
+  const [editingAbogado, setEditingAbogado] = useState<Abogado | null>(null)
 
   const normalizedSearchTerm = searchTerm.trim().toLowerCase()
   const filteredAbogados = abogados.filter((abogado) => {
@@ -87,12 +84,32 @@ export default function AbogadosPage() {
 
   const resetForm = () => {
     setFormData(initialFormData)
+    setEditingAbogado(null)
     setError(null)
   }
 
   const closeModal = () => {
     setShowModal(false)
     resetForm()
+  }
+
+  const openCreateModal = () => {
+    resetForm()
+    setShowModal(true)
+  }
+
+  const openEditModal = (abogado: Abogado) => {
+    setEditingAbogado(abogado)
+    setFormData({
+      nombre: abogado.nombre || '',
+      telefono: abogado.telefono || '',
+      email: abogado.email || '',
+      bancoIds: (abogado.bancos || []).map((item) => item.banco.id),
+      procuradorIds: (abogado.procuradores || []).map((procurador) => procurador.id),
+      newProcuradores: [],
+    })
+    setError(null)
+    setShowModal(true)
   }
 
   const fetchAbogados = async () => {
@@ -194,8 +211,8 @@ export default function AbogadosPage() {
       if (formData.procuradorIds.length > 0) payload.procuradorIds = formData.procuradorIds
       if (cleanedNewProcuradores.length > 0) payload.newProcuradores = cleanedNewProcuradores
 
-      const response = await fetch('/api/abogados', {
-        method: 'POST',
+      const response = await fetch(editingAbogado ? `/api/abogados/${editingAbogado.id}` : '/api/abogados', {
+        method: editingAbogado ? 'PUT' : 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
         credentials: 'include',
@@ -208,15 +225,13 @@ export default function AbogadosPage() {
         throw new Error(errorMessage)
       }
 
-      if (data.data) {
-        setAbogados((prev) => [data.data, ...prev])
-      }
+      await fetchAbogados()
       closeModal()
-      fetchProcuradores()
-      setSuccess('Abogado creado exitosamente')
+      await fetchProcuradores()
+      setSuccess(editingAbogado ? 'Abogado actualizado exitosamente' : 'Abogado creado exitosamente')
     } catch (err) {
       setSuccess(null)
-      setError(err instanceof Error ? err.message : 'Error al crear el abogado')
+      setError(err instanceof Error ? err.message : editingAbogado ? 'Error al actualizar el abogado' : 'Error al crear el abogado')
     } finally {
       setSubmitting(false)
     }
@@ -316,7 +331,7 @@ export default function AbogadosPage() {
               </p>
             </div>
             <button
-              onClick={() => setShowModal(true)}
+              onClick={openCreateModal}
               className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
             >
               + Agregar
@@ -416,14 +431,36 @@ export default function AbogadosPage() {
                         )}
                       </td>
                       <td className="px-6 py-4 text-sm text-gray-600">
-                        {abogado.banco?.nombre || '-'}
-                        {abogado.bancos && abogado.bancos.length > 1 && (
-                          <span className="ml-2 text-xs text-blue-600" title={`${abogado.bancos.length} bancos asignados`}>
-                            (+{abogado.bancos.length - 1})
-                          </span>
+                        {abogado.bancos && abogado.bancos.length > 0 ? (
+                          <div className="flex flex-wrap gap-2">
+                            {abogado.bancos.slice(0, 2).map((item) => (
+                              <span
+                                key={`${abogado.id}-${item.banco.id}`}
+                                className="inline-flex items-center rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-700"
+                              >
+                                {item.banco.nombre}
+                              </span>
+                            ))}
+                            {abogado.bancos.length > 2 && (
+                              <span
+                                className="inline-flex items-center rounded-full bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-700"
+                                title={`${abogado.bancos.length} bancos asignados`}
+                              >
+                                (+{abogado.bancos.length - 2})
+                              </span>
+                            )}
+                          </div>
+                        ) : (
+                          '-'
                         )}
                       </td>
                       <td className="px-6 py-4 text-right text-sm font-medium">
+                        <button
+                          onClick={() => openEditModal(abogado)}
+                          className="mr-4 text-blue-600 hover:text-blue-900"
+                        >
+                          Editar
+                        </button>
                         <button
                           onClick={() => handleDelete(abogado.id)}
                           className="text-red-600 hover:text-red-900"
@@ -442,7 +479,7 @@ export default function AbogadosPage() {
             <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
               <div className="bg-white rounded-lg shadow-xl p-6 max-w-3xl w-full max-h-[90vh] overflow-y-auto">
                 <h2 className="text-xl font-semibold text-gray-900 mb-4">
-                  Agregar Nuevo Abogado
+                  {editingAbogado ? 'Editar Abogado' : 'Agregar Nuevo Abogado'}
                 </h2>
                 <form onSubmit={handleSubmit} className="space-y-6">
                   <div>
@@ -644,7 +681,7 @@ export default function AbogadosPage() {
                       disabled={submitting}
                       className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium disabled:opacity-50"
                     >
-                      {submitting ? 'Guardando...' : 'Guardar'}
+                      {submitting ? 'Guardando...' : editingAbogado ? 'Guardar cambios' : 'Guardar'}
                     </button>
                     <button
                       type="button"

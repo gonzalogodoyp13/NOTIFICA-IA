@@ -175,7 +175,7 @@ export default function DiligenciasPage() {
                   No hay tipos de diligencias registrados aún.
                 </p>
                 <p className="text-gray-500 text-sm mt-2">
-                  Haz clic en "Agregar" para crear tu primer tipo de diligencia.
+                  Haz clic en &quot;Agregar&quot; para crear tu primer tipo de diligencia.
                 </p>
               </div>
             </div>

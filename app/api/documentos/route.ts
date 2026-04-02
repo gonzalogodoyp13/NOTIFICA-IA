@@ -29,13 +29,11 @@ export async function GET(req: NextRequest) {
       )
     }
 
-    const officeIdStr = String(user.officeId)
-
     // Verify rol belongs to user's office
     const rol = await prisma.rolCausa.findFirst({
       where: {
         id: rolId,
-        officeId: officeIdStr,
+        officeId: user.officeId,
       },
     })
 
@@ -99,13 +97,11 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    const officeIdStr = String(user.officeId)
-
     // Verify rol belongs to user's office
     const rol = await prisma.rolCausa.findFirst({
       where: {
         id: parsed.data.rolId,
-        officeId: officeIdStr,
+        officeId: user.officeId,
       },
     })
 
@@ -228,14 +224,12 @@ export async function PUT(req: NextRequest) {
       )
     }
 
-    const officeIdStr = String(user.officeId)
-
     // Verify documento exists and belongs to user's office (via rol)
     const documento = await prisma.documento.findFirst({
       where: {
         id,
         rol: {
-          officeId: officeIdStr,
+          officeId: user.officeId,
         },
       },
     })
@@ -304,14 +298,12 @@ export async function DELETE(req: NextRequest) {
       )
     }
 
-    const officeIdStr = String(user.officeId)
-
     // Verify documento exists and belongs to user's office (via rol)
     const documento = await prisma.documento.findFirst({
       where: {
         id,
         rol: {
-          officeId: officeIdStr,
+          officeId: user.officeId,
         },
       },
     })

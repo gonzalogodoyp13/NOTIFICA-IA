@@ -29,8 +29,8 @@ model Office {
   abogados       Abogado[]
   bancos         Banco[]
   procuradores   Procurador[]
-  bancoProcuradores BancoProcurador[]
   abogadoBancos  AbogadoBanco[]
+  procuradorAbogados ProcuradorAbogado[]
   aranceles      Arancel[]
   comunas        Comuna[]
   materias       Materia[]
@@ -70,16 +70,13 @@ model Abogado {
   comuna       String?
   telefono     String?
   email        String?
-  bancoId      Int?
   createdAt    DateTime       @default(now())
   bancos       AbogadoBanco[] @relation("AbogadoBancos")
-  banco        Banco?         @relation(fields: [bancoId], references: [id])
   aranceles    Arancel[]      @relation("AbogadoAranceles")
   demandas     Demanda[]
-  procuradores Procurador[]   @relation("AbogadoProcuradores")
+  procuradores ProcuradorAbogado[] @relation("AbogadoProcuradores")
   office       Office         @relation(fields: [officeId], references: [id], onDelete: Restrict, onUpdate: Cascade)
 
-  @@index([bancoId])
   @@index([officeId])
   @@map("abogados")
 }
@@ -91,9 +88,7 @@ model Banco {
   cuenta            String?
   createdAt         DateTime          @default(now())
   abogadoBancos     AbogadoBanco[]    @relation("BancoAbogados")
-  abogados          Abogado[]
   aranceles         Arancel[]         @relation("BancoAranceles")
-  bancoProcuradores BancoProcurador[]
   office            Office            @relation(fields: [officeId], references: [id], onDelete: Restrict, onUpdate: Cascade)
 
   @@index([officeId])
@@ -101,45 +96,22 @@ model Banco {
 }
 
 model Procurador {
-  id        Int               @id @default(autoincrement())
+  id        Int                 @id @default(autoincrement())
   officeId  Int
   nombre    String
   email     String?
   telefono  String?
   notas     String?
-  abogadoId Int?
-  activo    Boolean           @default(true)
-  createdAt DateTime          @default(now())
-  updatedAt DateTime          @updatedAt
-  abogado   Abogado?          @relation("AbogadoProcuradores", fields: [abogadoId], references: [id], onDelete: SetNull)
-  bancos    BancoProcurador[]
+  activo    Boolean             @default(true)
+  createdAt DateTime            @default(now())
+  updatedAt DateTime            @updatedAt
+  abogados  ProcuradorAbogado[] @relation("ProcuradorAbogados")
   demandas  Demanda[]
-  office    Office            @relation(fields: [officeId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  office    Office              @relation(fields: [officeId], references: [id], onDelete: Restrict, onUpdate: Cascade)
 
   @@index([officeId])
-  @@index([abogadoId])
   @@index([officeId, activo])
   @@map("procuradores")
-}
-
-model BancoProcurador {
-  id           Int        @id @default(autoincrement())
-  officeId     Int
-  bancoId      Int
-  procuradorId Int
-  alias        String?
-  activo       Boolean    @default(true)
-  createdAt    DateTime   @default(now())
-  updatedAt    DateTime   @updatedAt
-  banco        Banco      @relation(fields: [bancoId], references: [id], onDelete: Cascade)
-  procurador   Procurador @relation(fields: [procuradorId], references: [id], onDelete: Cascade)
-  office       Office     @relation(fields: [officeId], references: [id], onDelete: Restrict, onUpdate: Cascade)
-
-  @@unique([officeId, bancoId, procuradorId])
-  @@index([bancoId])
-  @@index([procuradorId])
-  @@index([officeId])
-  @@map("banco_procuradores")
 }
 
 model AbogadoBanco {
@@ -158,6 +130,24 @@ model AbogadoBanco {
   @@index([bancoId])
   @@index([officeId])
   @@map("abogado_bancos")
+}
+
+model ProcuradorAbogado {
+  id           Int        @id @default(autoincrement())
+  officeId     Int
+  procuradorId Int
+  abogadoId    Int
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+  procurador   Procurador @relation("ProcuradorAbogados", fields: [procuradorId], references: [id], onDelete: Cascade)
+  abogado      Abogado    @relation("AbogadoProcuradores", fields: [abogadoId], references: [id], onDelete: Cascade)
+  office       Office     @relation(fields: [officeId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  @@unique([officeId, procuradorId, abogadoId])
+  @@index([procuradorId])
+  @@index([abogadoId])
+  @@index([officeId])
+  @@map("procurador_abogados")
 }
 
 model Arancel {

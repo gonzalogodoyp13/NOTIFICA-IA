@@ -45,7 +45,6 @@ export async function GET(
         },
         demanda: {
           include: {
-            // @ts-expect-error - materia relation exists but Prisma client needs regeneration
             materia: true,
             ejecutados: {
               include: {
@@ -59,10 +58,14 @@ export async function GET(
             },
             abogados: {
               include: {
-                banco: {
+                bancos: {
                   select: {
-                    id: true,
-                    nombre: true,
+                    banco: {
+                      select: {
+                        id: true,
+                        nombre: true,
+                      },
+                    },
                   },
                 },
               },
@@ -213,17 +216,17 @@ export async function GET(
       ? {
           id: rolCausa.demanda.abogados.id ?? null,
           nombre: rolCausa.demanda.abogados.nombre ?? null,
-          rut: rolCausa.demanda.abogados.rut ?? null,
-          email: rolCausa.demanda.abogados.email ?? null,
-          telefono: rolCausa.demanda.abogados.telefono ?? null,
-          banco: rolCausa.demanda.abogados.banco
-            ? {
-                id: rolCausa.demanda.abogados.banco.id,
-                nombre: rolCausa.demanda.abogados.banco.nombre,
-              }
-            : null,
-        }
-      : null
+           rut: rolCausa.demanda.abogados.rut ?? null,
+           email: rolCausa.demanda.abogados.email ?? null,
+           telefono: rolCausa.demanda.abogados.telefono ?? null,
+           bancos: (rolCausa.demanda.abogados.bancos ?? []).map((item: any) => ({
+             banco: {
+               id: item.banco.id,
+               nombre: item.banco.nombre,
+             },
+           })),
+         }
+       : null
 
     // Calculate ultimaActividad
     const allDates: Date[] = [

@@ -8,6 +8,50 @@ import { AbogadoSchema } from '@/lib/zodSchemas'
 
 export const dynamic = 'force-dynamic'
 
+const abogadoInclude = {
+  bancos: {
+    include: {
+      banco: {
+        select: {
+          id: true,
+          nombre: true,
+        },
+      },
+    },
+  },
+  procuradores: {
+    include: {
+      procurador: {
+        select: {
+          id: true,
+          nombre: true,
+        },
+      },
+    },
+  },
+} as const
+
+function mapAbogado(abogado: {
+  id: number
+  nombre: string | null
+  rut: string | null
+  direccion: string | null
+  comuna: string | null
+  telefono: string | null
+  email: string | null
+  createdAt: Date
+  bancos: Array<{ banco: { id: number; nombre: string } }>
+  procuradores: Array<{ procurador: { id: number; nombre: string } }>
+}) {
+  return {
+    ...abogado,
+    createdAt: abogado.createdAt.toISOString(),
+    procuradores: abogado.procuradores
+      .map((item) => item.procurador)
+      .sort((a, b) => a.nombre.localeCompare(b.nombre)),
+  }
+}
+
 export async function PUT(
   req: NextRequest,
   { params }: { params: { id: string } }
@@ -25,7 +69,7 @@ export async function PUT(
     const id = parseInt(params.id)
     if (isNaN(id)) {
       return NextResponse.json(
-        { ok: false, message: 'ID inválido', error: 'ID inválido' },
+        { ok: false, message: 'ID invalido', error: 'ID invalido' },
         { status: 400 }
       )
     }
@@ -55,193 +99,127 @@ export async function PUT(
       )
     }
 
-    if (parsed.data.bancoIds && parsed.data.bancoIds.length > 0) {
+    const bancoIds = parsed.data.bancoIds ?? []
+    const procuradorIds = parsed.data.procuradorIds ?? []
+
+    if (bancoIds.length > 0) {
       const bancos = await prisma.banco.findMany({
         where: {
-          id: { in: parsed.data.bancoIds },
+          id: { in: bancoIds },
           officeId: user.officeId,
         },
         select: { id: true },
       })
 
-      if (bancos.length !== parsed.data.bancoIds.length) {
+      if (bancos.length !== bancoIds.length) {
         return NextResponse.json(
-          { ok: false, message: 'Uno o más bancos no encontrados o no pertenecen a tu oficina', error: 'Bancos inválidos' },
+          { ok: false, message: 'Uno o mas bancos no encontrados o no pertenecen a tu oficina', error: 'Bancos invalidos' },
           { status: 400 }
         )
       }
     }
 
-    if (parsed.data.bancoId && !parsed.data.bancoIds) {
-      const banco = await prisma.banco.findFirst({
+    if (procuradorIds.length > 0) {
+      const procuradores = await prisma.procurador.findMany({
         where: {
-          id: parsed.data.bancoId,
+          id: { in: procuradorIds },
           officeId: user.officeId,
         },
+        select: { id: true },
       })
 
-      if (!banco) {
+      if (procuradores.length !== procuradorIds.length) {
         return NextResponse.json(
-          { ok: false, message: 'Banco no encontrado o no pertenece a tu oficina', error: 'Banco no encontrado o no pertenece a tu oficina' },
+          { ok: false, message: 'Uno o mas procuradores no encontrados o no pertenecen a tu oficina', error: 'Procuradores invalidos' },
           { status: 400 }
         )
       }
     }
 
-    const selectedExistingProcuradores = parsed.data.procuradorIds?.length
-      ? await prisma.procurador.findMany({
-          where: {
-            id: { in: parsed.data.procuradorIds },
-            officeId: user.officeId,
-          },
-          select: { id: true },
-        })
-      : []
-
-    if ((parsed.data.procuradorIds?.length ?? 0) !== selectedExistingProcuradores.length) {
-      return NextResponse.json(
-        { ok: false, message: 'Uno o más procuradores no encontrados o no pertenecen a tu oficina', error: 'Procuradores inválidos' },
-        { status: 400 }
-      )
-    }
-
-    const primaryBancoId = parsed.data.bancoIds && parsed.data.bancoIds.length > 0
-      ? parsed.data.bancoIds[0]
-      : parsed.data.bancoId ?? existingAbogado.bancoId
-
     const abogado = await prisma.$transaction(async (tx) => {
-      const updatedAbogado = await tx.abogado.update({
+      await tx.abogado.update({
         where: { id },
         data: {
           nombre: parsed.data.nombre,
           telefono: parsed.data.telefono,
           email: parsed.data.email,
-          bancoId: primaryBancoId,
         },
       })
 
-      if (parsed.data.bancoIds !== undefined) {
-        await tx.abogadoBanco.deleteMany({
-          where: {
-            abogadoId: id,
+      await tx.abogadoBanco.deleteMany({
+        where: {
+          abogadoId: id,
+          officeId: user.officeId,
+        },
+      })
+
+      if (bancoIds.length > 0) {
+        await tx.abogadoBanco.createMany({
+          data: bancoIds.map((bancoId) => ({
             officeId: user.officeId,
+            abogadoId: id,
+            bancoId,
+          })),
+          skipDuplicates: true,
+        })
+      }
+
+      const shouldSyncProcuradores =
+        parsed.data.procuradorIds !== undefined || parsed.data.newProcuradores !== undefined
+
+      if (shouldSyncProcuradores) {
+        await tx.procuradorAbogado.deleteMany({
+          where: {
+            officeId: user.officeId,
+            abogadoId: id,
           },
         })
 
-        if (parsed.data.bancoIds.length > 0) {
-          await tx.abogadoBanco.createMany({
-            data: parsed.data.bancoIds.map((bancoId) => ({
+        if (procuradorIds.length > 0) {
+          await tx.procuradorAbogado.createMany({
+            data: procuradorIds.map((procuradorId) => ({
               officeId: user.officeId,
               abogadoId: id,
-              bancoId,
+              procuradorId,
+            })),
+            skipDuplicates: true,
+          })
+        }
+
+        if (parsed.data.newProcuradores?.length) {
+          const createdProcuradores = await Promise.all(
+            parsed.data.newProcuradores.map((procurador) =>
+              tx.procurador.create({
+                data: {
+                  officeId: user.officeId,
+                  nombre: procurador.nombre.trim(),
+                  email: procurador.email?.trim() || null,
+                  telefono: procurador.telefono?.trim() || null,
+                  notas: procurador.notas?.trim() || null,
+                },
+                select: { id: true },
+              })
+            )
+          )
+
+          await tx.procuradorAbogado.createMany({
+            data: createdProcuradores.map((procurador) => ({
+              officeId: user.officeId,
+              abogadoId: id,
+              procuradorId: procurador.id,
             })),
             skipDuplicates: true,
           })
         }
       }
 
-      const shouldSyncProcuradores =
-        parsed.data.procuradorIds !== undefined || parsed.data.newProcuradores !== undefined
-
-      let procuradorIdsToLink = selectedExistingProcuradores.map((procurador) => procurador.id)
-
-      if (shouldSyncProcuradores) {
-        await tx.procurador.updateMany({
-          where: {
-            officeId: user.officeId,
-            abogadoId: id,
-            id: { notIn: procuradorIdsToLink },
-          },
-          data: {
-            abogadoId: null,
-          },
-        })
-
-        if (procuradorIdsToLink.length > 0) {
-          await tx.procurador.updateMany({
-            where: {
-              officeId: user.officeId,
-              id: { in: procuradorIdsToLink },
-            },
-            data: {
-              abogadoId: id,
-            },
-          })
-        }
-
-        const createdProcuradores = parsed.data.newProcuradores?.length
-          ? await Promise.all(
-              parsed.data.newProcuradores.map((procurador) =>
-                tx.procurador.create({
-                  data: {
-                    officeId: user.officeId,
-                    abogadoId: id,
-                    nombre: procurador.nombre.trim(),
-                    email: procurador.email?.trim() || null,
-                    telefono: procurador.telefono?.trim() || null,
-                    notas: procurador.notas?.trim() || null,
-                  },
-                  select: { id: true },
-                })
-              )
-            )
-          : []
-
-        procuradorIdsToLink = [
-          ...procuradorIdsToLink,
-          ...createdProcuradores.map((procurador) => procurador.id),
-        ]
-      }
-
-      if (parsed.data.bancoIds?.length && procuradorIdsToLink.length > 0) {
-        await tx.bancoProcurador.createMany({
-          data: parsed.data.bancoIds.flatMap((bancoId) =>
-            procuradorIdsToLink.map((procuradorId) => ({
-              officeId: user.officeId,
-              bancoId,
-              procuradorId,
-              activo: true,
-            }))
-          ),
-          skipDuplicates: true,
-        })
-      }
-
-      return updatedAbogado
+      return tx.abogado.findUniqueOrThrow({
+        where: { id },
+        include: abogadoInclude,
+      })
     })
 
-    const abogadoWithRelations = await prisma.abogado.findUnique({
-      where: { id: abogado.id },
-      include: {
-        banco: {
-          select: {
-            id: true,
-            nombre: true,
-          },
-        },
-        bancos: {
-          include: {
-            banco: {
-              select: {
-                id: true,
-                nombre: true,
-              },
-            },
-          },
-        },
-        procuradores: {
-          select: {
-            id: true,
-            nombre: true,
-          },
-          orderBy: {
-            nombre: 'asc',
-          },
-        },
-      },
-    })
-
-    return NextResponse.json({ ok: true, data: abogadoWithRelations })
+    return NextResponse.json({ ok: true, data: mapAbogado(abogado) })
   } catch (error) {
     console.error('Error updating abogado:', error)
     const errorMessage = error instanceof Error ? error.message : 'Error al actualizar el abogado'
@@ -269,7 +247,7 @@ export async function DELETE(
     const id = parseInt(params.id)
     if (isNaN(id)) {
       return NextResponse.json(
-        { ok: false, message: 'ID inválido', error: 'ID inválido' },
+        { ok: false, message: 'ID invalido', error: 'ID invalido' },
         { status: 400 }
       )
     }

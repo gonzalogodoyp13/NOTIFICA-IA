@@ -18,6 +18,7 @@ interface ProcuradorSelectorProps {
   disabled?: boolean
   includeInactive?: boolean
   bancoId?: number
+  abogadoId?: number
   className?: string
 }
 
@@ -29,6 +30,7 @@ export function ProcuradorSelector({
   disabled = false,
   includeInactive = false,
   bancoId,
+  abogadoId,
   className,
 }: ProcuradorSelectorProps) {
   const [procuradores, setProcuradores] = useState<Procurador[]>([])
@@ -40,7 +42,11 @@ export function ProcuradorSelector({
       setLoading(true)
       setError(null)
       try {
-        const url = `/api/procuradores${bancoId ? `?bancoId=${bancoId}` : ''}`
+        const params = new URLSearchParams()
+        if (bancoId) params.set('bancoId', String(bancoId))
+        if (abogadoId) params.set('abogadoId', String(abogadoId))
+        const queryString = params.toString()
+        const url = `/api/procuradores${queryString ? `?${queryString}` : ''}`
         const res = await fetch(url, { credentials: 'include' })
         const data = await res.json()
         if (!data.ok) {
@@ -55,7 +61,7 @@ export function ProcuradorSelector({
     }
 
     fetchProcuradores()
-  }, [bancoId])
+  }, [abogadoId, bancoId])
 
   // Filter out inactive procuradores unless includeInactive is true
   const filteredProcuradores = includeInactive

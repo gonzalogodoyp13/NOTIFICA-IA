@@ -65,7 +65,7 @@ export default function EjecutarWizard({
       : null
     const notiHasContent = notiMeta && Object.keys(notiMeta).length > 0
     return ((notiHasContent ? notiMeta : diliMeta) ?? {}) as Record<string, unknown>
-  }, [notificacion?.meta, diligencia.meta])
+  }, [diligencia.meta, notificacion])
 
   const { data: estamposGrouped, isLoading: estamposLoading } = useEstamposGrouped()
   const updateMeta = useUpdateNotificacionMeta(rolId, diligencia.id, notificacionId)
@@ -157,7 +157,7 @@ export default function EjecutarWizard({
     }
 
     const abogado = rolData.abogado
-    const bancoId = abogado?.banco?.id ?? null
+    const bancoId = abogado?.bancos?.[0]?.banco.id ?? null
     const abogadoId = abogado?.id ?? null
 
     if (!bancoId) {

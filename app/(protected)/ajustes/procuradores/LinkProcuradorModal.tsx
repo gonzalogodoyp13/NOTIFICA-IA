@@ -1,7 +1,7 @@
 // Modal para vincular Procurador existente a un Banco
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 
 interface Procurador {
   id: number
@@ -31,20 +31,7 @@ export function LinkProcuradorModal({
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  useEffect(() => {
-    if (isOpen && allProcuradores.length === 0) {
-      fetchAllProcuradores()
-    }
-  }, [isOpen])
-
-  useEffect(() => {
-    if (!isOpen) {
-      setSearchTerm('')
-      setError(null)
-    }
-  }, [isOpen])
-
-  const fetchAllProcuradores = async () => {
+  const fetchAllProcuradores = useCallback(async () => {
     setLoading(true)
     setError(null)
     try {
@@ -61,7 +48,20 @@ export function LinkProcuradorModal({
     } finally {
       setLoading(false)
     }
-  }
+  }, [])
+
+  useEffect(() => {
+    if (isOpen && allProcuradores.length === 0) {
+      fetchAllProcuradores()
+    }
+  }, [allProcuradores.length, fetchAllProcuradores, isOpen])
+
+  useEffect(() => {
+    if (!isOpen) {
+      setSearchTerm('')
+      setError(null)
+    }
+  }, [isOpen])
 
   const filteredProcuradores = allProcuradores.filter(p => {
     // Excluir ya vinculados usando prop linkedProcuradorIds

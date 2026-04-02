@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { formatCuantiaCLP, cleanCuantiaInput } from '@/lib/utils/cuantia'
 
 interface ArancelesModalProps {
@@ -109,26 +109,20 @@ export function ArancelesModal({ bancoId, bancoNombre, isOpen, onClose }: Arance
   }
 
   // Fetch abogados del banco
-  const fetchAbogados = async () => {
+  const fetchAbogados = useCallback(async () => {
     try {
       const response = await fetch(`/api/abogados?bancoId=${bancoId}`, { credentials: 'include' })
       const data = await response.json()
       if (data.ok && data.data) {
-        // Filtrar abogados que tienen este banco
-        const abogadosDelBanco = data.data.filter((a: any) => {
-          const hasBanco = a.bancoId === bancoId
-          const hasInBancos = a.bancos?.some((b: any) => b.banco.id === bancoId)
-          return hasBanco || hasInBancos
-        })
-        setAbogados(abogadosDelBanco)
+        setAbogados(data.data)
       }
     } catch (err) {
       console.error('Error fetching abogados:', err)
     }
-  }
+  }, [bancoId])
 
   // Fetch aranceles banco-wide
-  const fetchArancelesBanco = async () => {
+  const fetchArancelesBanco = useCallback(async () => {
     setLoading(true)
     setError(null)
     try {
@@ -155,10 +149,10 @@ export function ArancelesModal({ bancoId, bancoNombre, isOpen, onClose }: Arance
     } finally {
       setLoading(false)
     }
-  }
+  }, [bancoId])
 
   // Fetch aranceles por abogado
-  const fetchArancelesAbogado = async () => {
+  const fetchArancelesAbogado = useCallback(async () => {
     if (!selectedAbogadoId) {
       setAranceles([])
       return
@@ -189,7 +183,7 @@ export function ArancelesModal({ bancoId, bancoNombre, isOpen, onClose }: Arance
     } finally {
       setLoading(false)
     }
-  }
+  }, [bancoId, selectedAbogadoId])
 
   // Cargar datos cuando se abre el modal
   useEffect(() => {
@@ -205,14 +199,14 @@ export function ArancelesModal({ bancoId, bancoNombre, isOpen, onClose }: Arance
         }
       }
     }
-  }, [isOpen, bancoId, activeTab])
+  }, [activeTab, bancoId, fetchAbogados, fetchArancelesAbogado, fetchArancelesBanco, isOpen, selectedAbogadoId])
 
   // Cargar aranceles cuando cambia el abogado seleccionado
   useEffect(() => {
     if (isOpen && activeTab === 'abogado' && selectedAbogadoId) {
       fetchArancelesAbogado()
     }
-  }, [selectedAbogadoId, activeTab])
+  }, [activeTab, fetchArancelesAbogado, isOpen, selectedAbogadoId])
 
   // Reset al cambiar de tab
   useEffect(() => {
@@ -223,7 +217,7 @@ export function ArancelesModal({ bancoId, bancoNombre, isOpen, onClose }: Arance
       setAranceles([])
       fetchAbogados()
     }
-  }, [activeTab])
+  }, [activeTab, fetchAbogados, fetchArancelesBanco])
 
   // Helper function to get stable row key
   const getRowKey = (row: ArancelRow, index: number): string | number => {
@@ -557,7 +551,7 @@ export function ArancelesModal({ bancoId, bancoNombre, isOpen, onClose }: Arance
                     {aranceles.length === 0 ? (
                       <tr>
                         <td colSpan={3} className="px-4 py-8 text-center text-gray-500">
-                          No hay aranceles definidos. Haz clic en 'Agregar Arancel' para crear uno.
+                          No hay aranceles definidos. Haz clic en &apos;Agregar Arancel&apos; para crear uno.
                         </td>
                       </tr>
                     ) : (
@@ -659,4 +653,3 @@ export function ArancelesModal({ bancoId, bancoNombre, isOpen, onClose }: Arance
     </div>
   )
 }
-

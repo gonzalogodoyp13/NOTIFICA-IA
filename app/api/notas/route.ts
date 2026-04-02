@@ -34,13 +34,11 @@ export async function GET(req: NextRequest) {
       )
     }
 
-    const officeIdStr = String(user.officeId)
-
     // Verify rol belongs to user's office
     const rol = await prisma.rolCausa.findFirst({
       where: {
         id: rolId,
-        officeId: officeIdStr,
+        officeId: user.officeId,
       },
     })
 
@@ -114,13 +112,11 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    const officeIdStr = String(user.officeId)
-
     // Verify rol belongs to user's office
     const rol = await prisma.rolCausa.findFirst({
       where: {
         id: parsed.data.rolId,
-        officeId: officeIdStr,
+        officeId: user.officeId,
       },
     })
 
@@ -177,14 +173,12 @@ export async function DELETE(req: NextRequest) {
       )
     }
 
-    const officeIdStr = String(user.officeId)
-
     // Verify nota exists and belongs to user's office (via rol)
     const nota = await prisma.nota.findFirst({
       where: {
         id,
         rol: {
-          officeId: officeIdStr,
+          officeId: user.officeId,
         },
       },
     })

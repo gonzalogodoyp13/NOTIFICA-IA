@@ -46,12 +46,6 @@ export async function GET(req: NextRequest) {
                   select: {
                     id: true,
                     nombre: true,
-                    banco: {
-                      select: {
-                        id: true,
-                        nombre: true,
-                      },
-                    },
                     bancos: {
                       select: {
                         banco: {
@@ -68,12 +62,20 @@ export async function GET(req: NextRequest) {
                   select: {
                     id: true,
                     nombre: true,
-                    bancos: {
+                    abogados: {
                       select: {
-                        banco: {
+                        abogado: {
                           select: {
-                            id: true,
-                            nombre: true,
+                            bancos: {
+                              select: {
+                                banco: {
+                                  select: {
+                                    id: true,
+                                    nombre: true,
+                                  },
+                                },
+                              },
+                            },
                           },
                         },
                       },
@@ -158,14 +160,6 @@ export async function GET(req: NextRequest) {
 
       if (diligencia.rol.demanda?.abogados) {
         const abogadoData = diligencia.rol.demanda.abogados
-        // Legacy banco
-        if (abogadoData.banco) {
-          bancosSet.set(abogadoData.banco.id, {
-            id: abogadoData.banco.id,
-            nombre: abogadoData.banco.nombre,
-          })
-        }
-        // New bancos relation
         if (abogadoData.bancos) {
           abogadoData.bancos.forEach(ab => {
             if (ab.banco) {
@@ -178,14 +172,16 @@ export async function GET(req: NextRequest) {
         }
       }
 
-      if (diligencia.rol.demanda?.procurador?.bancos) {
-        diligencia.rol.demanda.procurador.bancos.forEach(pb => {
-          if (pb.banco) {
-            bancosSet.set(pb.banco.id, {
-              id: pb.banco.id,
-              nombre: pb.banco.nombre,
-            })
-          }
+      if (diligencia.rol.demanda?.procurador?.abogados) {
+        diligencia.rol.demanda.procurador.abogados.forEach(pa => {
+          pa.abogado?.bancos?.forEach(ab => {
+            if (ab.banco) {
+              bancosSet.set(ab.banco.id, {
+                id: ab.banco.id,
+                nombre: ab.banco.nombre,
+              })
+            }
+          })
         })
       }
 

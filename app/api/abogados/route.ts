@@ -1,6 +1,6 @@
 // API route: /api/abogados
-// GET: List all abogados for the current office (with banco and procurador relations)
-// POST: Create a new abogado
+// GET: List all abogados for the current office
+// POST: Create a new abogado with many bancos and many procuradores
 import { NextRequest, NextResponse } from 'next/server'
 import { getCurrentUserWithOffice } from '@/lib/auth-server'
 import { prisma } from '@/lib/prisma'
@@ -8,7 +8,91 @@ import { AbogadoSchema } from '@/lib/zodSchemas'
 
 export const dynamic = 'force-dynamic'
 
-export async function GET() {
+const abogadoInclude = {
+  bancos: {
+    include: {
+      banco: {
+        select: {
+          id: true,
+          nombre: true,
+        },
+      },
+    },
+  },
+  procuradores: {
+    include: {
+      procurador: {
+        select: {
+          id: true,
+          nombre: true,
+        },
+      },
+    },
+  },
+} as const
+
+function mapAbogado(abogado: {
+  id: number
+  nombre: string | null
+  rut: string | null
+  direccion: string | null
+  comuna: string | null
+  telefono: string | null
+  email: string | null
+  createdAt: Date
+  bancos: Array<{ banco: { id: number; nombre: string } }>
+  procuradores: Array<{ procurador: { id: number; nombre: string } }>
+}) {
+  return {
+    ...abogado,
+    createdAt: abogado.createdAt.toISOString(),
+    procuradores: abogado.procuradores
+      .map((item) => item.procurador)
+      .sort((a, b) => a.nombre.localeCompare(b.nombre)),
+  }
+}
+
+async function getValidatedBancoIds(officeId: number, bancoIds?: number[]) {
+  if (!bancoIds || bancoIds.length === 0) {
+    return []
+  }
+
+  const bancos = await prisma.banco.findMany({
+    where: {
+      id: { in: bancoIds },
+      officeId,
+    },
+    select: { id: true },
+  })
+
+  if (bancos.length !== bancoIds.length) {
+    throw new Error('Uno o mas bancos no encontrados o no pertenecen a tu oficina')
+  }
+
+  return bancoIds
+}
+
+async function getValidatedProcuradorIds(officeId: number, procuradorIds?: number[]) {
+  if (!procuradorIds || procuradorIds.length === 0) {
+    return []
+  }
+
+  const procuradores = await prisma.procurador.findMany({
+    where: {
+      id: { in: procuradorIds },
+      officeId,
+    },
+    select: { id: true },
+  })
+
+  if (procuradores.length !== procuradorIds.length) {
+    throw new Error('Uno o mas procuradores no encontrados o no pertenecen a tu oficina')
+  }
+
+  return procuradorIds
+}
+
+export async function GET(req: NextRequest) {
   try {
     const user = await getCurrentUserWithOffice()
 
@@ -19,40 +103,36 @@ export async function GET() {
       )
     }
 
+    const bancoIdParam = req.nextUrl.searchParams.get('bancoId')
+    const bancoId = bancoIdParam ? parseInt(bancoIdParam, 10) : null
+
+    if (bancoIdParam && Number.isNaN(bancoId)) {
+      return NextResponse.json(
+        { ok: false, message: 'bancoId invalido', error: 'bancoId invalido' },
+        { status: 400 }
+      )
+    }
+
     const abogados = await prisma.abogado.findMany({
-      where: { officeId: user.officeId },
-      include: {
-        banco: {
-          select: {
-            id: true,
-            nombre: true,
-          },
-        },
-        bancos: {
-          include: {
-            banco: {
-              select: {
-                id: true,
-                nombre: true,
+      where: {
+        officeId: user.officeId,
+        ...(bancoId
+          ? {
+              bancos: {
+                some: {
+                  bancoId,
+                  officeId: user.officeId,
+                },
               },
-            },
-          },
-        },
-        procuradores: {
-          select: {
-            id: true,
-            nombre: true,
-          },
-          orderBy: {
-            nombre: 'asc',
-          },
-        },
+            }
+          : {}),
       },
+      include: abogadoInclude,
       orderBy: { createdAt: 'desc' },
-      take: 50,
+      take: 100,
     })
 
-    return NextResponse.json({ ok: true, data: abogados })
+    return NextResponse.json({ ok: true, data: abogados.map(mapAbogado) })
   } catch (error) {
     console.error('Error fetching abogados:', error)
     const errorMessage = error instanceof Error ? error.message : 'Error al obtener los abogados'
@@ -85,59 +165,8 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    if (parsed.data.bancoIds && parsed.data.bancoIds.length > 0) {
-      const bancos = await prisma.banco.findMany({
-        where: {
-          id: { in: parsed.data.bancoIds },
-          officeId: user.officeId,
-        },
-        select: { id: true },
-      })
-
-      if (bancos.length !== parsed.data.bancoIds.length) {
-        return NextResponse.json(
-          { ok: false, message: 'Uno o más bancos no encontrados o no pertenecen a tu oficina', error: 'Bancos inválidos' },
-          { status: 400 }
-        )
-      }
-    }
-
-    if (parsed.data.bancoId && !parsed.data.bancoIds) {
-      const banco = await prisma.banco.findFirst({
-        where: {
-          id: parsed.data.bancoId,
-          officeId: user.officeId,
-        },
-      })
-
-      if (!banco) {
-        return NextResponse.json(
-          { ok: false, message: 'Banco no encontrado o no pertenece a tu oficina', error: 'Banco no encontrado o no pertenece a tu oficina' },
-          { status: 400 }
-        )
-      }
-    }
-
-    const selectedExistingProcuradores = parsed.data.procuradorIds?.length
-      ? await prisma.procurador.findMany({
-          where: {
-            id: { in: parsed.data.procuradorIds },
-            officeId: user.officeId,
-          },
-          select: { id: true },
-        })
-      : []
-
-    if ((parsed.data.procuradorIds?.length ?? 0) !== selectedExistingProcuradores.length) {
-      return NextResponse.json(
-        { ok: false, message: 'Uno o más procuradores no encontrados o no pertenecen a tu oficina', error: 'Procuradores inválidos' },
-        { status: 400 }
-      )
-    }
-
-    const primaryBancoId = parsed.data.bancoIds && parsed.data.bancoIds.length > 0
-      ? parsed.data.bancoIds[0]
-      : parsed.data.bancoId || null
+    const bancoIds = await getValidatedBancoIds(user.officeId, parsed.data.bancoIds)
+    const procuradorIds = await getValidatedProcuradorIds(user.officeId, parsed.data.procuradorIds)
 
     const abogado = await prisma.$transaction(async (tx) => {
       const createdAbogado = await tx.abogado.create({
@@ -145,14 +174,13 @@ export async function POST(req: NextRequest) {
           nombre: parsed.data.nombre,
           telefono: parsed.data.telefono,
           email: parsed.data.email,
-          bancoId: primaryBancoId,
           officeId: user.officeId,
         },
       })
 
-      if (parsed.data.bancoIds && parsed.data.bancoIds.length > 0) {
+      if (bancoIds.length > 0) {
         await tx.abogadoBanco.createMany({
-          data: parsed.data.bancoIds.map((bancoId) => ({
+          data: bancoIds.map((bancoId) => ({
             officeId: user.officeId,
             abogadoId: createdAbogado.id,
             bancoId,
@@ -161,51 +189,39 @@ export async function POST(req: NextRequest) {
         })
       }
 
-      if (selectedExistingProcuradores.length > 0) {
-        await tx.procurador.updateMany({
-          where: {
-            id: { in: selectedExistingProcuradores.map((procurador) => procurador.id) },
+      if (procuradorIds.length > 0) {
+        await tx.procuradorAbogado.createMany({
+          data: procuradorIds.map((procuradorId) => ({
             officeId: user.officeId,
-          },
-          data: {
             abogadoId: createdAbogado.id,
-          },
+            procuradorId,
+          })),
+          skipDuplicates: true,
         })
       }
 
-      const createdProcuradores = parsed.data.newProcuradores?.length
-        ? await Promise.all(
-            parsed.data.newProcuradores.map((procurador) =>
-              tx.procurador.create({
-                data: {
-                  officeId: user.officeId,
-                  abogadoId: createdAbogado.id,
-                  nombre: procurador.nombre.trim(),
-                  email: procurador.email?.trim() || null,
-                  telefono: procurador.telefono?.trim() || null,
-                  notas: procurador.notas?.trim() || null,
-                },
-                select: { id: true },
-              })
-            )
+      if (parsed.data.newProcuradores?.length) {
+        const createdProcuradores = await Promise.all(
+          parsed.data.newProcuradores.map((procurador) =>
+            tx.procurador.create({
+              data: {
+                officeId: user.officeId,
+                nombre: procurador.nombre.trim(),
+                email: procurador.email?.trim() || null,
+                telefono: procurador.telefono?.trim() || null,
+                notas: procurador.notas?.trim() || null,
+              },
+              select: { id: true },
+            })
           )
-        : []
+        )
 
-      const procuradorIdsToLink = [
-        ...selectedExistingProcuradores.map((procurador) => procurador.id),
-        ...createdProcuradores.map((procurador) => procurador.id),
-      ]
-
-      if (parsed.data.bancoIds?.length && procuradorIdsToLink.length > 0) {
-        await tx.bancoProcurador.createMany({
-          data: parsed.data.bancoIds.flatMap((bancoId) =>
-            procuradorIdsToLink.map((procuradorId) => ({
-              officeId: user.officeId,
-              bancoId,
-              procuradorId,
-              activo: true,
-            }))
-          ),
+        await tx.procuradorAbogado.createMany({
+          data: createdProcuradores.map((procurador) => ({
+            officeId: user.officeId,
+            abogadoId: createdAbogado.id,
+            procuradorId: procurador.id,
+          })),
           skipDuplicates: true,
         })
       }
@@ -215,42 +231,17 @@ export async function POST(req: NextRequest) {
 
     const abogadoWithRelations = await prisma.abogado.findUnique({
       where: { id: abogado.id },
-      include: {
-        banco: {
-          select: {
-            id: true,
-            nombre: true,
-          },
-        },
-        bancos: {
-          include: {
-            banco: {
-              select: {
-                id: true,
-                nombre: true,
-              },
-            },
-          },
-        },
-        procuradores: {
-          select: {
-            id: true,
-            nombre: true,
-          },
-          orderBy: {
-            nombre: 'asc',
-          },
-        },
-      },
+      include: abogadoInclude,
     })
 
-    return NextResponse.json({ ok: true, data: abogadoWithRelations })
+    return NextResponse.json({ ok: true, data: abogadoWithRelations ? mapAbogado(abogadoWithRelations) : null })
   } catch (error) {
-    console.error('Error creating abogado:', error)
     const errorMessage = error instanceof Error ? error.message : 'Error al crear el abogado'
+    const status = errorMessage.includes('no encontrados') ? 400 : 500
+    console.error('Error creating abogado:', error)
     return NextResponse.json(
       { ok: false, message: errorMessage, error: errorMessage },
-      { status: 500 }
+      { status }
     )
   }
 }

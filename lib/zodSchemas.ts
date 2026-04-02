@@ -15,28 +15,20 @@ export const AbogadoSchema = z.object({
   nombre: z.string().optional(),
   telefono: z.string().optional(),
   email: z.string().email().optional(),
-  bancoId: z.number().optional(),  // MANTENER para compatibilidad (opcional durante transición)
-  bancoIds: z.array(z.number().int().positive()).optional(),  // NUEVO - array de IDs de bancos
+  bancoIds: z.array(z.number().int().positive()).optional(),
   procuradorIds: z.array(z.number().int().positive()).optional(),
   newProcuradores: z.array(
     z.object({
       nombre: z.string().min(2, "Nombre requerido"),
       email: z.preprocess(
         (val) => val === "" ? null : val,
-        z.string().email("Email inválido").optional().nullable()
+        z.string().email("Email invalido").optional().nullable()
       ),
       telefono: z.string().optional().nullable(),
       notas: z.string().optional().nullable(),
     })
   ).optional(),
-}).refine(
-  (data) => {
-    // Al menos uno de bancoId o bancoIds debe estar presente si se proporciona alguno
-    // O ambos pueden estar ausentes (abogado sin banco)
-    return true; // Permitir ambos o ninguno durante transición
-  },
-  { message: "bancoId o bancoIds debe ser proporcionado" }
-);
+});
 
 export const TribunalSchema = z.object({
   nombre: z.string().min(2, "Nombre requerido"),
@@ -52,8 +44,8 @@ export const ComunaSchema = z.object({
 
 export const EstampoSchema = z.object({
   nombre: z.string().min(2, "Nombre requerido"),
-  tipo: z.enum(["firma", "sello", "modelo"], { 
-    errorMap: () => ({ message: "Tipo debe ser 'firma', 'sello' o 'modelo'" }) 
+  tipo: z.enum(["firma", "sello", "modelo"], {
+    errorMap: () => ({ message: "Tipo debe ser 'firma', 'sello' o 'modelo'" })
   }),
   contenido: z.string().optional(),
   fileUrl: z.string().optional(),
@@ -68,15 +60,13 @@ export const ArancelSchema = z.object({
   activo: z.boolean().optional().default(true),
 }).refine(
   (data) => {
-    // Validar XOR: exactamente uno de estampoId o estampoBaseCategoria
     const hasEstampoId = !!data.estampoId
     const hasCategoria = !!data.estampoBaseCategoria
-    return hasEstampoId !== hasCategoria  // XOR: uno u otro, no ambos ni ninguno
+    return hasEstampoId !== hasCategoria
   },
   { message: "Debe proporcionar exactamente uno de: estampoId (legacy) o estampoBaseCategoria (wizard)" }
 );
 
-// Helper para parsear monto desde string chileno (usar antes de validar)
 export function parseArancelMonto(input: string | number): number {
   if (typeof input === 'number') return Math.floor(input);
   return cleanCuantiaInput(input) ?? 0;
@@ -86,26 +76,22 @@ export const ProcuradorSchema = z.object({
   nombre: z.string().min(2, "Nombre requerido"),
   email: z.preprocess(
     (val) => val === "" ? null : val,
-    z.string().email("Email inválido").optional().nullable()
+    z.string().email("Email invalido").optional().nullable()
   ),
   telefono: z.string().optional().nullable(),
   notas: z.string().optional().nullable(),
-  abogadoId: z.number().int().positive().nullable().optional(),
-  bancoId: z.number().int().positive().optional(), // Para crear + link en POST
-  bancoIds: z.array(z.number().int().positive()).optional(),
-  alias: z.string().optional().nullable(), // Para alias en relación banco
+  abogadoIds: z.array(z.number().int().positive()).optional(),
 });
 
 export const ProcuradorUpdateSchema = z.object({
   nombre: z.string().min(2, "Nombre requerido").optional(),
   email: z.preprocess(
     (val) => val === "" ? null : val,
-    z.string().email("Email inválido").optional().nullable()
+    z.string().email("Email invalido").optional().nullable()
   ),
   telefono: z.string().optional().nullable(),
   notas: z.string().optional().nullable(),
-  abogadoId: z.number().int().positive().nullable().optional(),
-  bancoIds: z.array(z.number().int().positive()).optional(),
+  abogadoIds: z.array(z.number().int().positive()).optional(),
 });
 
 export const LinkBancoSchema = z.object({
@@ -114,6 +100,5 @@ export const LinkBancoSchema = z.object({
 });
 
 export const ToggleActivoSchema = z.object({
-  activo: z.boolean().optional(), // Si no se envía, hace toggle
+  activo: z.boolean().optional(),
 });
-

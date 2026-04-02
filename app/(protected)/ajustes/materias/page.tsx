@@ -180,7 +180,7 @@ export default function MateriasPage() {
                       No hay materias registradas aún.
                     </p>
                     <p className="text-gray-500 text-sm mt-2">
-                      Haz clic en "Agregar" para crear tu primera materia.
+                      Haz clic en &quot;Agregar&quot; para crear tu primera materia.
                     </p>
                   </div>
                 </div>

@@ -5,6 +5,7 @@ import { wrapText } from "@/lib/pdf/textLayout";
 import { embedSignatureImages } from "@/lib/pdf/imageUtils";
 import { drawRolHeader } from "@/lib/pdf/header";
 import { getCurrentUserWithOffice } from "@/lib/auth-server";
+import { prisma } from "@/lib/prisma";
 import { formatCuantiaCLP } from "@/lib/utils/cuantia";
 import fs from "fs";
 import path from "path";
@@ -58,10 +59,16 @@ export async function POST(req: NextRequest) {
 
     // Get authenticated user for receptor name
     const user = await getCurrentUserWithOffice();
+    const dbUser = user
+      ? await prisma.user.findUnique({
+          where: { id: user.id },
+          select: { officeName: true },
+        })
+      : null;
 
     // Draw header before content
     const headerData = {
-      receptorNombre: user?.officeName ?? "Receptor Judicial",
+      receptorNombre: dbUser?.officeName ?? "Receptor Judicial",
       tribunalNombre: (variables.tribunal as string | undefined) ?? sample.tribunal,
       rolNumero: (variables.rol as string | undefined) ?? sample.rol,
       bancoNombre: "Banco de Chile", // Mock for preview
@@ -111,7 +118,7 @@ export async function POST(req: NextRequest) {
 
     const pdfBytes = await pdf.save();
 
-    return new NextResponse(pdfBytes, {
+    return new NextResponse(Buffer.from(pdfBytes), {
       headers: {
         "Content-Type": "application/pdf",
         "Content-Disposition": "inline; filename=preview.pdf",

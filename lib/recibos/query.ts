@@ -68,9 +68,10 @@ function getBancoLabel(recibo: any) {
   const procurador = recibo.rol?.demanda?.procurador
 
   const bancos = dedupe([
-    abogado?.banco?.nombre,
     ...(abogado?.bancos ?? []).map((item: any) => item.banco?.nombre),
-    ...(procurador?.bancos ?? []).map((item: any) => item.banco?.nombre),
+    ...(procurador?.abogados ?? []).flatMap((item: any) =>
+      (item.abogado?.bancos ?? []).map((bancoItem: any) => bancoItem.banco?.nombre)
+    ),
   ])
 
   return bancos.length > 0 ? bancos.join(', ') : EMPTY_VALUE
@@ -178,9 +179,24 @@ export async function getReceiptList(
   if (filters.bancoIds.length > 0) {
     demandaConditions.push({
       OR: [
-        { abogados: { is: { bancoId: { in: filters.bancoIds } } } },
         { abogados: { is: { bancos: { some: { bancoId: { in: filters.bancoIds } } } } } },
-        { procurador: { is: { bancos: { some: { bancoId: { in: filters.bancoIds } } } } } },
+        {
+          procurador: {
+            is: {
+              abogados: {
+                some: {
+                  abogado: {
+                    bancos: {
+                      some: {
+                        bancoId: { in: filters.bancoIds },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
       ],
     })
   }
@@ -237,18 +253,12 @@ export async function getReceiptList(
           demanda: {
             select: {
               caratula: true,
-              abogados: {
-                select: {
-                  nombre: true,
-                  banco: {
-                    select: {
-                      id: true,
-                      nombre: true,
-                    },
-                  },
-                  bancos: {
-                    select: {
-                      banco: {
+                abogados: {
+                  select: {
+                    nombre: true,
+                    bancos: {
+                      select: {
+                        banco: {
                         select: {
                           id: true,
                           nombre: true,
@@ -258,18 +268,26 @@ export async function getReceiptList(
                   },
                 },
               },
-              procurador: {
-                select: {
-                  nombre: true,
-                  bancos: {
-                    select: {
-                      banco: {
-                        select: {
-                          id: true,
-                          nombre: true,
+                procurador: {
+                  select: {
+                    nombre: true,
+                    abogados: {
+                      select: {
+                        abogado: {
+                          select: {
+                            bancos: {
+                              select: {
+                                banco: {
+                                  select: {
+                                    id: true,
+                                    nombre: true,
+                                  },
+                                },
+                              },
+                            },
+                          },
                         },
                       },
-                    },
                   },
                 },
               },

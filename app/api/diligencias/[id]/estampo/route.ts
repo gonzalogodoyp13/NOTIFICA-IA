@@ -45,7 +45,7 @@ function buildEstampoVariables(
 
   // Datos del abogado
   const abogado = (diligencia as any).rol?.demanda?.abogados
-  const banco = abogado?.banco
+  const banco = abogado?.bancos?.[0]?.banco ?? null
 
   // Datos del tribunal
   const tribunal = (diligencia as any).rol?.tribunal
@@ -137,7 +137,11 @@ export async function POST(
               include: {
                 abogados: {
                   include: {
-                    banco: true,
+                    bancos: {
+                      include: {
+                        banco: true,
+                      },
+                    },
                   },
                 },
                 ejecutados: {
@@ -247,7 +251,7 @@ export async function POST(
       receptorNombre: dbUser?.officeName ?? 'Receptor Judicial', // User authenticated (receptor)
       tribunalNombre: diligencia.rol.tribunal?.nombre ?? null,
       rolNumero: diligencia.rol.rol,
-      bancoNombre: diligencia.rol.demanda?.abogados?.banco?.nombre ?? null,
+      bancoNombre: diligencia.rol.demanda?.abogados?.bancos?.[0]?.banco?.nombre ?? null,
       ejecutadoNombre,
     }
 

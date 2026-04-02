@@ -178,7 +178,7 @@ export default function BancosPage() {
                   No hay bancos registrados aún.
                 </p>
                 <p className="text-gray-500 text-sm mt-2">
-                  Haz clic en "Agregar" para crear tu primer banco.
+                  Haz clic en &quot;Agregar&quot; para crear tu primer banco.
                 </p>
               </div>
             </div>

@@ -4,6 +4,7 @@
 // PUT: Update estado or meta
 // DELETE: Remove if role = "Receptor"
 import { NextRequest, NextResponse } from 'next/server'
+import { Prisma } from '@prisma/client'
 import { getCurrentUserWithOffice } from '@/lib/auth-server'
 import { prisma } from '@/lib/prisma'
 import { zDiligencia, zDiligenciaUpdate } from '@/lib/validations/diligencia'
@@ -32,13 +33,11 @@ export async function GET(req: NextRequest) {
       )
     }
 
-    const officeIdStr = String(user.officeId)
-
     // Verify rol belongs to user's office
     const rol = await prisma.rolCausa.findFirst({
       where: {
         id: rolId,
-        officeId: officeIdStr,
+        officeId: user.officeId,
       },
     })
 
@@ -99,13 +98,11 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    const officeIdStr = String(user.officeId)
-
     // Verify rol belongs to user's office
     const rol = await prisma.rolCausa.findFirst({
       where: {
         id: parsed.data.rolId,
-        officeId: officeIdStr,
+        officeId: user.officeId,
       },
     })
 
@@ -120,7 +117,7 @@ export async function POST(req: NextRequest) {
     const tipo = await prisma.diligenciaTipo.findFirst({
       where: {
         id: parsed.data.tipoId,
-        officeId: officeIdStr,
+        officeId: user.officeId,
       },
     })
 
@@ -138,7 +135,7 @@ export async function POST(req: NextRequest) {
         tipoId: parsed.data.tipoId,
         fecha: parsed.data.fecha,
         estado: parsed.data.estado,
-        meta: parsed.data.meta || null,
+        meta: parsed.data.meta ? (parsed.data.meta as Prisma.InputJsonValue) : undefined,
       },
       include: {
         tipo: {
@@ -199,14 +196,12 @@ export async function PUT(req: NextRequest) {
       )
     }
 
-    const officeIdStr = String(user.officeId)
-
     // Verify diligencia exists and belongs to user's office (via rol)
     const diligencia = await prisma.diligencia.findFirst({
       where: {
         id,
         rol: {
-          officeId: officeIdStr,
+          officeId: user.officeId,
         },
       },
     })
@@ -221,7 +216,12 @@ export async function PUT(req: NextRequest) {
     // Update diligencia
     const updated = await prisma.diligencia.update({
       where: { id },
-      data: parsed.data,
+      data: {
+        ...parsed.data,
+        ...(parsed.data.meta
+          ? { meta: parsed.data.meta as Prisma.InputJsonValue }
+          : {}),
+      },
       include: {
         tipo: {
           select: {
@@ -271,14 +271,12 @@ export async function DELETE(req: NextRequest) {
       )
     }
 
-    const officeIdStr = String(user.officeId)
-
     // Verify diligencia exists and belongs to user's office (via rol)
     const diligencia = await prisma.diligencia.findFirst({
       where: {
         id,
         rol: {
-          officeId: officeIdStr,
+          officeId: user.officeId,
         },
       },
     })

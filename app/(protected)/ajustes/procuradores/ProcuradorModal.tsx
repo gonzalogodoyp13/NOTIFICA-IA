@@ -1,26 +1,19 @@
 // Modal para crear/editar Procurador
 'use client'
 
-import { useEffect, useState } from 'react'
-
-interface Abogado {
-  id: number
-  nombre: string | null
-}
+import { useEffect, useMemo, useState } from 'react'
 
 interface Banco {
   id: number
   nombre: string
 }
 
-interface ProcuradorBanco {
-  bancoId: number
-  activo: boolean
-  alias: string | null
-  banco: {
-    id: number
-    nombre: string
-  }
+interface Abogado {
+  id: number
+  nombre: string | null
+  bancos?: Array<{
+    banco: Banco
+  }>
 }
 
 interface Procurador {
@@ -29,11 +22,13 @@ interface Procurador {
   email: string | null
   telefono: string | null
   notas: string | null
-  abogadoId: number | null
-  abogado: Abogado | null
   activo: boolean
-  bancos?: ProcuradorBanco[]
-  bancoProcurador: { activo: boolean; alias: string | null } | null
+  abogados?: Abogado[]
+  abogadoIds?: number[]
+  bancos?: Array<{
+    bancoId: number
+    banco: Banco
+  }>
   createdAt: string
   updatedAt: string
 }
@@ -41,9 +36,8 @@ interface Procurador {
 interface ProcuradorModalProps {
   isOpen: boolean
   onClose: () => void
-  bancoId: number | null
   procurador?: Procurador
-  bancos: Banco[]
+  abogados: Abogado[]
   onSuccess: (result?: { reusedExisting?: boolean }) => void
 }
 
@@ -57,14 +51,13 @@ const emptyFormData = {
 export function ProcuradorModal({
   isOpen,
   onClose,
-  bancoId,
   procurador,
-  bancos,
+  abogados,
   onSuccess,
 }: ProcuradorModalProps) {
   const [formData, setFormData] = useState(emptyFormData)
-  const [selectedBancoIds, setSelectedBancoIds] = useState<number[]>([])
-  const [bankSearchTerm, setBankSearchTerm] = useState('')
+  const [selectedAbogadoIds, setSelectedAbogadoIds] = useState<number[]>([])
+  const [abogadoSearchTerm, setAbogadoSearchTerm] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [loadingDetails, setLoadingDetails] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -77,14 +70,14 @@ export function ProcuradorModal({
         telefono: procurador.telefono || '',
         notas: procurador.notas || '',
       })
-      setSelectedBancoIds((procurador.bancos || []).map((banco) => banco.bancoId))
+      setSelectedAbogadoIds(procurador.abogadoIds || procurador.abogados?.map((abogado) => abogado.id) || [])
     } else {
       setFormData(emptyFormData)
-      setSelectedBancoIds(bancoId ? [bancoId] : [])
+      setSelectedAbogadoIds([])
     }
-    setBankSearchTerm('')
+    setAbogadoSearchTerm('')
     setError(null)
-  }, [procurador, isOpen, bancoId])
+  }, [procurador, isOpen])
 
   useEffect(() => {
     if (!isOpen || !procurador) return
@@ -111,7 +104,7 @@ export function ProcuradorModal({
           telefono: data.data.telefono || '',
           notas: data.data.notas || '',
         })
-        setSelectedBancoIds((data.data.bancos || []).map((banco: ProcuradorBanco) => banco.bancoId))
+        setSelectedAbogadoIds(data.data.abogadoIds || [])
       } catch (err) {
         if ((err as Error).name === 'AbortError') return
         setError(err instanceof Error ? err.message : 'Error al cargar el procurador')
@@ -127,21 +120,35 @@ export function ProcuradorModal({
     }
   }, [isOpen, procurador])
 
+  const visibleAbogados = useMemo(() => {
+    const normalized = abogadoSearchTerm.trim().toLowerCase()
+    if (!normalized) return abogados
+    return abogados.filter((item) => (item.nombre || '').toLowerCase().includes(normalized))
+  }, [abogadoSearchTerm, abogados])
+
+  const derivedBancos = useMemo(() => {
+    const bancoMap = new Map<number, Banco>()
+
+    abogados
+      .filter((abogado) => selectedAbogadoIds.includes(abogado.id))
+      .forEach((abogado) => {
+        abogado.bancos?.forEach((item) => {
+          bancoMap.set(item.banco.id, item.banco)
+        })
+      })
+
+    return Array.from(bancoMap.values()).sort((a, b) => a.nombre.localeCompare(b.nombre))
+  }, [abogados, selectedAbogadoIds])
+
   if (!isOpen) return null
 
-  const normalizedBankSearch = bankSearchTerm.trim().toLowerCase()
-  const visibleBancos = bancos.filter((item) => {
-    if (!normalizedBankSearch) return true
-    return item.nombre.toLowerCase().includes(normalizedBankSearch)
-  })
-
-  const toggleBanco = (targetBancoId: number, checked: boolean) => {
-    setSelectedBancoIds((prev) => {
+  const toggleAbogado = (targetAbogadoId: number, checked: boolean) => {
+    setSelectedAbogadoIds((prev) => {
       if (checked) {
-        return prev.includes(targetBancoId) ? prev : [...prev, targetBancoId]
+        return prev.includes(targetAbogadoId) ? prev : [...prev, targetAbogadoId]
       }
 
-      return prev.filter((id) => id !== targetBancoId)
+      return prev.filter((id) => id !== targetAbogadoId)
     })
   }
 
@@ -157,21 +164,19 @@ export function ProcuradorModal({
     }
 
     try {
-      const emailValue = formData.email.trim() || null
-      const telefonoValue = formData.telefono.trim() || null
-      const notasValue = formData.notas.trim() || null
+      const payload = {
+        nombre: formData.nombre.trim(),
+        email: formData.email.trim() || null,
+        telefono: formData.telefono.trim() || null,
+        notas: formData.notas.trim() || null,
+        abogadoIds: selectedAbogadoIds,
+      }
 
       if (procurador) {
         const response = await fetch(`/api/procuradores/${procurador.id}`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            nombre: formData.nombre.trim(),
-            email: emailValue,
-            telefono: telefonoValue,
-            notas: notasValue,
-            bancoIds: selectedBancoIds,
-          }),
+          body: JSON.stringify(payload),
           credentials: 'include',
         })
 
@@ -187,13 +192,7 @@ export function ProcuradorModal({
       const response = await fetch('/api/procuradores', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          nombre: formData.nombre.trim(),
-          email: emailValue,
-          telefono: telefonoValue,
-          notas: notasValue,
-          bancoIds: selectedBancoIds,
-        }),
+        body: JSON.stringify(payload),
         credentials: 'include',
       })
 
@@ -212,7 +211,7 @@ export function ProcuradorModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 p-4">
-      <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-lg bg-white p-6 shadow-xl">
+      <div className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-lg bg-white p-6 shadow-xl">
         <h2 className="mb-4 text-xl font-semibold text-gray-900">
           {procurador ? 'Editar Procurador' : 'Agregar Nuevo Procurador'}
         </h2>
@@ -226,7 +225,7 @@ export function ProcuradorModal({
         <form onSubmit={handleSubmit} className="space-y-4">
           {loadingDetails && (
             <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 text-sm text-gray-600">
-              Cargando bancos asociados...
+              Cargando abogados asociados...
             </div>
           )}
 
@@ -243,28 +242,30 @@ export function ProcuradorModal({
             />
           </div>
 
-          <div>
-            <label className="mb-2 block text-sm font-medium text-gray-700">
-              Email
-            </label>
-            <input
-              type="email"
-              value={formData.email}
-              onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-              className="w-full rounded-lg border border-gray-300 px-3 py-2 focus:border-blue-500 focus:ring-blue-500"
-            />
-          </div>
+          <div className="grid gap-4 md:grid-cols-2">
+            <div>
+              <label className="mb-2 block text-sm font-medium text-gray-700">
+                Email
+              </label>
+              <input
+                type="email"
+                value={formData.email}
+                onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                className="w-full rounded-lg border border-gray-300 px-3 py-2 focus:border-blue-500 focus:ring-blue-500"
+              />
+            </div>
 
-          <div>
-            <label className="mb-2 block text-sm font-medium text-gray-700">
-              Telefono
-            </label>
-            <input
-              type="tel"
-              value={formData.telefono}
-              onChange={(e) => setFormData({ ...formData, telefono: e.target.value })}
-              className="w-full rounded-lg border border-gray-300 px-3 py-2 focus:border-blue-500 focus:ring-blue-500"
-            />
+            <div>
+              <label className="mb-2 block text-sm font-medium text-gray-700">
+                Telefono
+              </label>
+              <input
+                type="tel"
+                value={formData.telefono}
+                onChange={(e) => setFormData({ ...formData, telefono: e.target.value })}
+                className="w-full rounded-lg border border-gray-300 px-3 py-2 focus:border-blue-500 focus:ring-blue-500"
+              />
+            </div>
           </div>
 
           <div>
@@ -283,42 +284,68 @@ export function ProcuradorModal({
             <div className="flex items-center justify-between gap-3">
               <div>
                 <label className="block text-sm font-medium text-gray-700">
-                  Asociar a banco
+                  Abogados asignados
                 </label>
                 <p className="text-xs text-gray-500">
-                  Puedes seleccionar uno o varios bancos.
+                  Un procurador puede pertenecer a uno o varios abogados.
                 </p>
               </div>
               <span className="text-xs text-gray-500">
-                {selectedBancoIds.length} seleccionado(s)
+                {selectedAbogadoIds.length} seleccionado(s)
               </span>
             </div>
 
             <input
               type="text"
-              value={bankSearchTerm}
-              onChange={(e) => setBankSearchTerm(e.target.value)}
-              placeholder="Buscar bancos..."
+              value={abogadoSearchTerm}
+              onChange={(e) => setAbogadoSearchTerm(e.target.value)}
+              placeholder="Buscar abogados..."
               className="w-full rounded-lg border border-gray-300 px-3 py-2 focus:border-blue-500 focus:ring-blue-500"
             />
 
             <div className="max-h-56 space-y-2 overflow-y-auto rounded-lg border border-gray-300 p-3">
-              {visibleBancos.length === 0 ? (
-                <p className="text-sm text-gray-500">No se encontraron bancos.</p>
+              {visibleAbogados.length === 0 ? (
+                <p className="text-sm text-gray-500">No se encontraron abogados.</p>
               ) : (
-                visibleBancos.map((item) => (
+                visibleAbogados.map((item) => (
                   <label
                     key={item.id}
-                    className="flex cursor-pointer items-center space-x-2 rounded p-2 hover:bg-gray-50"
+                    className="flex cursor-pointer items-start space-x-2 rounded p-2 hover:bg-gray-50"
                   >
                     <input
                       type="checkbox"
-                      checked={selectedBancoIds.includes(item.id)}
-                      onChange={(e) => toggleBanco(item.id, e.target.checked)}
-                      className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                      checked={selectedAbogadoIds.includes(item.id)}
+                      onChange={(e) => toggleAbogado(item.id, e.target.checked)}
+                      className="mt-1 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                     />
-                    <span className="text-sm text-gray-700">{item.nombre}</span>
+                    <div>
+                      <div className="text-sm text-gray-700">{item.nombre || `Abogado #${item.id}`}</div>
+                      <div className="text-xs text-gray-500">
+                        {(item.bancos || []).map((banco) => banco.banco.nombre).join(', ') || 'Sin bancos'}
+                      </div>
+                    </div>
                   </label>
+                ))
+              )}
+            </div>
+          </div>
+
+          <div className="rounded-lg border border-blue-100 bg-blue-50 p-4">
+            <p className="text-sm font-medium text-blue-900">Bancos derivados</p>
+            <p className="mt-1 text-xs text-blue-700">
+              El acceso a bancos se calcula automaticamente desde los abogados seleccionados.
+            </p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {derivedBancos.length === 0 ? (
+                <span className="text-sm text-blue-700">Sin bancos derivados</span>
+              ) : (
+                derivedBancos.map((banco) => (
+                  <span
+                    key={banco.id}
+                    className="inline-flex items-center rounded-full bg-white px-2.5 py-1 text-xs font-medium text-blue-700"
+                  >
+                    {banco.nombre}
+                  </span>
                 ))
               )}
             </div>

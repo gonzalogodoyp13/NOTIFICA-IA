@@ -25,6 +25,13 @@ const cards: Array<{
 ]
 
 export default function RolOverview({ rolData, isRolLoading, isRolError, rolId }: RolOverviewProps) {
+  const bancoLabel =
+    rolData?.demanda?.caratula
+      ? rolData.demanda.caratula
+      : rolData?.abogado?.bancos && rolData.abogado.bancos.length > 0
+      ? rolData.abogado.bancos[0].banco.nombre
+      : 'Sin dato'
+
   const kpis = rolData?.kpis
   const hasActivity =
     !!rolData &&
@@ -88,7 +95,7 @@ export default function RolOverview({ rolData, isRolLoading, isRolError, rolId }
               }
             />
             <MetaBlock label="Abogado" value={rolData.abogado?.nombre ?? 'Sin dato'} />
-            <MetaBlock label="Banco" value={rolData.abogado?.banco?.nombre ?? 'Sin dato'} />
+            <MetaBlock label="Banco" value={bancoLabel} />
             <MetaBlock label="Procurador" value={rolData.demanda?.procurador?.nombre ?? 'Sin dato'} />
           </div>
 

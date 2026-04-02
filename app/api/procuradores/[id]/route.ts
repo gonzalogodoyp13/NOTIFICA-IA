@@ -1,19 +1,44 @@
 // API route: /api/procuradores/[id]
 // GET: Get a single procurador
-// PATCH: Update a procurador and optionally sync banco relations
+// PATCH: Update a procurador and sync abogado relations
 import { NextRequest, NextResponse } from 'next/server'
 import { getCurrentUserWithOffice } from '@/lib/auth-server'
 import { prisma } from '@/lib/prisma'
 import { ProcuradorUpdateSchema } from '@/lib/zodSchemas'
+import { mapProcuradorListItem } from '@/lib/procuradores'
 
 export const dynamic = 'force-dynamic'
 
-function normalizeBancoIds(bancoIds?: number[]) {
-  if (!Array.isArray(bancoIds)) return undefined
+const procuradorInclude = {
+  abogados: {
+    include: {
+      abogado: {
+        select: {
+          id: true,
+          nombre: true,
+          bancos: {
+            select: {
+              bancoId: true,
+              banco: {
+                select: {
+                  id: true,
+                  nombre: true,
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+  },
+} as const
+
+function normalizeAbogadoIds(abogadoIds?: number[]) {
+  if (!Array.isArray(abogadoIds)) return undefined
 
   return Array.from(
     new Set(
-      bancoIds.filter((value): value is number => Number.isInteger(value) && value > 0)
+      abogadoIds.filter((value): value is number => Number.isInteger(value) && value > 0)
     )
   )
 }
@@ -35,7 +60,7 @@ export async function GET(
     const id = parseInt(params.id)
     if (isNaN(id)) {
       return NextResponse.json(
-        { ok: false, message: 'ID invÃ¡lido', error: 'ID invÃ¡lido' },
+        { ok: false, message: 'ID invalido', error: 'ID invalido' },
         { status: 400 }
       )
     }
@@ -45,32 +70,7 @@ export async function GET(
         id,
         officeId: user.officeId,
       },
-      include: {
-        abogado: {
-          select: {
-            id: true,
-            nombre: true,
-          },
-        },
-        bancos: {
-          select: {
-            bancoId: true,
-            activo: true,
-            alias: true,
-            banco: {
-              select: {
-                id: true,
-                nombre: true,
-              },
-            },
-          },
-          orderBy: {
-            banco: {
-              nombre: 'asc',
-            },
-          },
-        },
-      },
+      include: procuradorInclude,
     })
 
     if (!procurador) {
@@ -80,7 +80,7 @@ export async function GET(
       )
     }
 
-    return NextResponse.json({ ok: true, data: procurador })
+    return NextResponse.json({ ok: true, data: mapProcuradorListItem(procurador) })
   } catch (error) {
     console.error('Error fetching procurador:', error)
     const errorMessage = error instanceof Error ? error.message : 'Error al obtener el procurador'
@@ -108,7 +108,7 @@ export async function PATCH(
     const id = parseInt(params.id)
     if (isNaN(id)) {
       return NextResponse.json(
-        { ok: false, message: 'ID invÃ¡lido', error: 'ID invÃ¡lido' },
+        { ok: false, message: 'ID invalido', error: 'ID invalido' },
         { status: 400 }
       )
     }
@@ -117,14 +117,6 @@ export async function PATCH(
       where: {
         id,
         officeId: user.officeId,
-      },
-      include: {
-        bancos: {
-          select: {
-            id: true,
-            bancoId: true,
-          },
-        },
       },
     })
 
@@ -146,59 +138,38 @@ export async function PATCH(
       )
     }
 
-    const updateData: {
-      nombre?: string
-      email?: string | null
-      telefono?: string | null
-      notas?: string | null
-      abogadoId?: number | null
-    } = {}
+    const normalizedAbogadoIds = normalizeAbogadoIds(parsed.data.abogadoIds)
 
-    if (parsed.data.nombre !== undefined) updateData.nombre = parsed.data.nombre.trim()
-    if (parsed.data.email !== undefined) updateData.email = parsed.data.email?.trim() || null
-    if (parsed.data.telefono !== undefined) updateData.telefono = parsed.data.telefono?.trim() || null
-    if (parsed.data.notas !== undefined) updateData.notas = parsed.data.notas?.trim() || null
-
-    if (parsed.data.abogadoId !== undefined) {
-      if (parsed.data.abogadoId !== null) {
-        const abogado = await prisma.abogado.findFirst({
-          where: {
-            id: parsed.data.abogadoId,
-            officeId: user.officeId,
-          },
-        })
-
-        if (!abogado) {
-          return NextResponse.json(
-            { ok: false, message: 'Abogado no encontrado o no pertenece a tu oficina', error: 'Abogado no encontrado' },
-            { status: 404 }
-          )
-        }
-      }
-
-      updateData.abogadoId = parsed.data.abogadoId
-    }
-
-    const normalizedBancoIds = normalizeBancoIds(parsed.data.bancoIds)
-
-    if (normalizedBancoIds) {
-      const bancos = await prisma.banco.findMany({
+    if (normalizedAbogadoIds) {
+      const abogados = await prisma.abogado.findMany({
         where: {
-          id: { in: normalizedBancoIds },
+          id: { in: normalizedAbogadoIds },
           officeId: user.officeId,
         },
         select: { id: true },
       })
 
-      if (bancos.length !== normalizedBancoIds.length) {
+      if (abogados.length !== normalizedAbogadoIds.length) {
         return NextResponse.json(
-          { ok: false, message: 'Uno o mas bancos no encontrados o no pertenecen a tu oficina', error: 'Bancos invalidos' },
+          { ok: false, message: 'Uno o mas abogados no encontrados o no pertenecen a tu oficina', error: 'Abogados invalidos' },
           { status: 400 }
         )
       }
     }
 
     const procurador = await prisma.$transaction(async (tx) => {
+      const updateData: {
+        nombre?: string
+        email?: string | null
+        telefono?: string | null
+        notas?: string | null
+      } = {}
+
+      if (parsed.data.nombre !== undefined) updateData.nombre = parsed.data.nombre.trim()
+      if (parsed.data.email !== undefined) updateData.email = parsed.data.email?.trim() || null
+      if (parsed.data.telefono !== undefined) updateData.telefono = parsed.data.telefono?.trim() || null
+      if (parsed.data.notas !== undefined) updateData.notas = parsed.data.notas?.trim() || null
+
       if (Object.keys(updateData).length > 0) {
         await tx.procurador.update({
           where: { id },
@@ -206,66 +177,33 @@ export async function PATCH(
         })
       }
 
-      if (normalizedBancoIds) {
-        const currentBancoIds = existingProcurador.bancos.map((banco) => banco.bancoId)
-        const bancoIdsToCreate = normalizedBancoIds.filter((bancoId) => !currentBancoIds.includes(bancoId))
-        const bancoIdsToDelete = currentBancoIds.filter((bancoId) => !normalizedBancoIds.includes(bancoId))
+      if (normalizedAbogadoIds) {
+        await tx.procuradorAbogado.deleteMany({
+          where: {
+            officeId: user.officeId,
+            procuradorId: id,
+          },
+        })
 
-        if (bancoIdsToCreate.length > 0) {
-          await tx.bancoProcurador.createMany({
-            data: bancoIdsToCreate.map((bancoId) => ({
+        if (normalizedAbogadoIds.length > 0) {
+          await tx.procuradorAbogado.createMany({
+            data: normalizedAbogadoIds.map((abogadoId) => ({
               officeId: user.officeId,
-              bancoId,
               procuradorId: id,
-              activo: true,
+              abogadoId,
             })),
             skipDuplicates: true,
-          })
-        }
-
-        if (bancoIdsToDelete.length > 0) {
-          await tx.bancoProcurador.deleteMany({
-            where: {
-              officeId: user.officeId,
-              procuradorId: id,
-              bancoId: { in: bancoIdsToDelete },
-            },
           })
         }
       }
 
       return tx.procurador.findUniqueOrThrow({
         where: { id },
-        include: {
-          abogado: {
-            select: {
-              id: true,
-              nombre: true,
-            },
-          },
-          bancos: {
-            select: {
-              activo: true,
-              alias: true,
-              bancoId: true,
-              banco: {
-                select: {
-                  id: true,
-                  nombre: true,
-                },
-              },
-            },
-            orderBy: {
-              banco: {
-                nombre: 'asc',
-              },
-            },
-          },
-        },
+        include: procuradorInclude,
       })
     })
 
-    return NextResponse.json({ ok: true, data: procurador })
+    return NextResponse.json({ ok: true, data: mapProcuradorListItem(procurador) })
   } catch (error) {
     console.error('Error updating procurador:', error)
     const errorMessage = error instanceof Error ? error.message : 'Error al actualizar el procurador'

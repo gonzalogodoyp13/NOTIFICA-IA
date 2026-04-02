@@ -17,11 +17,6 @@ interface Banco {
 interface Abogado {
   id: number
   nombre: string | null
-  bancoId: number | null
-  banco: {
-    id: number
-    nombre: string
-  } | null
   bancos?: Array<{
     banco: {
       id: number
@@ -148,15 +143,9 @@ export default function NuevaDemandaPage() {
       return
     }
 
-    // Filter abogados by bancoId - consider both primary banco and bancos array
+    // Filter abogados by bancoId using only abogado_bancos
     const selectedBancoId = Number(newBancoId)
-    const filteredAbogados = allAbogados.filter(a => {
-      // Check if banco principal matches
-      const primaryMatch = a.banco?.id === selectedBancoId || a.bancoId === selectedBancoId
-      // Check if any banco in bancos array matches
-      const multiMatch = a.bancos?.some(rel => rel.banco.id === selectedBancoId)
-      return primaryMatch || multiMatch
-    })
+    const filteredAbogados = allAbogados.filter(a => a.bancos?.some(rel => rel.banco.id === selectedBancoId))
     setAbogados(filteredAbogados)
 
     // Auto-select if exactly 1 abogado
@@ -187,11 +176,11 @@ export default function NuevaDemandaPage() {
     // Find selected abogado
     const abogado = allAbogados.find(a => a.id === Number(newAbogadoId))
     
-    if (abogado?.bancoId) {
-      // Auto-select banco from abogado
-      setBancoId(String(abogado.bancoId))
-      // Filter abogados to show only those from this banco
-      const filteredAbogados = allAbogados.filter(a => a.bancoId === abogado.bancoId)
+    const firstBancoId = abogado?.bancos?.[0]?.banco.id
+
+    if (firstBancoId) {
+      setBancoId(String(firstBancoId))
+      const filteredAbogados = allAbogados.filter(a => a.bancos?.some(rel => rel.banco.id === firstBancoId))
       setAbogados(filteredAbogados)
     } else {
       // Abogado has no banco: clear banco selection
@@ -367,6 +356,7 @@ export default function NuevaDemandaPage() {
                 onChange={handleProcuradorChange}
                 label="Procurador (opcional)"
                 bancoId={bancoId ? Number(bancoId) : undefined}
+                abogadoId={formData.abogadoId ? Number(formData.abogadoId) : undefined}
               />
 
               {/* Materia */}

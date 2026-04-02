@@ -12,7 +12,9 @@ export type DiligenciaWithReciboRelations = Diligencia & {
     tribunal: Tribunal | null
     demanda: (Demanda & {
       abogados: Abogado & {
-        banco: Banco | null
+        bancos: {
+          banco: Banco
+        }[]
       }
       ejecutados: (Ejecutado & {
         comunas: Comuna | null
@@ -63,7 +65,7 @@ export function buildReciboVariables(
   // Extraer relaciones de forma segura
   const demanda = diligencia.rol.demanda ?? null
   const abogado = demanda?.abogados ?? null
-  const banco = abogado?.banco ?? null
+  const banco = abogado?.bancos?.[0]?.banco ?? null
   const ejecutados = demanda?.ejecutados ?? []
   const tribunal = diligencia.rol.tribunal ?? null
   const tipoDiligencia = diligencia.tipo ?? null

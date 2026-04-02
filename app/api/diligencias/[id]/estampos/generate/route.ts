@@ -76,7 +76,11 @@ export async function POST(
               include: {
                 abogados: {
                   include: {
-                    banco: true,
+                    bancos: {
+                      include: {
+                        banco: true,
+                      },
+                    },
                   },
                 },
                 ejecutados: {
@@ -251,7 +255,7 @@ export async function POST(
       receptorNombre: dbUser?.officeName ?? 'Receptor Judicial',
       tribunalNombre: diligencia.rol.tribunal?.nombre ?? null,
       rolNumero: diligencia.rol.rol,
-      bancoNombre: diligencia.rol.demanda?.abogados?.banco?.nombre ?? null,
+      bancoNombre: diligencia.rol.demanda?.abogados?.bancos?.[0]?.banco?.nombre ?? null,
       ejecutadoNombre: finalVariables.nombre_ejecutado || null,
     }
 

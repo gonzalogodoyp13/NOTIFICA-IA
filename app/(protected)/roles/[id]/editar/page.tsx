@@ -4,7 +4,7 @@
 // TODO: Refactor form into shared component for reuse
 'use client'
 
-import { useEffect, useState, useMemo } from 'react'
+import { useEffect, useState, useMemo, useCallback, useRef } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import Link from 'next/link'
 import { cleanCuantiaInput } from '@/lib/utils/cuantia'
@@ -18,11 +18,12 @@ interface Banco {
 interface Abogado {
   id: number
   nombre: string | null
-  bancoId: number | null
-  banco: {
-    id: number
-    nombre: string
-  } | null
+  bancos?: Array<{
+    banco: {
+      id: number
+      nombre: string
+    }
+  }>
 }
 
 interface Tribunal {
@@ -76,10 +77,12 @@ interface RolData {
   abogado: {
     id: number | null
     nombre: string | null
-    banco: {
-      id: number
-      nombre: string
-    } | null
+    bancos?: Array<{
+      banco: {
+        id: number
+        nombre: string
+      }
+    }>
   } | null
 }
 
@@ -105,6 +108,8 @@ export default function EditarDemandaPage() {
     comunaId: string
   }>>([])
   const [rolData, setRolData] = useState<RolData | null>(null)
+  const hasPrefilledRef = useRef(false)
+  const [optionsLoaded, setOptionsLoaded] = useState(false)
 
   const [formData, setFormData] = useState({
     rol: '',
@@ -124,16 +129,10 @@ export default function EditarDemandaPage() {
     return ''
   }, [bancoId, bancos])
 
-  useEffect(() => {
-    if (rolId) {
-      fetchRolData()
-      fetchOptions()
-    }
-  }, [rolId])
-
-  const fetchRolData = async () => {
+  const fetchRolData = useCallback(async () => {
     try {
       setLoadingData(true)
+      hasPrefilledRef.current = false
       const response = await fetch(`/api/roles/${rolId}`, {
         credentials: 'include',
       })
@@ -145,59 +144,6 @@ export default function EditarDemandaPage() {
       const data = await response.json()
       if (data.ok && data.data) {
         setRolData(data.data)
-        
-        // Pre-fill form with current data
-        const rol = data.data
-        setFormData({
-          rol: rol.rol?.numero || '',
-          tribunalId: '', // Will be set after finding matching tribunales
-          cuantia: rol.demanda?.cuantia ? String(Math.floor(rol.demanda.cuantia)) : '',
-          abogadoId: rol.abogado?.id ? String(rol.abogado.id) : '',
-          materiaId: rol.demanda?.materia?.id ? String(rol.demanda.materia.id) : '',
-          procuradorId: rol.demanda?.procurador?.id ? String(rol.demanda.procurador.id) : '',
-        })
-
-        // Find matching tribunales by nombre
-        if (rol.tribunal?.nombre) {
-          const tribunalesRes = await fetch('/api/tribunales', {
-            credentials: 'include',
-          })
-          if (tribunalesRes.ok) {
-            const tribunalesData = await tribunalesRes.json()
-            if (tribunalesData.ok && tribunalesData.data) {
-              const matchingTribunal = tribunalesData.data.find(
-                (t: Tribunal) => t.nombre === rol.tribunal?.nombre
-              )
-              if (matchingTribunal) {
-                setFormData(prev => ({
-                  ...prev,
-                  tribunalId: String(matchingTribunal.id),
-                }))
-              }
-            }
-          }
-        }
-
-        // Pre-fill banco: Priority 1 - from abogado.banco.id
-        // Priority 2 - match by caratula nombre (will be done in fetchOptions after bancos load)
-        if (rol.abogado?.banco?.id) {
-          setBancoId(String(rol.abogado.banco.id))
-        }
-
-        // Pre-fill ejecutados from demanda.ejecutados
-        if (rol.demanda?.ejecutados && rol.demanda.ejecutados.length > 0) {
-          const ejecutadosData = rol.demanda.ejecutados.map((ej: { id: string; nombre: string; rut: string; direccion: string | null; comuna: { id: number; nombre: string } | null }) => ({
-            id: ej.id, // Preservar ID de ejecutados existentes
-            nombre: ej.nombre || '',
-            rut: ej.rut || '',
-            direccion: ej.direccion || '',
-            comunaId: ej.comuna?.id ? String(ej.comuna.id) : '',
-          }))
-          setEjecutados(ejecutadosData)
-        } else {
-          // No ejecutados or empty array - initialize with empty array
-          setEjecutados([])
-        }
       } else {
         throw new Error(data.error || 'Error al cargar los datos del ROL')
       }
@@ -206,10 +152,11 @@ export default function EditarDemandaPage() {
     } finally {
       setLoadingData(false)
     }
-  }
+  }, [rolId])
 
-  const fetchOptions = async () => {
+  const fetchOptions = useCallback(async () => {
     try {
+      setOptionsLoaded(false)
       const [bancosRes, abogadosRes, tribunalesRes, materiasRes, comunasRes] = await Promise.all([
         fetch('/api/bancos', { credentials: 'include' }),
         fetch('/api/abogados', { credentials: 'include' }),
@@ -237,33 +184,6 @@ export default function EditarDemandaPage() {
         }
       }
       
-      // After both bancos and abogados are loaded, handle matching
-      // If bancoId not set yet, try to match by caratula (Priority 2)
-      if (!bancoId && rolData?.demanda?.caratula && bancosData.length > 0) {
-        const matchingBanco = bancosData.find(
-          (b: Banco) => b.nombre === rolData.demanda?.caratula
-        )
-        if (matchingBanco) {
-          setBancoId(String(matchingBanco.id))
-          // Filter abogados for this banco
-          if (abogadosData.length > 0) {
-            const filtered = abogadosData.filter((a: Abogado) => a.bancoId === matchingBanco.id)
-            setAbogados(filtered)
-          }
-        } else {
-          // No matching banco found, show all abogados
-          if (abogadosData.length > 0) {
-            setAbogados(abogadosData)
-          }
-        }
-      } else if (bancoId && abogadosData.length > 0) {
-        // Filter abogados if bancoId is already set
-        const filtered = abogadosData.filter((a: Abogado) => a.bancoId === Number(bancoId))
-        setAbogados(filtered)
-      } else if (abogadosData.length > 0) {
-        // No banco selected, show all abogados
-        setAbogados(abogadosData)
-      }
       if (tribunalesRes.ok) {
         const data = await tribunalesRes.json()
         if (data.ok) setTribunales(data.data || [])
@@ -278,28 +198,92 @@ export default function EditarDemandaPage() {
       }
     } catch (err) {
       console.error('Error loading options:', err)
+    } finally {
+      setOptionsLoaded(true)
     }
-  }
+  }, [])
+
+  useEffect(() => {
+    if (rolId) {
+      fetchRolData()
+      fetchOptions()
+    }
+  }, [fetchOptions, fetchRolData, rolId])
+
+  useEffect(() => {
+    if (!rolData || hasPrefilledRef.current || !optionsLoaded) return
+    if (bancos.length === 0 || tribunales.length === 0) return
+
+    const matchingTribunal = rolData.tribunal?.nombre
+      ? tribunales.find((t) => t.nombre === rolData.tribunal?.nombre)
+      : null
+
+    const bancoFromCaratula = rolData.demanda?.caratula
+      ? bancos.find((b) => b.nombre === rolData.demanda?.caratula)
+      : null
+
+    const fallbackBanco = rolData.abogado?.bancos?.[0]?.banco ?? null
+    const selectedBancoId = bancoFromCaratula?.id ?? fallbackBanco?.id ?? null
+
+    setFormData({
+      rol: rolData.rol?.numero || '',
+      tribunalId: matchingTribunal ? String(matchingTribunal.id) : '',
+      cuantia: rolData.demanda?.cuantia ? String(Math.floor(rolData.demanda.cuantia)) : '',
+      abogadoId: rolData.abogado?.id ? String(rolData.abogado.id) : '',
+      materiaId: rolData.demanda?.materia?.id ? String(rolData.demanda.materia.id) : '',
+      procuradorId: rolData.demanda?.procurador?.id ? String(rolData.demanda.procurador.id) : '',
+    })
+    setBancoId(selectedBancoId ? String(selectedBancoId) : '')
+
+    if (rolData.demanda?.ejecutados && rolData.demanda.ejecutados.length > 0) {
+      setEjecutados(
+        rolData.demanda.ejecutados.map((ej) => ({
+          id: ej.id,
+          nombre: ej.nombre || '',
+          rut: ej.rut || '',
+          direccion: ej.direccion || '',
+          comunaId: ej.comuna?.id ? String(ej.comuna.id) : '',
+        }))
+      )
+    } else {
+      setEjecutados([])
+    }
+
+    hasPrefilledRef.current = true
+  }, [bancos, optionsLoaded, rolData, tribunales])
+
+  useEffect(() => {
+    if (!bancoId) {
+      setAbogados(allAbogados)
+      return
+    }
+
+    setAbogados(
+      allAbogados.filter((abogado) =>
+        abogado.bancos?.some((rel) => rel.banco.id === Number(bancoId))
+      )
+    )
+  }, [allAbogados, bancoId])
 
   const handleBancoChange = (newBancoId: string) => {
     setBancoId(newBancoId)
     
     if (!newBancoId) {
-      // Clear banco: reset abogados list and clear abogadoId
-      setAbogados(allAbogados)
       setFormData(prev => ({ ...prev, abogadoId: '' }))
       return
     }
 
-    // Filter abogados by bancoId
-    const filteredAbogados = allAbogados.filter(a => a.bancoId === Number(newBancoId))
-    setAbogados(filteredAbogados)
+    const filteredAbogados = allAbogados.filter((abogado) =>
+      abogado.bancos?.some((rel) => rel.banco.id === Number(newBancoId))
+    )
+    const currentAbogadoId = formData.abogadoId ? Number(formData.abogadoId) : null
+    const currentStillMatches = currentAbogadoId
+      ? filteredAbogados.some((abogado) => abogado.id === currentAbogadoId)
+      : false
 
-    // Auto-select if exactly 1 abogado
     if (filteredAbogados.length === 1) {
       setFormData(prev => ({ ...prev, abogadoId: String(filteredAbogados[0].id) }))
-    } else {
-      // Clear abogadoId if 0 or >1 abogados
+    } else if (!currentStillMatches) {
       setFormData(prev => ({ ...prev, abogadoId: '' }))
     }
   }
@@ -319,16 +303,16 @@ export default function EditarDemandaPage() {
     // Find selected abogado
     const abogado = allAbogados.find(a => a.id === Number(newAbogadoId))
     
-    if (abogado?.bancoId) {
-      // Auto-select banco from abogado
-      setBancoId(String(abogado.bancoId))
-      // Filter abogados to show only those from this banco
-      const filteredAbogados = allAbogados.filter(a => a.bancoId === abogado.bancoId)
-      setAbogados(filteredAbogados)
+    const abogadoBancoIds = (abogado?.bancos ?? []).map((rel) => rel.banco.id)
+    const selectedBancoId = bancoId ? Number(bancoId) : null
+    const nextBancoId = selectedBancoId && abogadoBancoIds.includes(selectedBancoId)
+      ? selectedBancoId
+      : abogadoBancoIds[0]
+
+    if (nextBancoId) {
+      setBancoId(String(nextBancoId))
     } else {
-      // Abogado has no banco: clear banco selection
       setBancoId('')
-      setAbogados(allAbogados)
     }
   }
 
@@ -369,6 +353,7 @@ export default function EditarDemandaPage() {
 
       // Normalize ejecutados: empty strings → null
       const ejecutadosNormalized = ejecutados.map((ejecutado) => ({
+        id: ejecutado.id || undefined,
         nombre: ejecutado.nombre,
         rut: ejecutado.rut,
         direccion: ejecutado.direccion.trim() || null,
@@ -557,6 +542,7 @@ export default function EditarDemandaPage() {
                 onChange={handleProcuradorChange}
                 label="Procurador (opcional)"
                 bancoId={bancoId ? Number(bancoId) : undefined}
+                abogadoId={formData.abogadoId ? Number(formData.abogadoId) : undefined}
               />
 
               {/* Materia */}

@@ -175,7 +175,7 @@ export default function ComunasPage() {
                   No hay comunas registradas aún.
                 </p>
                 <p className="text-gray-500 text-sm mt-2">
-                  Haz clic en "Agregar" para crear tu primera comuna.
+                  Haz clic en &quot;Agregar&quot; para crear tu primera comuna.
                 </p>
               </div>
             </div>

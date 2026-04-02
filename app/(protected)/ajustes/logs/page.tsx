@@ -2,7 +2,7 @@
 // View and filter audit logs from the system
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import Topbar from '@/components/Topbar'
 import Link from 'next/link'
 import LogFilterBar from './components/LogFilterBar'
@@ -43,11 +43,7 @@ export default function LogsPage() {
     to?: string
   }>({})
 
-  useEffect(() => {
-    fetchLogs()
-  }, [])
-
-  const fetchLogs = async (customFilters?: typeof filters) => {
+  const fetchLogs = useCallback(async (customFilters?: typeof filters) => {
     setLoading(true)
     setError(null)
 
@@ -85,7 +81,11 @@ export default function LogsPage() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [filters])
+
+  useEffect(() => {
+    fetchLogs()
+  }, [fetchLogs])
 
   const handleFilter = (newFilters: typeof filters) => {
     setFilters(newFilters)

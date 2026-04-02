@@ -39,7 +39,13 @@ export async function POST(
             demanda: {
               include: {
                 abogados: {
-                  include: { banco: true },
+                  include: {
+                    bancos: {
+                      include: {
+                        banco: true,
+                      },
+                    },
+                  },
                 },
                 ejecutados: {
                   include: { comunas: true },

@@ -167,13 +167,16 @@ const AbogadoSchema = z
     rut: z.string().nullable().optional(),
     email: z.string().nullable().optional(),
     telefono: z.string().nullable().optional(),
-    banco: z
-      .object({
-        id: z.number(),
-        nombre: z.string(),
-      })
-      .nullable()
-      .optional(),
+    bancos: z
+      .array(
+        z.object({
+          banco: z.object({
+            id: z.number(),
+            nombre: z.string(),
+          }),
+        })
+      )
+      .default([]),
   })
   .nullable()
 

@@ -60,7 +60,7 @@ export function buildInitialVariables({
 
   // Datos del abogado
   const abogado = rol?.demanda?.abogados
-  const banco = abogado?.banco
+  const banco = abogado?.bancos?.[0]?.banco ?? null
 
   // Fecha y hora de ejecución
   const fechaEjecucion = meta?.fechaEjecucion

@@ -1,11 +1,10 @@
 // Gestionar Procuradores page
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import Topbar from '@/components/Topbar'
 import Link from 'next/link'
 import { ProcuradorModal } from './ProcuradorModal'
-import { LinkProcuradorModal } from './LinkProcuradorModal'
 
 interface Banco {
   id: number
@@ -15,16 +14,14 @@ interface Banco {
 interface Abogado {
   id: number
   nombre: string | null
+  bancos?: Array<{
+    banco: Banco
+  }>
 }
 
 interface ProcuradorBanco {
   bancoId: number
-  activo: boolean
-  alias: string | null
-  banco: {
-    id: number
-    nombre: string
-  }
+  banco: Banco
 }
 
 interface ProcuradorListItem {
@@ -33,29 +30,27 @@ interface ProcuradorListItem {
   email: string | null
   telefono: string | null
   notas: string | null
-  abogadoId: number | null
-  abogado: Abogado | null
   activo: boolean
+  abogados: Abogado[]
+  abogadoIds: number[]
   bancos: ProcuradorBanco[]
-  bancoProcurador: { activo: boolean; alias: string | null } | null
   createdAt: string
   updatedAt: string
 }
 
 export default function ProcuradoresPage() {
   const [bancos, setBancos] = useState<Banco[]>([])
+  const [abogados, setAbogados] = useState<Abogado[]>([])
   const [selectedBancoId, setSelectedBancoId] = useState<number | null>(null)
+  const [selectedAbogadoId, setSelectedAbogadoId] = useState<number | null>(null)
   const [procuradores, setProcuradores] = useState<ProcuradorListItem[]>([])
   const [loadingBancos, setLoadingBancos] = useState(true)
   const [loadingProcuradores, setLoadingProcuradores] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
   const [showCreateModal, setShowCreateModal] = useState(false)
-  const [showLinkModal, setShowLinkModal] = useState(false)
   const [editingProcurador, setEditingProcurador] = useState<ProcuradorListItem | null>(null)
   const [togglingId, setTogglingId] = useState<number | null>(null)
-  const [togglingBancoProcuradorForProcuradorId, setTogglingBancoProcuradorForProcuradorId] = useState<number | null>(null)
-  const [unlinkingId, setUnlinkingId] = useState<number | null>(null)
   const [searchTerm, setSearchTerm] = useState('')
   const [bankFilterSearchTerm, setBankFilterSearchTerm] = useState('')
   const [showBancoDropdown, setShowBancoDropdown] = useState(false)
@@ -65,29 +60,40 @@ export default function ProcuradoresPage() {
   const normalizedSearchTerm = searchTerm.trim().toLowerCase()
   const normalizedBankFilterSearchTerm = bankFilterSearchTerm.trim().toLowerCase()
   const selectedBanco = bancos.find((banco) => banco.id === selectedBancoId) || null
+  const selectedAbogado = abogados.find((abogado) => abogado.id === selectedAbogadoId) || null
   const selectedBancoNombre = selectedBanco?.nombre || ''
+  const visibleAbogadoOptions = abogados.filter((abogado) => {
+    if (!selectedBancoId) return true
+    return abogado.bancos?.some((rel) => rel.banco.id === selectedBancoId)
+  })
   const visibleBancoOptions = bancos.filter((banco) => {
     if (!normalizedBankFilterSearchTerm) return true
     if (selectedBancoId === banco.id) return true
     return banco.nombre.toLowerCase().includes(normalizedBankFilterSearchTerm)
   })
-  const filteredAndSortedProcuradores = procuradores
-    .filter((procurador) => {
-      if (!normalizedSearchTerm) return true
 
-      return (
-        procurador.nombre.toLowerCase().includes(normalizedSearchTerm) ||
-        (procurador.email || '').toLowerCase().includes(normalizedSearchTerm) ||
-        (procurador.telefono || '').toLowerCase().includes(normalizedSearchTerm)
-      )
-    })
-    .sort((a, b) => {
-      if (sortBy === 'name') {
-        return a.nombre.localeCompare(b.nombre)
-      }
+  const filteredAndSortedProcuradores = useMemo(() => {
+    return procuradores
+      .filter((procurador) => {
+        if (!normalizedSearchTerm) return true
 
-      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-    })
+        const abogadosTexto = procurador.abogados.map((abogado) => abogado.nombre || '').join(' ').toLowerCase()
+
+        return (
+          procurador.nombre.toLowerCase().includes(normalizedSearchTerm) ||
+          (procurador.email || '').toLowerCase().includes(normalizedSearchTerm) ||
+          (procurador.telefono || '').toLowerCase().includes(normalizedSearchTerm) ||
+          abogadosTexto.includes(normalizedSearchTerm)
+        )
+      })
+      .sort((a, b) => {
+        if (sortBy === 'name') {
+          return a.nombre.localeCompare(b.nombre)
+        }
+
+        return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+      })
+  }, [normalizedSearchTerm, procuradores, sortBy])
 
   const fetchBancos = async () => {
     try {
@@ -111,12 +117,29 @@ export default function ProcuradoresPage() {
     }
   }
 
-  const fetchProcuradores = async (bancoId: number | null, signal?: AbortSignal) => {
+  const fetchAbogados = async () => {
+    try {
+      const response = await fetch('/api/abogados', {
+        credentials: 'include',
+      })
+      const data = await response.json().catch(() => ({ ok: false }))
+
+      if (!data.ok) return
+      setAbogados(data.data || [])
+    } catch (err) {
+      console.error('Error loading abogados:', err)
+    }
+  }
+
+  const fetchProcuradores = async (bancoId: number | null, abogadoId: number | null, signal?: AbortSignal) => {
     setLoadingProcuradores(true)
     setError(null)
 
     try {
-      const url = bancoId ? `/api/procuradores?bancoId=${bancoId}` : '/api/procuradores'
+      const params = new URLSearchParams()
+      if (bancoId) params.set('bancoId', String(bancoId))
+      if (abogadoId) params.set('abogadoId', String(abogadoId))
+      const url = params.size > 0 ? `/api/procuradores?${params.toString()}` : '/api/procuradores'
       const response = await fetch(url, {
         signal,
         credentials: 'include',
@@ -141,21 +164,25 @@ export default function ProcuradoresPage() {
   }
 
   const refreshVisibleProcuradores = async () => {
-    await fetchProcuradores(selectedBancoId)
+    await Promise.all([
+      fetchAbogados(),
+      fetchProcuradores(selectedBancoId, selectedAbogadoId),
+    ])
   }
 
   useEffect(() => {
     fetchBancos()
+    fetchAbogados()
   }, [])
 
   useEffect(() => {
     const abortController = new AbortController()
-    fetchProcuradores(selectedBancoId, abortController.signal)
+    fetchProcuradores(selectedBancoId, selectedAbogadoId, abortController.signal)
 
     return () => {
       abortController.abort()
     }
-  }, [selectedBancoId])
+  }, [selectedAbogadoId, selectedBancoId])
 
   useEffect(() => {
     if (!success) return
@@ -191,6 +218,15 @@ export default function ProcuradoresPage() {
     setShowBancoDropdown(false)
   }
 
+  useEffect(() => {
+    if (!selectedAbogadoId) return
+
+    const abogadoMatchesBanco = visibleAbogadoOptions.some((abogado) => abogado.id === selectedAbogadoId)
+    if (!abogadoMatchesBanco) {
+      setSelectedAbogadoId(null)
+    }
+  }, [selectedAbogadoId, visibleAbogadoOptions])
+
   const handleToggleGlobalActivo = async (id: number) => {
     setTogglingId(id)
     setError(null)
@@ -214,79 +250,6 @@ export default function ProcuradoresPage() {
     }
   }
 
-  const handleToggleBancoActivo = async (id: number) => {
-    if (!selectedBancoId) return
-
-    setTogglingBancoProcuradorForProcuradorId(id)
-    setError(null)
-
-    try {
-      const response = await fetch(`/api/procuradores/${id}/banco/${selectedBancoId}/toggle-activo`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-      })
-      const data = await response.json()
-      if (!data.ok) {
-        throw new Error(data.message || data.error || 'Error al cambiar estado')
-      }
-
-      await refreshVisibleProcuradores()
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Error al cambiar estado')
-    } finally {
-      setTogglingBancoProcuradorForProcuradorId(null)
-    }
-  }
-
-  const handleUnlink = async (id: number) => {
-    if (!selectedBancoId) return
-
-    if (!window.confirm('Estas seguro de que deseas desvincular este procurador de este banco?')) {
-      return
-    }
-
-    setUnlinkingId(id)
-    setError(null)
-
-    try {
-      const response = await fetch(`/api/procuradores/${id}/banco/${selectedBancoId}`, {
-        method: 'DELETE',
-        credentials: 'include',
-      })
-      const data = await response.json()
-      if (!data.ok) {
-        throw new Error(data.message || data.error || 'Error al desvincular')
-      }
-
-      setSuccess('Procurador desvinculado exitosamente')
-      await refreshVisibleProcuradores()
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Error al desvincular')
-    } finally {
-      setUnlinkingId(null)
-    }
-  }
-
-  const handleCreateSuccess = async (result?: { reusedExisting?: boolean }) => {
-    setSuccess(
-      result?.reusedExisting
-        ? 'Se reutilizo un procurador existente y se actualizaron sus bancos.'
-        : 'Procurador creado exitosamente'
-    )
-    await refreshVisibleProcuradores()
-  }
-
-  const handleLinkSuccess = async () => {
-    setSuccess('Procurador vinculado exitosamente')
-    await refreshVisibleProcuradores()
-  }
-
-  const handleEditSuccess = async () => {
-    setSuccess('Procurador actualizado exitosamente')
-    await refreshVisibleProcuradores()
-  }
-
   return (
     <div className="min-h-screen bg-white">
       <Topbar />
@@ -298,35 +261,24 @@ export default function ProcuradoresPage() {
                 Gestionar Procuradores
               </h1>
               <p className="text-gray-600">
-                Administra los procuradores y su vinculacion con bancos
+                Administra los procuradores por abogado. Los bancos se derivan automaticamente desde esos abogados.
               </p>
             </div>
 
-            <div className="flex flex-wrap gap-3">
-              <button
-                onClick={() => {
-                  setEditingProcurador(null)
-                  setShowCreateModal(true)
-                }}
-                className="rounded-lg bg-blue-600 px-4 py-2 font-medium text-white transition-colors hover:bg-blue-700"
-              >
-                Agregar Procurador
-              </button>
-
-              {selectedBancoId && (
-                <button
-                  onClick={() => setShowLinkModal(true)}
-                  className="rounded-lg bg-green-600 px-4 py-2 font-medium text-white transition-colors hover:bg-green-700"
-                >
-                  Vincular Procurador Existente
-                </button>
-              )}
-            </div>
+            <button
+              onClick={() => {
+                setEditingProcurador(null)
+                setShowCreateModal(true)
+              }}
+              className="rounded-lg bg-blue-600 px-4 py-2 font-medium text-white transition-colors hover:bg-blue-700"
+            >
+              Agregar Procurador
+            </button>
           </div>
 
           <div className="mb-6 max-w-md space-y-2">
             <label className="mb-2 block text-sm font-medium text-gray-700">
-              Banco
+              Filtrar por banco derivado
             </label>
             <div ref={bancoFilterRef} className="relative">
               <input
@@ -362,7 +314,6 @@ export default function ProcuradoresPage() {
                   >
                     Todos los bancos
                   </button>
-
                   {visibleBancoOptions.length === 0 ? (
                     <div className="px-3 py-2 text-sm text-gray-500">
                       No se encontraron bancos.
@@ -384,6 +335,28 @@ export default function ProcuradoresPage() {
                 </div>
               )}
             </div>
+          </div>
+
+          <div className="mb-6 max-w-md space-y-2">
+            <label htmlFor="abogado-filter" className="mb-2 block text-sm font-medium text-gray-700">
+              Filtrar por abogado asignado
+            </label>
+            <select
+              id="abogado-filter"
+              value={selectedAbogadoId || ''}
+              onChange={(e) => setSelectedAbogadoId(e.target.value ? Number(e.target.value) : null)}
+              className="w-full rounded-lg border border-gray-300 px-3 py-2 focus:border-blue-500 focus:ring-blue-500"
+            >
+              <option value="">Todos los abogados</option>
+              {visibleAbogadoOptions.map((abogado) => (
+                <option key={abogado.id} value={abogado.id}>
+                  {abogado.nombre || `Abogado #${abogado.id}`}
+                </option>
+              ))}
+            </select>
+            <p className="text-xs text-gray-500">
+              El banco sigue siendo derivado. Este filtro usa la relacion principal procurador-abogado.
+            </p>
           </div>
 
           {error && (
@@ -441,7 +414,7 @@ export default function ProcuradoresPage() {
               <div className="py-12 text-center">
                 <p className="text-lg text-gray-600">
                   {selectedBancoId
-                    ? 'No hay procuradores vinculados a este banco.'
+                    ? 'No hay procuradores disponibles para este banco derivado.'
                     : 'No hay procuradores registrados aun.'}
                 </p>
                 <p className="mt-2 text-sm text-gray-500">
@@ -465,24 +438,12 @@ export default function ProcuradoresPage() {
               <table className="min-w-full divide-y divide-gray-200">
                 <thead className="bg-gray-50">
                   <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
-                      Nombre
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
-                      Contacto
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
-                      Abogado
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
-                      Banco
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
-                      Estado
-                    </th>
-                    <th className="px-6 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">
-                      Acciones
-                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Nombre</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Contacto</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Abogados</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Bancos derivados</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Estado</th>
+                    <th className="px-6 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Acciones</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-200 bg-white">
@@ -500,13 +461,26 @@ export default function ProcuradoresPage() {
                             {procurador.email || procurador.telefono || '-'}
                           </div>
                         </td>
-                        <td className="whitespace-nowrap px-6 py-4">
-                          <div className="text-sm text-gray-500">{procurador.abogado?.nombre || '-'}</div>
+                        <td className="px-6 py-4 text-sm text-gray-600">
+                          {procurador.abogados.length === 0 ? (
+                            '-'
+                          ) : (
+                            <div className="flex flex-wrap gap-2">
+                              {procurador.abogados.map((abogado) => (
+                                <span
+                                  key={`${procurador.id}-${abogado.id}`}
+                                  className="inline-flex items-center rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-700"
+                                >
+                                  {abogado.nombre || `Abogado #${abogado.id}`}
+                                </span>
+                              ))}
+                            </div>
+                          )}
                         </td>
                         <td className="px-6 py-4 text-sm text-gray-600">
                           {procurador.bancos.length === 0 ? (
                             <span className="inline-flex items-center rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-700">
-                              Sin banco
+                              Sin banco derivado
                             </span>
                           ) : (
                             <div className="flex flex-wrap gap-2">
@@ -521,7 +495,7 @@ export default function ProcuradoresPage() {
                               {extraBancosCount > 0 && (
                                 <span
                                   className="inline-flex items-center rounded-full bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-700"
-                                  title={`${procurador.bancos.length} bancos asignados`}
+                                  title={`${procurador.bancos.length} bancos derivados`}
                                 >
                                   (+{extraBancosCount})
                                 </span>
@@ -530,28 +504,13 @@ export default function ProcuradoresPage() {
                           )}
                         </td>
                         <td className="whitespace-nowrap px-6 py-4">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <span
-                              className={`rounded px-2 py-1 text-xs font-medium ${
-                                procurador.activo
-                                  ? 'bg-green-100 text-green-800'
-                                  : 'bg-gray-100 text-gray-800'
-                              }`}
-                            >
-                              {procurador.activo ? 'Activo' : 'Inactivo'}
-                            </span>
-                            {selectedBancoId && (
-                              <span
-                                className={`rounded px-2 py-1 text-xs font-medium ${
-                                  procurador.bancoProcurador?.activo
-                                    ? 'bg-blue-100 text-blue-800'
-                                    : 'bg-gray-100 text-gray-800'
-                                }`}
-                              >
-                                Banco: {procurador.bancoProcurador?.activo ? 'Activo' : 'Inactivo'}
-                              </span>
-                            )}
-                          </div>
+                          <span
+                            className={`rounded px-2 py-1 text-xs font-medium ${
+                              procurador.activo ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
+                            }`}
+                          >
+                            {procurador.activo ? 'Activo' : 'Inactivo'}
+                          </span>
                         </td>
                         <td className="whitespace-nowrap px-6 py-4 text-right text-sm font-medium">
                           <div className="flex items-center justify-end gap-3">
@@ -569,34 +528,8 @@ export default function ProcuradoresPage() {
                               className="text-blue-600 hover:text-blue-900"
                               disabled={togglingId === procurador.id}
                             >
-                              {togglingId === procurador.id
-                                ? '...'
-                                : procurador.activo
-                                  ? 'Desactivar'
-                                  : 'Activar'}
+                              {togglingId === procurador.id ? '...' : procurador.activo ? 'Desactivar' : 'Activar'}
                             </button>
-                            {selectedBancoId && (
-                              <>
-                                <button
-                                  onClick={() => handleToggleBancoActivo(procurador.id)}
-                                  className="text-blue-600 hover:text-blue-900"
-                                  disabled={togglingBancoProcuradorForProcuradorId === procurador.id}
-                                >
-                                  {togglingBancoProcuradorForProcuradorId === procurador.id
-                                    ? '...'
-                                    : procurador.bancoProcurador?.activo
-                                      ? 'Desactivar en Banco'
-                                      : 'Activar en Banco'}
-                                </button>
-                                <button
-                                  onClick={() => handleUnlink(procurador.id)}
-                                  className="text-red-600 hover:text-red-900"
-                                  disabled={unlinkingId === procurador.id}
-                                >
-                                  {unlinkingId === procurador.id ? 'Desvinculando...' : 'Desvincular'}
-                                </button>
-                              </>
-                            )}
                           </div>
                         </td>
                       </tr>
@@ -632,31 +565,19 @@ export default function ProcuradoresPage() {
             setShowCreateModal(false)
             setEditingProcurador(null)
           }}
-          bancoId={editingProcurador ? null : selectedBancoId}
-          bancos={bancos}
+          abogados={abogados}
           procurador={editingProcurador || undefined}
           onSuccess={async (result) => {
             setShowCreateModal(false)
             setEditingProcurador(null)
-
-            if (editingProcurador) {
-              await handleEditSuccess()
-            } else {
-              await handleCreateSuccess(result)
-            }
-          }}
-        />
-      )}
-
-      {showLinkModal && selectedBancoId && (
-        <LinkProcuradorModal
-          isOpen={showLinkModal}
-          onClose={() => setShowLinkModal(false)}
-          bancoId={selectedBancoId}
-          linkedProcuradorIds={procuradores.map((procurador) => procurador.id)}
-          onSuccess={async () => {
-            setShowLinkModal(false)
-            await handleLinkSuccess()
+            setSuccess(
+              editingProcurador
+                ? 'Procurador actualizado exitosamente'
+                : result?.reusedExisting
+                  ? 'Se reutilizo un procurador existente y se actualizaron sus abogados.'
+                  : 'Procurador creado exitosamente'
+            )
+            await refreshVisibleProcuradores()
           }}
         />
       )}
