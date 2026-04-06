@@ -126,11 +126,11 @@ function getEstadoLabel(recibo: any, documento: any, diligencia: any) {
     return 'Pagado'
   }
 
-  if (diligencia?.boletaEstado === 'NO_PAGADO') {
-    return 'No pagado'
+  if (diligencia?.boletaEstado === 'NO_PAGADO' || !diligencia?.boletaEstado) {
+    return 'Sin pagar'
   }
 
-  return EMPTY_VALUE
+  return 'Sin pagar'
 }
 
 export function parseReceiptFilters(searchParams: URLSearchParams, defaults?: Partial<ReceiptFiltersInput>) {
@@ -162,9 +162,10 @@ export function parseReceiptFilters(searchParams: URLSearchParams, defaults?: Pa
 export async function getReceiptList(
   officeId: number,
   filters: ReceiptFiltersInput,
-  options?: { exportAll?: boolean }
+  options?: { exportAll?: boolean; reciboIds?: string[] }
 ): Promise<ReceiptListResult> {
   const exportAll = options?.exportAll ?? false
+  const reciboIds = options?.reciboIds?.filter(Boolean) ?? []
 
   const demandaConditions: Record<string, unknown>[] = []
 
@@ -202,6 +203,13 @@ export async function getReceiptList(
   }
 
   const where: any = {
+    ...(reciboIds.length > 0
+      ? {
+          id: {
+            in: reciboIds,
+          },
+        }
+      : {}),
     rol: {
       officeId,
       ...(filters.rol

@@ -12,6 +12,16 @@ type OptionItem = {
   nombre: string
 }
 
+type AbogadoFilterOption = OptionItem & {
+  bancoIds: string[]
+  procuradorIds: string[]
+}
+
+type ProcuradorFilterOption = OptionItem & {
+  abogadoIds: string[]
+  bancoIds: string[]
+}
+
 type ReceiptRow = {
   reciboId: string
   rolId: string
@@ -133,6 +143,10 @@ function buildQueryString(filters: FilterState, page: number) {
   return params.toString()
 }
 
+function arraysMatch(left: string[], right: string[]) {
+  return left.length === right.length && left.every((value, index) => value === right[index])
+}
+
 function MultiSelectFilter({
   label,
   options,
@@ -185,7 +199,7 @@ function MultiSelectFilter({
       </button>
 
       {isOpen && (
-        <div className="absolute z-20 mt-2 w-full rounded-2xl border border-slate-200 bg-white p-3 shadow-xl">
+        <div className="absolute z-[80] mt-2 w-full rounded-2xl border border-slate-200 bg-white p-3 shadow-xl">
           <div className="mb-2 flex items-center justify-between gap-3 border-b border-slate-100 pb-2">
             <p className="text-xs text-slate-500">
               {selectedIds.length === 0 ? 'Sin filtros aplicados' : `${selectedIds.length} seleccionados`}
@@ -241,10 +255,10 @@ export default function RecibosPage() {
   const page = Number.parseInt(searchParams.get('page') ?? '1', 10) || 1
 
   const [filters, setFilters] = useState<FilterState>(appliedFilters)
-  const [options, setOptions] = useState<{
-    abogados: OptionItem[]
+  const [allOptions, setAllOptions] = useState<{
+    abogados: AbogadoFilterOption[]
     bancos: OptionItem[]
-    procuradores: OptionItem[]
+    procuradores: ProcuradorFilterOption[]
   }>({
     abogados: [],
     bancos: [],
@@ -255,6 +269,12 @@ export default function RecibosPage() {
   const [error, setError] = useState<string | null>(null)
   const [validationError, setValidationError] = useState<string | null>(null)
   const [exporting, setExporting] = useState(false)
+  const [optionsLoaded, setOptionsLoaded] = useState(false)
+  const [selectedReceiptIds, setSelectedReceiptIds] = useState<string[]>([])
+  const [bulkUpdating, setBulkUpdating] = useState(false)
+  const [isBoletaModalOpen, setIsBoletaModalOpen] = useState(false)
+  const [numeroBoletaDraft, setNumeroBoletaDraft] = useState('')
+  const selectAllRef = useRef<HTMLInputElement | null>(null)
 
   useEffect(() => {
     setFilters(appliedFilters)
@@ -305,10 +325,12 @@ export default function RecibosPage() {
 
         if (ignore) return
 
-        setOptions({
+        setAllOptions({
           abogados: (abogadosPayload.data ?? []).map((item: any) => ({
             id: item.id,
             nombre: item.nombre ?? `Abogado ${item.id}`,
+            bancoIds: (item.bancos ?? []).map((bancoLink: any) => String(bancoLink.banco?.id ?? bancoLink.bancoId)),
+            procuradorIds: (item.procuradores ?? []).map((procurador: any) => String(procurador.id)),
           })),
           bancos: (bancosPayload.data ?? []).map((item: any) => ({
             id: item.id,
@@ -317,8 +339,11 @@ export default function RecibosPage() {
           procuradores: (procuradoresPayload.data ?? []).map((item: any) => ({
             id: item.id,
             nombre: item.nombre,
+            abogadoIds: (item.abogadoIds ?? []).map(String),
+            bancoIds: (item.bancos ?? []).map((bancoLink: any) => String(bancoLink.banco?.id ?? bancoLink.bancoId)),
           })),
         })
+        setOptionsLoaded(true)
       } catch (fetchError) {
         console.error('Error loading receipt filters:', fetchError)
       }
@@ -391,6 +416,104 @@ export default function RecibosPage() {
       ignore = true
     }
   }, [searchParams])
+
+  const availableOptions = useMemo(() => {
+    const abogados = allOptions.abogados.filter(abogado => {
+      if (
+        filters.bancoIds.length > 0 &&
+        !abogado.bancoIds.some(bancoId => filters.bancoIds.includes(bancoId))
+      ) {
+        return false
+      }
+
+      if (
+        filters.procuradorIds.length > 0 &&
+        !abogado.procuradorIds.some(procuradorId => filters.procuradorIds.includes(procuradorId))
+      ) {
+        return false
+      }
+
+      return true
+    })
+
+    const procuradores = allOptions.procuradores.filter(procurador => {
+      if (
+        filters.abogadoIds.length > 0 &&
+        !procurador.abogadoIds.some(abogadoId => filters.abogadoIds.includes(abogadoId))
+      ) {
+        return false
+      }
+
+      if (
+        filters.bancoIds.length > 0 &&
+        !procurador.bancoIds.some(bancoId => filters.bancoIds.includes(bancoId))
+      ) {
+        return false
+      }
+
+      return true
+    })
+
+    const bancos = allOptions.bancos.filter(banco => {
+      if (filters.abogadoIds.length > 0) {
+        const matchesAbogado = allOptions.abogados.some(
+          abogado =>
+            filters.abogadoIds.includes(String(abogado.id)) &&
+            abogado.bancoIds.includes(String(banco.id))
+        )
+
+        if (!matchesAbogado) {
+          return false
+        }
+      }
+
+      if (filters.procuradorIds.length > 0) {
+        const matchesProcurador = allOptions.procuradores.some(
+          procurador =>
+            filters.procuradorIds.includes(String(procurador.id)) &&
+            procurador.bancoIds.includes(String(banco.id))
+        )
+
+        if (!matchesProcurador) {
+          return false
+        }
+      }
+
+      return true
+    })
+
+    return { abogados, bancos, procuradores }
+  }, [allOptions, filters.abogadoIds, filters.bancoIds, filters.procuradorIds])
+
+  useEffect(() => {
+    if (!optionsLoaded) {
+      return
+    }
+
+    const availableAbogadoIds = new Set(availableOptions.abogados.map(option => String(option.id)))
+    const availableBancoIds = new Set(availableOptions.bancos.map(option => String(option.id)))
+    const availableProcuradorIds = new Set(availableOptions.procuradores.map(option => String(option.id)))
+
+    setFilters(current => {
+      const next = {
+        ...current,
+        abogadoIds: current.abogadoIds.filter(id => availableAbogadoIds.has(id)),
+        bancoIds: current.bancoIds.filter(id => availableBancoIds.has(id)),
+        procuradorIds: current.procuradorIds.filter(id => availableProcuradorIds.has(id)),
+      }
+
+      if (
+        arraysMatch(current.abogadoIds, next.abogadoIds) &&
+        arraysMatch(current.bancoIds, next.bancoIds) &&
+        arraysMatch(current.procuradorIds, next.procuradorIds)
+      ) {
+        return current
+      }
+
+      setValidationError(validateFilters(next))
+      return next
+    })
+  }, [availableOptions, optionsLoaded])
 
   const handleTextFilterChange = (key: 'rol' | 'fechaDesde' | 'fechaHasta', value: string) => {
     const next = {
@@ -467,12 +590,19 @@ export default function RecibosPage() {
       return
     }
 
+    if (selectedReceiptIds.length === 0) {
+      setError('Debes seleccionar al menos un recibo para exportar.')
+      return
+    }
+
     setExporting(true)
+    setError(null)
     try {
       const params = new URLSearchParams(searchParams.toString())
       if (!params.get('pageSize')) {
         params.set('pageSize', String(PAGE_SIZE))
       }
+      selectedReceiptIds.forEach(reciboId => params.append('reciboId', reciboId))
 
       const response = await fetch(`/api/recibos/export?${params.toString()}`, {
         credentials: 'include',
@@ -502,12 +632,156 @@ export default function RecibosPage() {
     }
   }
 
-  const rows = data?.rows ?? []
+  const rows = useMemo(() => data?.rows ?? [], [data?.rows])
+  const rowIdsSignature = useMemo(() => rows.map(row => row.reciboId).join('|'), [rows])
+  const selectedRowCount = rows.filter(row => selectedReceiptIds.includes(row.reciboId)).length
+  const allRowsSelected = rows.length > 0 && selectedRowCount === rows.length
+  const someRowsSelected = selectedRowCount > 0 && selectedRowCount < rows.length
+
+  useEffect(() => {
+    const nextSelectedIds = rows.map(row => row.reciboId)
+    setSelectedReceiptIds(current =>
+      arraysMatch(current, nextSelectedIds) ? current : nextSelectedIds
+    )
+  }, [rowIdsSignature, rows])
+
+  useEffect(() => {
+    if (selectAllRef.current) {
+      selectAllRef.current.indeterminate = someRowsSelected
+    }
+  }, [someRowsSelected])
+
+  const toggleReceiptSelection = (reciboId: string) => {
+    setSelectedReceiptIds(current =>
+      current.includes(reciboId)
+        ? current.filter(id => id !== reciboId)
+        : [...current, reciboId]
+    )
+  }
+
+  const toggleSelectAll = () => {
+    setSelectedReceiptIds(allRowsSelected ? [] : rows.map(row => row.reciboId))
+  }
+
+  const applyReceiptUpdates = (updater: (row: ReceiptRow) => ReceiptRow) => {
+    setData(current =>
+      current
+        ? {
+            ...current,
+            rows: current.rows.map(row =>
+              selectedReceiptIds.includes(row.reciboId) ? updater(row) : row
+            ),
+          }
+        : current
+    )
+  }
+
+  const handleMarkPaid = async () => {
+    if (selectedReceiptIds.length === 0) {
+      setError('Debes seleccionar al menos un recibo.')
+      return
+    }
+
+    setBulkUpdating(true)
+    setError(null)
+
+    try {
+      const response = await fetch('/api/recibos/bulk', {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          action: 'markPaid',
+          reciboIds: selectedReceiptIds,
+        }),
+      })
+
+      const payload = await response.json().catch(() => null)
+
+      if (!response.ok || payload?.ok !== true) {
+        throw new Error(
+          (payload && typeof payload.error === 'string' && payload.error) ||
+            'Error al marcar los recibos como pagados.'
+        )
+      }
+
+      applyReceiptUpdates(row => ({
+        ...row,
+        estado: 'Pagado',
+      }))
+    } catch (actionError) {
+      setError(
+        actionError instanceof Error
+          ? actionError.message
+          : 'Error al marcar los recibos como pagados.'
+      )
+    } finally {
+      setBulkUpdating(false)
+    }
+  }
+
+  const handleAssociateBoleta = async () => {
+    if (selectedReceiptIds.length === 0) {
+      setError('Debes seleccionar al menos un recibo.')
+      return
+    }
+
+    const numeroBoleta = numeroBoletaDraft.trim()
+
+    if (!numeroBoleta) {
+      setError('Debes ingresar un numero de boleta.')
+      return
+    }
+
+    setBulkUpdating(true)
+    setError(null)
+
+    try {
+      const response = await fetch('/api/recibos/bulk', {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          action: 'associateBoleta',
+          reciboIds: selectedReceiptIds,
+          numeroBoleta,
+        }),
+      })
+
+      const payload = await response.json().catch(() => null)
+
+      if (!response.ok || payload?.ok !== true) {
+        throw new Error(
+          (payload && typeof payload.error === 'string' && payload.error) ||
+            'Error al asociar el numero de boleta.'
+        )
+      }
+
+      applyReceiptUpdates(row => ({
+        ...row,
+        numeroBoleta,
+      }))
+      setIsBoletaModalOpen(false)
+      setNumeroBoletaDraft('')
+    } catch (actionError) {
+      setError(
+        actionError instanceof Error
+          ? actionError.message
+          : 'Error al asociar el numero de boleta.'
+      )
+    } finally {
+      setBulkUpdating(false)
+    }
+  }
 
   return (
     <div className="app-shell">
-      <div className="page-frame page-stack">
-        <section className="app-section p-6">
+      <div className="page-stack mx-auto max-w-[1800px] px-4 sm:px-6 lg:px-8 2xl:px-10">
+        <section className="relative z-20 overflow-visible app-section p-6">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
               <div className="page-kicker">Recibos</div>
@@ -520,7 +794,7 @@ export default function RecibosPage() {
               <Button variant="outline" onClick={clearFilters}>
                 Limpiar filtros
               </Button>
-              <Button onClick={handleExport} disabled={exporting || loading}>
+              <Button onClick={handleExport} disabled={exporting || loading || selectedRowCount === 0}>
                 {exporting ? 'Exportando...' : 'Exportar Excel'}
               </Button>
             </div>
@@ -529,7 +803,7 @@ export default function RecibosPage() {
           <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
             <MultiSelectFilter
               label="Abogado"
-              options={options.abogados}
+              options={availableOptions.abogados}
               selectedIds={filters.abogadoIds}
               selectionNoun="abogados seleccionados"
               onToggle={value => handleMultiSelectToggle('abogadoIds', value)}
@@ -538,7 +812,7 @@ export default function RecibosPage() {
 
             <MultiSelectFilter
               label="Procurador"
-              options={options.procuradores}
+              options={availableOptions.procuradores}
               selectedIds={filters.procuradorIds}
               selectionNoun="procuradores seleccionados"
               onToggle={value => handleMultiSelectToggle('procuradorIds', value)}
@@ -547,7 +821,7 @@ export default function RecibosPage() {
 
             <MultiSelectFilter
               label="Banco"
-              options={options.bancos}
+              options={availableOptions.bancos}
               selectedIds={filters.bancoIds}
               selectionNoun="bancos seleccionados"
               onToggle={value => handleMultiSelectToggle('bancoIds', value)}
@@ -604,7 +878,7 @@ export default function RecibosPage() {
           )}
         </section>
 
-        <section className="mt-6 app-section overflow-hidden">
+        <section className="relative z-0 mt-6 app-section overflow-hidden">
           <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-200/80 px-6 py-4">
             <div>
               <h2 className="text-lg font-semibold text-slate-900">Resultados</h2>
@@ -613,8 +887,30 @@ export default function RecibosPage() {
                   ? 'Cargando recibos...'
                   : `${data?.pagination.totalRows ?? 0} recibos encontrados`}
               </p>
+              {!loading && rows.length > 0 && (
+                <p className="mt-1 text-xs text-slate-500">
+                  {selectedRowCount} de {rows.length} recibos seleccionados para exportar.
+                </p>
+              )}
             </div>
             <div className="flex flex-wrap gap-3 text-sm">
+              <Button
+                variant="outline"
+                onClick={handleMarkPaid}
+                disabled={loading || bulkUpdating || selectedRowCount === 0}
+              >
+                {bulkUpdating ? 'Actualizando...' : 'Marcar pagado'}
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setError(null)
+                  setIsBoletaModalOpen(true)
+                }}
+                disabled={loading || bulkUpdating || selectedRowCount === 0}
+              >
+                Asociar Nro Boleta
+              </Button>
               <span className="rounded-full bg-slate-100 px-3 py-1 text-slate-700">
                 Total filas mostradas: {data?.summary.totalRowsShown ?? 0}
               </span>
@@ -625,10 +921,20 @@ export default function RecibosPage() {
           </div>
 
           <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-slate-200 text-sm">
-              <thead className="bg-slate-50/90 text-left text-xs uppercase tracking-[0.18em] text-slate-500">
+            <table className="min-w-full table-auto divide-y divide-slate-200 text-[13px] leading-5">
+              <thead className="bg-slate-50/90 text-left text-[11px] uppercase tracking-[0.12em] text-slate-500">
                 <tr>
-                  {[
+                  <th className="px-4 py-3 font-semibold">
+                    <input
+                      ref={selectAllRef}
+                      type="checkbox"
+                      checked={allRowsSelected}
+                      onChange={toggleSelectAll}
+                      aria-label="Seleccionar todos los recibos mostrados"
+                      className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                    />
+                  </th>
+                  {[ 
                     'Nro Recibo',
                     'ROL',
                     'Tribunal',
@@ -643,7 +949,7 @@ export default function RecibosPage() {
                     'Estado',
                     'Nro Boleta',
                   ].map(column => (
-                    <th key={column} className="px-4 py-3 font-semibold">
+                    <th key={column} className="px-3 py-3 font-semibold">
                       {column}
                     </th>
                   ))}
@@ -653,8 +959,8 @@ export default function RecibosPage() {
                 {loading &&
                   Array.from({ length: 6 }).map((_, index) => (
                     <tr key={`loading-${index}`} className="animate-pulse">
-                      {Array.from({ length: 13 }).map((__, cellIndex) => (
-                        <td key={cellIndex} className="px-4 py-4">
+                      {Array.from({ length: 14 }).map((__, cellIndex) => (
+                        <td key={cellIndex} className="px-3 py-3">
                           <div className="h-4 rounded bg-slate-100" />
                         </td>
                       ))}
@@ -663,7 +969,7 @@ export default function RecibosPage() {
 
                 {!loading && rows.length === 0 && (
                   <tr>
-                    <td colSpan={13} className="px-6 py-12 text-center text-sm text-slate-500">
+                    <td colSpan={14} className="px-6 py-12 text-center text-sm text-slate-500">
                       No se encontraron recibos con los filtros seleccionados.
                     </td>
                   </tr>
@@ -672,7 +978,16 @@ export default function RecibosPage() {
                 {!loading &&
                   rows.map(row => (
                     <tr key={row.reciboId} className="hover:bg-slate-50/80">
-                      <td className="px-4 py-4 font-medium text-blue-700">
+                      <td className="px-3 py-3 align-top">
+                        <input
+                          type="checkbox"
+                          checked={selectedReceiptIds.includes(row.reciboId)}
+                          onChange={() => toggleReceiptSelection(row.reciboId)}
+                          aria-label={`Seleccionar recibo ${row.numeroRecibo}`}
+                          className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                        />
+                      </td>
+                      <td className="px-3 py-3 align-top font-medium text-blue-700">
                         {row.documentoId ? (
                           <a
                             href={`/api/documentos/${row.documentoId}/download?mode=inline`}
@@ -686,27 +1001,27 @@ export default function RecibosPage() {
                           row.numeroRecibo
                         )}
                       </td>
-                      <td className="px-4 py-4 text-slate-700">{row.rol}</td>
-                      <td className="px-4 py-4 text-slate-700">{row.tribunal}</td>
-                      <td className="px-4 py-4 text-slate-700">{row.caratula}</td>
-                      <td className="px-4 py-4 text-slate-700">{row.gestion}</td>
-                      <td className="px-4 py-4 text-slate-700">{row.resultado}</td>
-                      <td className="px-4 py-4 text-slate-700">{row.abogado}</td>
-                      <td className="px-4 py-4 text-slate-700">{row.procurador}</td>
-                      <td className="px-4 py-4 text-slate-700">{row.banco}</td>
-                      <td className="px-4 py-4 font-medium text-slate-900">
+                      <td className="px-3 py-3 align-top text-slate-700 whitespace-nowrap">{row.rol}</td>
+                      <td className="px-3 py-3 align-top text-slate-700">{row.tribunal}</td>
+                      <td className="px-3 py-3 align-top text-slate-700">{row.caratula}</td>
+                      <td className="px-3 py-3 align-top text-slate-700">{row.gestion}</td>
+                      <td className="px-3 py-3 align-top text-slate-700">{row.resultado}</td>
+                      <td className="px-3 py-3 align-top text-slate-700">{row.abogado}</td>
+                      <td className="px-3 py-3 align-top text-slate-700">{row.procurador}</td>
+                      <td className="px-3 py-3 align-top text-slate-700">{row.banco}</td>
+                      <td className="px-3 py-3 align-top font-medium text-slate-900 whitespace-nowrap">
                         {formatCurrency(row.valor)}
                       </td>
-                      <td className="px-4 py-4 text-slate-700">
+                      <td className="px-3 py-3 align-top text-slate-700 whitespace-nowrap">
                         {formatDateTime(row.fechaCreacionRecibo)}
                       </td>
-                      <td className="px-4 py-4">
+                      <td className="px-3 py-3 align-top">
                         <span
                           className={[
                             'inline-flex rounded-full px-2.5 py-1 text-xs font-medium',
                             row.estado === 'Pagado'
                               ? 'bg-emerald-50 text-emerald-700'
-                              : row.estado === 'No pagado'
+                              : row.estado === 'Sin pagar'
                                 ? 'bg-amber-50 text-amber-700'
                                 : row.estado === 'Anulado'
                                   ? 'bg-rose-50 text-rose-700'
@@ -716,7 +1031,7 @@ export default function RecibosPage() {
                           {row.estado}
                         </span>
                       </td>
-                      <td className="px-4 py-4 text-slate-700">{row.numeroBoleta}</td>
+                      <td className="px-3 py-3 align-top text-slate-700 whitespace-nowrap">{row.numeroBoleta}</td>
                     </tr>
                   ))}
               </tbody>
@@ -749,6 +1064,61 @@ export default function RecibosPage() {
             </div>
           </div>
         </section>
+
+        {isBoletaModalOpen && (
+          <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-950/30 px-4">
+            <div className="w-full max-w-xl rounded-[28px] border border-white/70 bg-white p-6 shadow-2xl">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <div className="page-kicker">Recibos seleccionados</div>
+                  <h3 className="mt-2 text-xl font-semibold text-slate-950">Asociar Nro Boleta</h3>
+                </div>
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    if (!bulkUpdating) {
+                      setIsBoletaModalOpen(false)
+                      setNumeroBoletaDraft('')
+                    }
+                  }}
+                  disabled={bulkUpdating}
+                >
+                  Cerrar
+                </Button>
+              </div>
+
+              <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center">
+                <p className="text-sm text-slate-700">
+                  Los recibos seleccionados se asociaran a la boleta N°:
+                </p>
+                <Input
+                  value={numeroBoletaDraft}
+                  onChange={event => setNumeroBoletaDraft(event.target.value)}
+                  placeholder="Ingresa el numero"
+                  className="sm:max-w-xs"
+                />
+              </div>
+
+              <div className="mt-6 flex justify-end gap-3">
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    if (!bulkUpdating) {
+                      setIsBoletaModalOpen(false)
+                      setNumeroBoletaDraft('')
+                    }
+                  }}
+                  disabled={bulkUpdating}
+                >
+                  Cancelar
+                </Button>
+                <Button onClick={handleAssociateBoleta} disabled={bulkUpdating}>
+                  {bulkUpdating ? 'Guardando...' : 'Guardar'}
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   )

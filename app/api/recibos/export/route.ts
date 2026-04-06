@@ -18,7 +18,16 @@ export async function GET(req: NextRequest) {
     }
 
     const filters = parseReceiptFilters(req.nextUrl.searchParams)
-    const result = await getReceiptList(user.officeId, filters, { exportAll: true })
+    const reciboIds = req.nextUrl.searchParams.getAll('reciboId').filter(Boolean)
+
+    if (reciboIds.length === 0) {
+      throw new Error('Debes seleccionar al menos un recibo para exportar.')
+    }
+
+    const result = await getReceiptList(user.officeId, filters, {
+      exportAll: true,
+      reciboIds,
+    })
     const workbook = buildRecibosWorkbook(result.rows, result.summary.totalValorShown)
 
     return new NextResponse(workbook, {

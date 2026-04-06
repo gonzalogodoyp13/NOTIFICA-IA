@@ -71,6 +71,17 @@ function dateToIsoString(date: Date) {
   return date.toISOString().replace(/\.\d{3}Z$/, 'Z')
 }
 
+function formatDateOnly(value: string) {
+  const date = new Date(value)
+  return Number.isNaN(date.getTime())
+    ? '-'
+    : new Intl.DateTimeFormat('es-CL', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+      }).format(date)
+}
+
 function makeEntry(name: string, content: string): ZipEntry {
   const data = Buffer.from(textEncoder.encode(content))
   return {
@@ -146,36 +157,28 @@ export function buildRecibosWorkbook(rows: ReceiptListRow[], totalValor: number)
   const created = dateToIsoString(now)
   const workbookRows: CellValue[][] = [
     [
-      'Nº Recibo',
       'ROL',
       'Tribunal',
-      'Carátula',
-      'Gestión',
+      'Caratula',
       'Resultado',
       'Abogado',
       'Procurador',
       'Banco',
       'Valor',
-      'Fecha creación recibo',
-      'Estado',
-      'Nº Boleta',
+      'Fecha creacion recibo',
     ],
     ...rows.map(row => [
-      row.numeroRecibo,
       row.rol,
       row.tribunal,
       row.caratula,
-      row.gestion,
       row.resultado,
       row.abogado,
       row.procurador,
       row.banco,
       row.valor,
-      new Date(row.fechaCreacionRecibo).toLocaleString('es-CL'),
-      row.estado,
-      row.numeroBoleta,
+      formatDateOnly(row.fechaCreacionRecibo),
     ]),
-    ['Total filas', rows.length, '', '', '', '', '', '', '', totalValor, '', '', ''],
+    ['Total filas', rows.length, '', '', '', '', '', totalValor, ''],
   ]
 
   const worksheetXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -224,7 +227,7 @@ export function buildRecibosWorkbook(rows: ReceiptListRow[], totalValor: number)
 
   const coreXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:dcmitype="http://purl.org/dc/dcmitype/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
-  <dc:title>Gestión de Recibos</dc:title>
+  <dc:title>Gestion de Recibos</dc:title>
   <dc:creator>NOTIFICA IA</dc:creator>
   <cp:lastModifiedBy>NOTIFICA IA</cp:lastModifiedBy>
   <dcterms:created xsi:type="dcterms:W3CDTF">${created}</dcterms:created>
