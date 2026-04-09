@@ -167,7 +167,28 @@ export async function POST(
       return createdDocumento
     })
 
-    return NextResponse.json({ ok: true, data: documento })
+    return NextResponse.json({
+      ok: true,
+      data: {
+        id: documento.id,
+        nombre: documento.nombre,
+        tipo: documento.tipo,
+        version: documento.version,
+        hasPdf: !!documento.pdfId,
+        createdAt: documento.createdAt.toISOString(),
+        diligenciaId: documento.diligenciaId,
+        notificacionId: documento.notificacionId,
+        voidedAt: null,
+        voidReason: null,
+        voidedByUserId: null,
+        diligencia: {
+          id: diligencia.id,
+          tipo: diligencia.tipo?.nombre ?? null,
+        },
+        estampo: null,
+        estampoBase: null,
+      },
+    })
   } catch (error) {
     console.error('Error generando boleta:', error)
     return NextResponse.json(

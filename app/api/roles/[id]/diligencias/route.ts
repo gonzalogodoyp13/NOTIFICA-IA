@@ -8,6 +8,78 @@ import { DiligenciaCreateSchema } from '@/lib/validations/rol-workspace'
 
 export const dynamic = 'force-dynamic'
 
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value)
+}
+
+function mapLatestEstampo(documento: any) {
+  if (!documento) return null
+
+  if (documento.estampoBase) {
+    return {
+      documentoId: documento.id,
+      slug: documento.estampoBase.slug,
+      nombreVisible: documento.estampoBase.nombreVisible,
+    }
+  }
+
+  if (documento.estampo) {
+    return {
+      documentoId: documento.id,
+      slug: null,
+      nombreVisible: documento.estampo.nombre,
+    }
+  }
+
+  return null
+}
+
+function mapNotificacion(notificacion: any) {
+  const meta = isPlainObject(notificacion.meta) ? notificacion.meta : {}
+  const documentos = Array.isArray(notificacion.documentos) ? notificacion.documentos : []
+  const latestBoleta = documentos.find((doc: any) => doc.tipo === 'Recibo') ?? null
+  const latestEstampoDoc = documentos.find((doc: any) => doc.tipo === 'Estampo') ?? null
+
+  return {
+    id: notificacion.id,
+    diligenciaId: notificacion.diligenciaId,
+    meta: notificacion.meta,
+    ejecutadoId: (notificacion as any).ejecutadoId ?? null,
+    createdAt: notificacion.createdAt ? notificacion.createdAt.toISOString() : null,
+    updatedAt: notificacion.updatedAt ? notificacion.updatedAt.toISOString() : null,
+    voidedAt: (notificacion as any).voidedAt ? (notificacion as any).voidedAt.toISOString() : null,
+    voidReason: (notificacion as any).voidReason ?? null,
+    voidedByUserId: (notificacion as any).voidedByUserId ?? null,
+    step1Done: !!meta.fechaEjecucion,
+    step2Done: !!latestBoleta,
+    step3Done: !!latestEstampoDoc,
+    latestBoletaId: latestBoleta?.id ?? null,
+    latestEstampoId: latestEstampoDoc?.id ?? null,
+    latestEstampo: mapLatestEstampo(latestEstampoDoc),
+  }
+}
+
+function mapDiligencia(diligencia: any) {
+  return {
+    id: diligencia.id,
+    tipo: {
+      id: diligencia.tipoId,
+      nombre: diligencia.tipo.nombre,
+      descripcion: diligencia.tipo.descripcion,
+    },
+    estado: diligencia.estado,
+    fecha: diligencia.fecha.toISOString(),
+    meta: diligencia.meta,
+    createdAt: diligencia.createdAt.toISOString(),
+    ejecutados: (diligencia.rol?.demanda?.ejecutados ?? []).map((ejecutado: any) => ({
+      id: ejecutado.id,
+      nombre: ejecutado.nombre,
+      direccion: [ejecutado.direccion, ejecutado.comunas?.nombre].filter(Boolean).join(', '),
+    })),
+    notificaciones: (diligencia.notificaciones ?? []).map(mapNotificacion),
+  }
+}
+
 async function syncRolEstado(rolId: string) {
   const rol = await prisma.rolCausa.findUnique({
     where: { id: rolId },
@@ -97,11 +169,10 @@ export async function GET(
           include: {
             documentos: {
               where: {
-                tipo: 'Estampo',
-                voidedAt: null, // Solo documentos no eliminados
+                tipo: { in: ['Recibo', 'Estampo'] },
+                voidedAt: null,
               },
               orderBy: { createdAt: 'desc' },
-              take: 1,
               include: {
                 estampoBase: {
                   select: {
@@ -124,69 +195,7 @@ export async function GET(
       orderBy: { createdAt: 'desc' },
     })
 
-    const data = diligencias.map(d => ({
-      id: d.id,
-      tipo: {
-        id: d.tipoId,
-        nombre: d.tipo.nombre,
-        descripcion: d.tipo.descripcion,
-      },
-      estado: d.estado,
-      fecha: d.fecha.toISOString(),
-      meta: d.meta,
-      createdAt: d.createdAt.toISOString(),
-      ejecutados: (d.rol?.demanda?.ejecutados ?? []).map(e => ({
-        id: e.id,
-        nombre: e.nombre,
-        direccion: [e.direccion, e.comunas?.nombre].filter(Boolean).join(', '),
-      })),
-      notificaciones: d.notificaciones.map(n => {
-        const latestEstampoDoc = n.documentos?.[0] ?? null
-        return {
-          id: n.id,
-          diligenciaId: n.diligenciaId,
-          meta: n.meta,
-          ejecutadoId: (n as any).ejecutadoId ?? null,
-          createdAt: n.createdAt ? n.createdAt.toISOString() : null,
-          updatedAt: n.updatedAt ? n.updatedAt.toISOString() : null,
-          voidedAt: (n as any).voidedAt ? (n as any).voidedAt.toISOString() : null,
-          voidReason: (n as any).voidReason ?? null,
-          voidedByUserId: (n as any).voidedByUserId ?? null,
-          latestEstampo: (() => {
-            if (!latestEstampoDoc) return null
-            
-            // Wizard path: tiene estampoBase
-            if (latestEstampoDoc.estampoBase) {
-              return {
-                documentoId: latestEstampoDoc.id,
-                slug: latestEstampoDoc.estampoBase.slug,
-                nombreVisible: latestEstampoDoc.estampoBase.nombreVisible,
-              }
-            }
-            
-            // Legacy path: tiene estampo pero no estampoBase
-            if (latestEstampoDoc.estampo) {
-              return {
-                documentoId: latestEstampoDoc.id,
-                slug: null, // Legacy no tiene slug
-                nombreVisible: latestEstampoDoc.estampo.nombre,
-              }
-            }
-            
-            return null
-          })(),
-        }
-      }),
-    }))
-
-    // DEBUG TEMPORAL: Verificar que notificaciones están en respuesta
-    if (process.env.NODE_ENV === 'development' && data.length > 0) {
-      const sample = data[0]
-      console.log('[DEBUG] Sample diligencia keys:', Object.keys(sample))
-      console.log('[DEBUG] Sample notificaciones count:', sample.notificaciones?.length ?? 0)
-    }
-
-    return NextResponse.json({ ok: true, data })
+    return NextResponse.json({ ok: true, data: diligencias.map(mapDiligencia) })
   } catch (error) {
     console.error('Error obteniendo diligencias del rol:', error)
     return NextResponse.json(
@@ -214,8 +223,17 @@ export async function POST(
       },
       include: {
         demanda: {
-          select: {
-            id: true,
+          include: {
+            ejecutados: {
+              include: {
+                comunas: {
+                  select: {
+                    id: true,
+                    nombre: true,
+                  },
+                },
+              },
+            },
           },
         },
       },
@@ -312,7 +330,14 @@ export async function POST(
 
     await syncRolEstado(rol.id)
 
-    return NextResponse.json({ ok: true, data: diligencia })
+    return NextResponse.json({
+      ok: true,
+      data: mapDiligencia({
+        ...diligencia,
+        rol,
+        notificaciones: [],
+      }),
+    })
   } catch (error) {
     console.error('Error creando diligencia:', error)
     return NextResponse.json(
@@ -321,4 +346,3 @@ export async function POST(
     )
   }
 }
-

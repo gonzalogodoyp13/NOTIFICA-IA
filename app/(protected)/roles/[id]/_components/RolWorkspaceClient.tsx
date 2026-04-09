@@ -4,7 +4,7 @@ import { useMemo, useState } from 'react'
 
 import RolHeader from './RolHeader'
 import RolTabs from './RolTabs'
-import { useRolData } from '@/lib/hooks/useRolWorkspace'
+import { useRolData, useRolHeaderData } from '@/lib/hooks/useRolWorkspace'
 
 type RolTabKey = 'resumen' | 'diligencias' | 'documentos' | 'notas' | 'historial'
 
@@ -14,7 +14,9 @@ interface RolWorkspaceClientProps {
 
 export default function RolWorkspaceClient({ rolId }: RolWorkspaceClientProps) {
   const [activeTab, setActiveTab] = useState<RolTabKey>('resumen')
-  const { data: rolData, isLoading, isError, error } = useRolData(rolId)
+  const { data: headerData, isLoading: isHeaderLoading, isError: isHeaderError, error: headerError } = useRolHeaderData(rolId)
+  const isResumenTab = activeTab === 'resumen'
+  const { data: rolData, isLoading: isRolLoading, isError: isRolError, error: rolError } = useRolData(rolId, isResumenTab)
 
   const ActiveTabComponent = useMemo(() => {
     switch (activeTab) {
@@ -35,7 +37,7 @@ export default function RolWorkspaceClient({ rolId }: RolWorkspaceClientProps) {
 
   return (
     <div className="min-h-screen bg-transparent">
-      <RolHeader data={rolData} isLoading={isLoading} />
+      <RolHeader data={headerData} isLoading={isHeaderLoading} />
       <div className="mx-auto max-w-7xl">
         <RolTabs activeTab={activeTab} onTabChange={setActiveTab} />
       </div>
@@ -44,20 +46,25 @@ export default function RolWorkspaceClient({ rolId }: RolWorkspaceClientProps) {
           <div className="mb-5 text-sm text-slate-500">
             Trabajando en el ROL{' '}
             <span className="font-semibold text-slate-700">
-              {rolData?.rol?.numero ?? rolId}
+              {headerData?.rol?.numero ?? rolId}
             </span>
           </div>
-          {isError && (
+          {isHeaderError && (
             <div className="mb-5 rounded-[24px] border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">
-              Error al cargar datos del ROL: {error?.message ?? 'intenta nuevamente mas tarde.'}
+              Error al cargar datos del ROL: {headerError?.message ?? 'intenta nuevamente mas tarde.'}
+            </div>
+          )}
+          {isResumenTab && isRolError && (
+            <div className="mb-5 rounded-[24px] border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">
+              Error al cargar el resumen del ROL: {rolError?.message ?? 'intenta nuevamente mas tarde.'}
             </div>
           )}
           {ActiveTabComponent && (
             <ActiveTabComponent
               rolId={rolId}
               rolData={rolData}
-              isRolLoading={isLoading}
-              isRolError={isError}
+              isRolLoading={isResumenTab ? isRolLoading : false}
+              isRolError={isResumenTab ? isRolError : false}
             />
           )}
         </div>

@@ -2,11 +2,9 @@ import { useMemo, useState } from 'react'
 
 import {
   useDiligencias,
-  useDocumentos,
   useCreateNotificacion,
   useDeleteNotificacion,
   type DiligenciaItem,
-  type DocumentoItem,
 } from '@/lib/hooks/useRolWorkspace'
 
 import EjecutarWizard from './EjecutarWizard'
@@ -25,68 +23,8 @@ const estadoClases: Record<DiligenciaItem['estado'], string> = {
 
 const TABLE_COLS = 4 // Tipo, Fecha encargo, Estado, Acciones
 
-interface NotificacionProgress {
-  step1Done: boolean
-  step2Done: boolean
-  step3Done: boolean
-  latestBoletaId: string | null
-  latestEstampoId: string | null
-}
-
-function getNotificacionProgress(
-  diligencia: DiligenciaItem,
-  notificacion: DiligenciaItem['notificaciones'][number],
-  documentos: DocumentoItem[]
-): NotificacionProgress {
-  const meta = (notificacion.meta as Record<string, unknown> | null) ?? {}
-  // Step 1 hoy escribe `fechaEjecucion` (legacy key) en notificacion.meta.
-  // Mantener este check EXACTO; no cambiar a meta.ejecucion.* sin agregar fallback.
-  const step1Done = !!meta.fechaEjecucion
-
-  const docsForNotif = documentos
-    .filter(doc => (doc.diligencia?.id ?? doc.diligenciaId) === diligencia.id)
-    .filter(doc => doc.notificacionId === notificacion.id)
-    .filter(doc => !!doc.pdfId)
-    .filter((doc: any) => !doc.voidedAt)
-
-  // Find latest Boleta (Recibo)
-  const boletas = docsForNotif
-    .filter(doc => doc.tipo === 'Recibo')
-    .sort(
-      (a, b) =>
-        new Date((b as any).createdAt ?? 0).getTime() -
-        new Date((a as any).createdAt ?? 0).getTime()
-    )
-  const step2Done = boletas.length > 0
-  const latestBoletaId = step2Done ? boletas[0].id : null
-
-  const estampos = docsForNotif
-    .filter(doc => doc.tipo === 'Estampo')
-    .sort(
-      (a, b) =>
-        new Date((b as any).createdAt ?? 0).getTime() -
-        new Date((a as any).createdAt ?? 0).getTime()
-    )
-  const step3Done = estampos.length > 0
-  const latestEstampoId = step3Done && estampos[0]?.id ? estampos[0].id : null
-
-  return {
-    step1Done,
-    step2Done,
-    step3Done,
-    latestBoletaId,
-    latestEstampoId,
-  }
-}
-
 export default function DiligenciasTable({ rolId }: DiligenciasTableProps) {
-  const { data, isLoading, isError, error, refetch: refetchDiligencias } = useDiligencias(rolId)
-  const {
-    data: documentos = [],
-    isLoading: documentosLoading,
-    isError: documentosError,
-    refetch: refetchDocumentos,
-  } = useDocumentos(rolId)
+  const { data, isLoading, isError, error } = useDiligencias(rolId)
 
   const createNotificacion = useCreateNotificacion(rolId)
   const deleteNotificacion = useDeleteNotificacion(rolId)
@@ -311,17 +249,6 @@ export default function DiligenciasTable({ rolId }: DiligenciasTableProps) {
                       notificaciones
                         .filter((notif: any) => !notif.voidedAt)
                         .map((notif, idx) => {
-                        const notifProgress: NotificacionProgress =
-                          documentosLoading || documentosError
-                            ? {
-                                step1Done: false,
-                                step2Done: false,
-                                step3Done: false,
-                                latestBoletaId: null,
-                                latestEstampoId: null,
-                              }
-                            : getNotificacionProgress(diligencia, notif, documentos)
-
                         const meta = (notif.meta as Record<string, any> | null) ?? {}
                         const estampoTipo = meta?.estampoTipo
                         const isEstampoTipoObject =
@@ -360,7 +287,7 @@ export default function DiligenciasTable({ rolId }: DiligenciasTableProps) {
                                   </span>
                                 )}
                                 <div className="ml-auto flex items-center gap-2 text-xs">
-                                  {!notifProgress.step1Done && (
+                                  {!notif.step1Done && (
                                   <button
                                     type="button"
                                     onClick={(e) => {
@@ -373,7 +300,7 @@ export default function DiligenciasTable({ rolId }: DiligenciasTableProps) {
                                   </button>
                                 )}
 
-                                {notifProgress.step1Done && !notifProgress.step2Done && (
+                                {notif.step1Done && !notif.step2Done && (
                                   <>
                                     <button
                                       type="button"
@@ -398,7 +325,7 @@ export default function DiligenciasTable({ rolId }: DiligenciasTableProps) {
                                   </>
                                 )}
 
-                                {notifProgress.step2Done && !notifProgress.step3Done && (
+                                {notif.step2Done && !notif.step3Done && (
                                   <>
                                     <button
                                       type="button"
@@ -429,11 +356,11 @@ export default function DiligenciasTable({ rolId }: DiligenciasTableProps) {
                                     >
                                       Continuar con Estampo
                                     </button>
-                                    {notifProgress.latestBoletaId && (
+                                    {notif.latestBoletaId && (
                                       <button
                                         type="button"
                                         onClick={(e) =>
-                                          handleViewDocumento(e, notifProgress.latestBoletaId!)
+                                          handleViewDocumento(e, notif.latestBoletaId!)
                                         }
                                         className="rounded border border-emerald-200 bg-emerald-50 px-3 py-1 text-emerald-700 transition hover:bg-emerald-100"
                                       >
@@ -443,7 +370,7 @@ export default function DiligenciasTable({ rolId }: DiligenciasTableProps) {
                                   </>
                                 )}
 
-                                {notifProgress.step2Done && notifProgress.step3Done && (
+                                {notif.step2Done && notif.step3Done && (
                                   <>
                                     <button
                                       type="button"
@@ -455,22 +382,22 @@ export default function DiligenciasTable({ rolId }: DiligenciasTableProps) {
                                     >
                                       Editar
                                     </button>
-                                    {notifProgress.latestBoletaId && (
+                                    {notif.latestBoletaId && (
                                       <button
                                         type="button"
                                         onClick={(e) =>
-                                          handleViewDocumento(e, notifProgress.latestBoletaId!)
+                                          handleViewDocumento(e, notif.latestBoletaId!)
                                         }
                                         className="rounded border border-emerald-200 bg-emerald-50 px-3 py-1 text-emerald-700 transition hover:bg-emerald-100"
                                       >
                                         Ver Recibo
                                       </button>
                                     )}
-                                    {notifProgress.latestEstampoId && (
+                                    {notif.latestEstampoId && (
                                       <button
                                         type="button"
                                         onClick={(e) =>
-                                          handleViewDocumento(e, notifProgress.latestEstampoId!)
+                                          handleViewDocumento(e, notif.latestEstampoId!)
                                         }
                                         className="rounded border border-emerald-200 bg-emerald-50 px-3 py-1 text-emerald-700 transition hover:bg-emerald-100"
                                       >
@@ -483,10 +410,9 @@ export default function DiligenciasTable({ rolId }: DiligenciasTableProps) {
                                   {!notif.voidedAt && (
                                     <button
                                       type="button"
-                                      disabled={documentosLoading || deleteNotificacion.isPending}
+                                      disabled={deleteNotificacion.isPending}
                                       onClick={(e) => {
                                         e.stopPropagation()
-                                        if (documentosLoading) return
                                         const ok = window.confirm(
                                           '¿Anular esta notificación? Los documentos asociados también serán anulados y ocultados de la vista normal. Esta acción puede revertirse en el futuro para auditoría.'
                                         )
@@ -580,8 +506,6 @@ export default function DiligenciasTable({ rolId }: DiligenciasTableProps) {
           isOpen={true}
           onClose={() => setWizardModalOpen(null)}
           onSuccess={() => {
-            refetchDiligencias()
-            refetchDocumentos()
             setFlashMessage('Estampo generado correctamente.')
             setWizardModalOpen(null)
           }}

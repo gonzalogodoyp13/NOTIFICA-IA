@@ -1,11 +1,11 @@
 import { BriefcaseBusiness, Landmark, Scale } from 'lucide-react'
-import { type RolWorkspaceData } from '@/lib/hooks/useRolWorkspace'
+import { type RolHeaderData } from '@/lib/hooks/useRolWorkspace'
 
 import RolStatusActions from './RolStatusActions'
 import RolStatusBadge from './RolStatusBadge'
 
 interface RolHeaderProps {
-  data?: RolWorkspaceData
+  data?: RolHeaderData
   isLoading: boolean
 }
 

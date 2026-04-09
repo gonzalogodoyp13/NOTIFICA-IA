@@ -45,7 +45,7 @@ export default function EjecutarWizard({
   onOpenWizard,
 }: EjecutarWizardProps) {
   // Get rol data if not provided
-  const { data: rolDataFromHook } = useRolData(rolId)
+  const { data: rolDataFromHook } = useRolData(rolId, !rolDataProp)
   const rolData = rolDataProp || rolDataFromHook
 
   const queryClient = useQueryClient()
@@ -89,6 +89,45 @@ export default function EjecutarWizard({
   // UI state
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
   const [successMsg, setSuccessMsg] = useState<string | null>(null)
+
+  const appendDocumentoToCaches = (documento: Record<string, unknown>) => {
+    queryClient.setQueryData(['rol', rolId, 'documentos'], (current: any[] | undefined) =>
+      current ? [documento, ...current] : [documento]
+    )
+
+    queryClient.setQueryData(['rol', rolId], (current: any) => {
+      if (!current) return current
+      return {
+        ...current,
+        ultimaActividad: typeof documento.createdAt === 'string' ? documento.createdAt : current.ultimaActividad,
+        kpis: {
+          ...current.kpis,
+          documentosTotal: current.kpis.documentosTotal + 1,
+        },
+        resumen: {
+          ...current.resumen,
+          documentos: [documento, ...(current.resumen?.documentos ?? [])],
+        },
+      }
+    })
+  }
+
+  const patchNotificacionProgress = (patch: Partial<NotificacionItem>) => {
+    queryClient.setQueryData(['rol', rolId, 'diligencias'], (current: DiligenciaItem[] | undefined) => {
+      if (!current) return current
+
+      return current.map(item =>
+        item.id !== diligencia.id
+          ? item
+          : {
+              ...item,
+              notificaciones: item.notificaciones.map(notif =>
+                notif.id === notificacionId ? { ...notif, ...patch } : notif
+              ),
+            }
+      )
+    })
+  }
 
   // Initialize from meta using parseEstampoTipo
   useEffect(() => {
@@ -334,7 +373,13 @@ export default function EjecutarWizard({
         )
       }
 
-      queryClient.invalidateQueries({ queryKey: ['rol', rolId, 'documentos'] })
+      if (result?.data && typeof result.data === 'object') {
+        appendDocumentoToCaches(result.data as Record<string, unknown>)
+        patchNotificacionProgress({
+          step2Done: true,
+          latestBoletaId: typeof result.data.id === 'string' ? result.data.id : null,
+        })
+      }
 
       // Guardar estampoTipo (nuevo formato) y monto
         const metaUpdates: Record<string, unknown> = {
@@ -350,7 +395,6 @@ export default function EjecutarWizard({
       updateMeta.mutate(metaUpdates, {
         onSuccess: () => {
           if (continueToStep3) {
-            queryClient.invalidateQueries({ queryKey: ['rol', rolId, 'documentos'] })
             // Si es wizard, abrir modal wizard y cerrar este wizard
             if (selectedEstampoTipo.kind === 'WIZARD' && selectedEstampoTipo.categoria) {
                 onOpenWizard?.(diligencia.id, selectedEstampoTipo.categoria, notificacionId)
@@ -368,7 +412,6 @@ export default function EjecutarWizard({
           }
         },
         onError: () => {
-          queryClient.invalidateQueries({ queryKey: ['rol', rolId, 'documentos'] })
           // Boleta was generated but meta update failed - still continue
           if (continueToStep3) {
             if (selectedEstampoTipo.kind === 'WIZARD' && selectedEstampoTipo.categoria) {
@@ -470,7 +513,24 @@ export default function EjecutarWizard({
               'No se pudo generar el estampo.'
           )
         }
-        queryClient.invalidateQueries({ queryKey: ['rol', rolId, 'documentos'] })
+        if (result?.data && typeof result.data === 'object') {
+          appendDocumentoToCaches(result.data as Record<string, unknown>)
+          patchNotificacionProgress({
+            step3Done: true,
+            latestEstampoId: typeof result.data.id === 'string' ? result.data.id : null,
+            latestEstampo:
+              result.data.estampo && typeof result.data.estampo === 'object'
+                ? {
+                    documentoId: typeof result.data.id === 'string' ? result.data.id : '',
+                    slug: null,
+                    nombreVisible:
+                      typeof (result.data.estampo as Record<string, unknown>).nombre === 'string'
+                        ? ((result.data.estampo as Record<string, unknown>).nombre as string)
+                        : 'Estampo',
+                  }
+                : null,
+          })
+        }
         return result.data
       })
       .then(() => {
@@ -486,7 +546,6 @@ export default function EjecutarWizard({
             }, 1500)
           },
           onError: () => {
-            queryClient.invalidateQueries({ queryKey: ['rol', rolId, 'documentos'] })
             onSuccess?.()
             onClose()
           },

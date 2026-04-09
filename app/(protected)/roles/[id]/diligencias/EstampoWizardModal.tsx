@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 
 import type { VariableDef, WizardQuestion } from '@/lib/estampos/types'
 
@@ -40,6 +41,7 @@ export default function EstampoWizardModal({
   onSuccess,
   categoria = 'BUSQUEDA_NEGATIVA', // Default para compatibilidad
 }: EstampoWizardModalProps) {
+  const queryClient = useQueryClient()
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [estampos, setEstampos] = useState<EstampoItem[]>([])
@@ -51,6 +53,45 @@ export default function EstampoWizardModal({
   const [showTextEditor, setShowTextEditor] = useState(false)
   const [textoEditado, setTextoEditado] = useState<string | null>(null)
   const [previewingText, setPreviewingText] = useState(false)
+
+  const appendDocumentoToCaches = (documento: Record<string, unknown>) => {
+    queryClient.setQueryData(['rol', rolId, 'documentos'], (current: any[] | undefined) =>
+      current ? [documento, ...current] : [documento]
+    )
+
+    queryClient.setQueryData(['rol', rolId], (current: any) => {
+      if (!current) return current
+      return {
+        ...current,
+        ultimaActividad: typeof documento.createdAt === 'string' ? documento.createdAt : current.ultimaActividad,
+        kpis: {
+          ...current.kpis,
+          documentosTotal: current.kpis.documentosTotal + 1,
+        },
+        resumen: {
+          ...current.resumen,
+          documentos: [documento, ...(current.resumen?.documentos ?? [])],
+        },
+      }
+    })
+  }
+
+  const patchNotificacionProgress = (patch: Record<string, unknown>) => {
+    queryClient.setQueryData(['rol', rolId, 'diligencias'], (current: any[] | undefined) => {
+      if (!current) return current
+
+      return current.map(diligencia =>
+        diligencia.id !== diligenciaId
+          ? diligencia
+          : {
+              ...diligencia,
+              notificaciones: (diligencia.notificaciones ?? []).map((notif: any) =>
+                notif.id === notificacionId ? { ...notif, ...patch } : notif
+              ),
+            }
+      )
+    })
+  }
 
   // Load wizard data when modal opens
   useEffect(() => {
@@ -240,6 +281,28 @@ export default function EstampoWizardModal({
       }
 
       // Success
+      const documento = result?.data?.documento
+      if (documento && typeof documento === 'object') {
+        appendDocumentoToCaches(documento as Record<string, unknown>)
+        patchNotificacionProgress({
+          step3Done: true,
+          latestEstampoId: typeof documento.id === 'string' ? documento.id : null,
+          latestEstampo:
+            documento.estampoBase && typeof documento.estampoBase === 'object'
+              ? {
+                  documentoId: typeof documento.id === 'string' ? documento.id : '',
+                  slug:
+                    typeof (documento.estampoBase as Record<string, unknown>).slug === 'string'
+                      ? ((documento.estampoBase as Record<string, unknown>).slug as string)
+                      : null,
+                  nombreVisible:
+                    typeof (documento.estampoBase as Record<string, unknown>).nombreVisible === 'string'
+                      ? ((documento.estampoBase as Record<string, unknown>).nombreVisible as string)
+                      : 'Estampo',
+                }
+              : null,
+        })
+      }
       onSuccess?.()
       onClose()
     } catch (err) {

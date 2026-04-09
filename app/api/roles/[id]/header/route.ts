@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 
 import { getCurrentUserWithOffice } from '@/lib/auth-server'
-import { loadRoleSummaryData } from '@/lib/roles/workspace'
+import { loadRoleHeaderData } from '@/lib/roles/workspace'
 
 export const dynamic = 'force-dynamic'
 
@@ -19,7 +19,7 @@ export async function GET(
       )
     }
 
-    const data = await loadRoleSummaryData(params.id, user.officeId)
+    const data = await loadRoleHeaderData(params.id, user.officeId)
 
     if (!data) {
       return NextResponse.json(
@@ -30,9 +30,9 @@ export async function GET(
 
     return NextResponse.json({ ok: true, data })
   } catch (error: any) {
-    console.error(`[GET /api/roles/${params.id}] Error:`, error)
+    console.error(`[GET /api/roles/${params.id}/header] Error:`, error)
     return NextResponse.json(
-      { ok: false, error: `Error al obtener el rol: ${error?.message || 'Error desconocido'}` },
+      { ok: false, error: `Error al obtener el encabezado del rol: ${error?.message || 'Error desconocido'}` },
       { status: 500 }
     )
   }

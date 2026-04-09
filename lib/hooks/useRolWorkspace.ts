@@ -36,6 +36,11 @@ const NotificacionItemSchema = z.object({
     })
     .nullable()
     .optional(),
+  step1Done: z.boolean().optional(),
+  step2Done: z.boolean().optional(),
+  step3Done: z.boolean().optional(),
+  latestBoletaId: z.string().nullable().optional(),
+  latestEstampoId: z.string().nullable().optional(),
 })
 
 const EjecutadoItemSchema = z.object({
@@ -60,7 +65,7 @@ const DocumentoItemSchema = z.object({
   nombre: z.string(),
   tipo: z.string(),
   version: z.number(),
-  pdfId: z.string().nullable().optional(),
+  hasPdf: z.boolean().default(false),
   createdAt: z.string(),
   diligenciaId: z.string().nullable().optional(),
   notificacionId: z.string().nullable().optional(),
@@ -189,6 +194,16 @@ const RolKpiSchema = z.object({
   recibosTotal: z.number(),
 })
 
+const RolHeaderDataSchema = z.object({
+  rol: z.object({
+    id: z.string(),
+    numero: z.string(),
+    estado: estadoRolEnum,
+    createdAt: z.string(),
+  }),
+  tribunal: TribunalSchema,
+})
+
 const RolDataSchema = z.object({
   rol: z.object({
     id: z.string(),
@@ -242,6 +257,7 @@ async function fetcher<T extends z.ZodTypeAny>(
   return parsed.data
 }
 
+const rolHeaderKey = (rolId: string) => ['rol', rolId, 'header'] as const
 const rolQueryKey = (rolId: string) => ['rol', rolId] as const
 const diligenciasKey = (rolId: string) => ['rol', rolId, 'diligencias'] as const
 const documentosKey = (rolId: string) => ['rol', rolId, 'documentos'] as const
@@ -249,17 +265,57 @@ const notasKey = (rolId: string) => ['rol', rolId, 'notas'] as const
 const timelineKey = (rolId: string) => ['rol', rolId, 'timeline'] as const
 
 export type RolWorkspaceData = z.infer<typeof RolDataSchema>
+export type RolHeaderData = z.infer<typeof RolHeaderDataSchema>
 export type DiligenciaItem = z.infer<typeof DiligenciaItemSchema>
 export type DocumentoItem = z.infer<typeof DocumentoItemSchema>
 export type NotaItem = z.infer<typeof NotaItemSchema>
 export type TimelineItem = z.infer<typeof TimelineItemSchema>
 export type NotificacionItem = z.infer<typeof NotificacionItemSchema>
 
-export function useRolData(rolId: string) {
+function updateRolWorkspaceSummary(
+  current: RolWorkspaceData | undefined,
+  updater: (summary: RolWorkspaceData['resumen']) => RolWorkspaceData['resumen'],
+  extra?: Partial<Pick<RolWorkspaceData, 'kpis' | 'ultimaActividad'>>
+): RolWorkspaceData | undefined {
+  if (!current) return current
+
+  return {
+    ...current,
+    ...extra,
+    resumen: updater(current.resumen),
+  }
+}
+
+function patchDiligenciasList(
+  current: DiligenciaItem[] | undefined,
+  updater: (items: DiligenciaItem[]) => DiligenciaItem[]
+): DiligenciaItem[] | undefined {
+  if (!current) return current
+  return updater(current)
+}
+
+function patchDocumentosList(
+  current: DocumentoItem[] | undefined,
+  updater: (items: DocumentoItem[]) => DocumentoItem[]
+): DocumentoItem[] | undefined {
+  if (!current) return current
+  return updater(current)
+}
+
+export function useRolHeaderData(rolId: string) {
+  return useQuery({
+    queryKey: rolHeaderKey(rolId),
+    queryFn: () => fetcher(`/api/roles/${rolId}/header`, RolHeaderDataSchema),
+    enabled: !!rolId,
+    retry: false,
+  })
+}
+
+export function useRolData(rolId: string, enabled = true) {
   return useQuery({
     queryKey: rolQueryKey(rolId),
-    queryFn: () => fetcher(`/api/roles/${rolId}`, RolDataSchema),
-    enabled: !!rolId,
+    queryFn: () => fetcher(`/api/roles/${rolId}/resumen`, RolDataSchema),
+    enabled: !!rolId && enabled,
     retry: false,
     refetchInterval: 120000, // 2 minutes
   })
@@ -372,6 +428,7 @@ export function useChangeRolStatus(rolId: string) {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: rolQueryKey(rolId) })
+      queryClient.invalidateQueries({ queryKey: rolHeaderKey(rolId) })
     },
   })
 }
@@ -402,9 +459,34 @@ export function useCreateDiligencia(
 
       return result.data as z.infer<typeof DiligenciaItemSchema>
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: diligenciasKey(rolId) })
-      queryClient.invalidateQueries({ queryKey: rolQueryKey(rolId) })
+    onSuccess: (createdDiligencia) => {
+      queryClient.setQueryData(
+        diligenciasKey(rolId),
+        (current: DiligenciaItem[] | undefined) =>
+          current ? [createdDiligencia, ...current] : [createdDiligencia]
+      )
+
+      queryClient.setQueryData(
+        rolQueryKey(rolId),
+        (current: RolWorkspaceData | undefined) =>
+          updateRolWorkspaceSummary(
+            current,
+            summary => ({
+              ...summary,
+              diligencias: [createdDiligencia, ...summary.diligencias],
+            }),
+            current
+              ? {
+                  kpis: {
+                    ...current.kpis,
+                    diligenciasTotal: current.kpis.diligenciasTotal + 1,
+                    diligenciasPendientes: current.kpis.diligenciasPendientes + 1,
+                  },
+                  ultimaActividad: createdDiligencia.createdAt,
+                }
+              : undefined
+          )
+      )
     },
   })
 }
@@ -453,8 +535,21 @@ export function useCreateNotificacion(
   return useMutation({
     mutationFn: ({ diligenciaId, ejecutadoId }: { diligenciaId: string; ejecutadoId?: string | null }) =>
       createNotificacion(rolId, diligenciaId, ejecutadoId),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: diligenciasKey(rolId) })
+    onSuccess: (createdNotificacion, variables) => {
+      queryClient.setQueryData(
+        diligenciasKey(rolId),
+        (current: DiligenciaItem[] | undefined) =>
+          patchDiligenciasList(current, items =>
+            items.map(item =>
+              item.id !== variables.diligenciaId
+                ? item
+                : {
+                    ...item,
+                    notificaciones: [...item.notificaciones, createdNotificacion],
+                  }
+            )
+          )
+      )
     },
   })
 }
@@ -553,7 +648,6 @@ export function useUpdateDiligenciaMeta(
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: diligenciasKey(rolId) })
-      queryClient.invalidateQueries({ queryKey: rolQueryKey(rolId) })
     },
   })
 }
@@ -600,8 +694,25 @@ export function useUpdateNotificacionMeta(
   return useMutation({
     mutationFn: (metaPatch: Record<string, unknown>) =>
       patchNotificacionMeta(rolId, diligenciaId, notificacionId, metaPatch),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: diligenciasKey(rolId) })
+    onSuccess: updatedNotificacion => {
+      queryClient.setQueryData(
+        diligenciasKey(rolId),
+        (current: DiligenciaItem[] | undefined) =>
+          patchDiligenciasList(current, items =>
+            items.map(item =>
+              item.id !== diligenciaId
+                ? item
+                : {
+                    ...item,
+                    notificaciones: item.notificaciones.map(notificacion =>
+                      notificacion.id === updatedNotificacion.id
+                        ? { ...notificacion, ...updatedNotificacion }
+                        : notificacion
+                    ),
+                  }
+            )
+          )
+      )
     },
   })
 }
@@ -642,9 +753,39 @@ export function useDeleteNotificacion(
   return useMutation({
     mutationFn: ({ diligenciaId, notificacionId, reason }: { diligenciaId: string; notificacionId: string; reason?: string }) =>
       deleteNotificacion(rolId, diligenciaId, notificacionId, reason),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: diligenciasKey(rolId) })
-      queryClient.invalidateQueries({ queryKey: documentosKey(rolId) })
+    onSuccess: (_, variables) => {
+      queryClient.setQueryData(
+        diligenciasKey(rolId),
+        (current: DiligenciaItem[] | undefined) =>
+          patchDiligenciasList(current, items =>
+            items.map(item =>
+              item.id !== variables.diligenciaId
+                ? item
+                : {
+                    ...item,
+                    notificaciones: item.notificaciones.filter(
+                      notificacion => notificacion.id !== variables.notificacionId
+                    ),
+                  }
+            )
+          )
+      )
+
+      queryClient.setQueryData(
+        documentosKey(rolId),
+        (current: DocumentoItem[] | undefined) =>
+          patchDocumentosList(current, items =>
+            items.map(item =>
+              item.notificacionId === variables.notificacionId
+                ? {
+                    ...item,
+                    voidedAt: new Date().toISOString(),
+                    voidReason: variables.reason ?? 'Anulado por usuario',
+                  }
+                : item
+            )
+          )
+      )
     },
   })
 }
@@ -680,10 +821,21 @@ export function useGenerateEstampoWizard(
 
       return result.data
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: documentosKey(rolId) })
-      queryClient.invalidateQueries({ queryKey: diligenciasKey(rolId) })
-      queryClient.invalidateQueries({ queryKey: rolQueryKey(rolId) })
+    onSuccess: generated => {
+      if (
+        generated &&
+        typeof generated === 'object' &&
+        'documento' in generated &&
+        generated.documento &&
+        typeof generated.documento === 'object'
+      ) {
+        const documento = generated.documento as DocumentoItem
+        queryClient.setQueryData(
+          documentosKey(rolId),
+          (current: DocumentoItem[] | undefined) =>
+            current ? [documento, ...current] : [documento]
+        )
+      }
     },
   })
 }

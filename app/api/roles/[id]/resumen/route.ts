@@ -30,9 +30,9 @@ export async function GET(
 
     return NextResponse.json({ ok: true, data })
   } catch (error: any) {
-    console.error(`[GET /api/roles/${params.id}] Error:`, error)
+    console.error(`[GET /api/roles/${params.id}/resumen] Error:`, error)
     return NextResponse.json(
-      { ok: false, error: `Error al obtener el rol: ${error?.message || 'Error desconocido'}` },
+      { ok: false, error: `Error al obtener el resumen del rol: ${error?.message || 'Error desconocido'}` },
       { status: 500 }
     )
   }

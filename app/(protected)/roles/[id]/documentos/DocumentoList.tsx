@@ -111,14 +111,14 @@ export default function DocumentoList({ rolId }: DocumentoListProps) {
               <button
                 type="button"
                 onClick={() => handleDownload(doc.id, doc.nombre)}
-                disabled={!doc.pdfId || downloadingId === doc.id}
+                disabled={!doc.hasPdf || downloadingId === doc.id}
                 className={
-                  !doc.pdfId || downloadingId === doc.id
+                  !doc.hasPdf || downloadingId === doc.id
                     ? 'cursor-not-allowed rounded border border-slate-200 px-4 py-2 text-xs font-medium text-slate-400'
                     : 'rounded border border-slate-300 bg-white px-4 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 hover:border-slate-400 transition-colors'
                 }
                 title={
-                  !doc.pdfId
+                  !doc.hasPdf
                     ? 'Este documento no tiene PDF disponible'
                     : downloadingId === doc.id
                       ? 'Descargando...'

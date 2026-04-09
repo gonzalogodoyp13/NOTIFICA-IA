@@ -102,20 +102,28 @@ export async function PATCH(
       select: {
         id: true,
         diligenciaId: true,
+        ejecutadoId: true,
         meta: true,
         createdAt: true,
         updatedAt: true,
       },
     })
 
+    const responseMeta =
+      updated.meta && typeof updated.meta === 'object' && !Array.isArray(updated.meta)
+        ? (updated.meta as Record<string, unknown>)
+        : {}
+
     return NextResponse.json({
       ok: true,
       data: {
         id: updated.id,
         diligenciaId: updated.diligenciaId,
+        ejecutadoId: updated.ejecutadoId,
         meta: updated.meta,
         createdAt: updated.createdAt ? updated.createdAt.toISOString() : null,
         updatedAt: updated.updatedAt ? updated.updatedAt.toISOString() : null,
+        step1Done: !!responseMeta.fechaEjecucion,
       },
     })
   } catch (error) {

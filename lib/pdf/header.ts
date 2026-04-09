@@ -43,7 +43,7 @@ export function drawRolHeader(
   const lineSpacing = 16;
   const lineBeforeSeparator = 24;
   const lineAfterSeparator = 16;
-  const blankLineAfter = 16;
+  const blankLineAfter = 32;
 
   // Draw receptor name (bold, centered)
   if (receptorNombre) {
@@ -111,7 +111,7 @@ export function drawRolHeader(
   y -= lineSpacing;
 
   // Draw Caratulado line
-  let caratuladoText = "Caratulado   : ";
+  let caratuladoText = "Caratulado   :   ";
   if (bancoNombre && ejecutadoNombre) {
     caratuladoText += `${bancoNombre} / ${ejecutadoNombre}`;
   } else if (bancoNombre) {

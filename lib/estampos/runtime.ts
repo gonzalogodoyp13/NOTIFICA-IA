@@ -69,7 +69,18 @@ export function buildInitialVariables({
   const horaEjecucion = (meta?.horaEjecucion as string) ?? ''
 
   // Cuantía formateada
+  const montoSeleccionadoRaw =
+    typeof meta?.monto === 'number'
+      ? meta.monto
+      : typeof meta?.monto === 'string'
+        ? Number(meta.monto.toString().replace(/\./g, '').replace(/\s/g, ''))
+        : null
+  const montoSeleccionado =
+    typeof montoSeleccionadoRaw === 'number' && Number.isFinite(montoSeleccionadoRaw)
+      ? montoSeleccionadoRaw
+      : null
   const cuantiaRaw = rol?.demanda?.cuantia
+  const montoEjecutado = montoSeleccionado ?? cuantiaRaw ?? null
 
   // Iterar sobre variablesSchema y construir solo las auto-llenadas
   for (const variableDef of variablesSchema) {
@@ -101,7 +112,7 @@ export function buildInitialVariables({
           value = ejecutado?.comunas?.nombre ?? ''
           break
         case 'monto_ejecutado':
-          value = cuantiaRaw ? formatCuantiaCLP(cuantiaRaw) : ''
+          value = montoEjecutado !== null ? `$${formatCuantiaCLP(montoEjecutado)}` : ''
           break
         default:
           // Si tiene defaultSource, intentar extraer (por ahora dejar vacío)

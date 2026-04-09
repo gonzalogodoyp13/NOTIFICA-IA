@@ -57,8 +57,22 @@ function buildEstampoVariables(
   const horaEjecucion = (meta?.horaEjecucion as string) ?? ''
 
   // Cuantía formateada
+  const montoSeleccionadoRaw =
+    typeof meta?.monto === 'number'
+      ? meta.monto
+      : typeof meta?.monto === 'string'
+        ? Number(meta.monto.toString().replace(/\./g, '').replace(/\s/g, ''))
+        : null
+  const montoSeleccionado =
+    typeof montoSeleccionadoRaw === 'number' && Number.isFinite(montoSeleccionadoRaw)
+      ? montoSeleccionadoRaw
+      : null
   const cuantiaRaw = (diligencia as any).rol?.demanda?.cuantia
   const cuantiaFormatted = cuantiaRaw ? formatCuantiaCLP(cuantiaRaw) : ''
+  const montoEjecutadoFormatted =
+    montoSeleccionado !== null
+      ? `$${formatCuantiaCLP(montoSeleccionado)}`
+      : cuantiaFormatted
 
   // Construir mapa de variables
   return {
@@ -86,7 +100,7 @@ function buildEstampoVariables(
 
     // Montos
     cuantia: cuantiaFormatted,
-    monto_ejecutado: cuantiaFormatted,
+    monto_ejecutado: montoEjecutadoFormatted,
 
     // Fecha y hora
     fecha_palabras_diligencia: formatDateToSpanishWords(fechaEjecucion),
@@ -270,7 +284,32 @@ export async function POST(
       },
     })
 
-    return NextResponse.json({ ok: true, data: documento })
+    return NextResponse.json({
+      ok: true,
+      data: {
+        id: documento.id,
+        nombre: documento.nombre,
+        tipo: documento.tipo,
+        version: documento.version,
+        hasPdf: !!documento.pdfId,
+        createdAt: documento.createdAt.toISOString(),
+        diligenciaId: documento.diligenciaId,
+        notificacionId: documento.notificacionId,
+        voidedAt: null,
+        voidReason: null,
+        voidedByUserId: null,
+        diligencia: {
+          id: diligencia.id,
+          tipo: null,
+        },
+        estampo: {
+          id: estampo.id,
+          nombre: estampo.nombre,
+          tipo: estampo.tipo,
+        },
+        estampoBase: null,
+      },
+    })
   } catch (error) {
     console.error('Error generando estampo:', error)
     return NextResponse.json(

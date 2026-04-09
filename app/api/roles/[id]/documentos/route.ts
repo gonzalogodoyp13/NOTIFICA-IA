@@ -57,7 +57,7 @@ export async function GET(
       nombre: doc.nombre,
       tipo: doc.tipo,
       version: doc.version,
-      pdfId: doc.pdfId,
+      hasPdf: !!doc.pdfId,
       createdAt: doc.createdAt.toISOString(),
       diligenciaId: doc.diligenciaId ?? doc.diligencia?.id ?? null,
       notificacionId: (doc as any).notificacionId ?? null,

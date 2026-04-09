@@ -12,6 +12,7 @@ interface EstampoCatalogItem {
 export function useEstampos() {
   return useQuery<EstampoCatalogItem[]>({
     queryKey: ['ajustes', 'estampos'],
+    staleTime: 300000,
     queryFn: async () => {
       try {
         const response = await fetch('/api/estampos', {
@@ -75,6 +76,7 @@ export function useEstamposGrouped() {
     error: wizardError,
   } = useQuery<WizardCategoria[]>({
     queryKey: ['estampos', 'wizard', 'categorias'],
+    staleTime: 300000,
     queryFn: async () => {
       try {
         const response = await fetch('/api/estampos/wizard/categorias', {
