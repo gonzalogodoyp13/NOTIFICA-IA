@@ -54,6 +54,12 @@ export const EstampoGenerateSchema = z.object({
   contenidoPersonalizado: z.string().optional(),
 })
 
+export const MembreteGenerateSchema = z.object({
+  ejecutadoId: z.string().min(1, 'ejecutadoId es requerido'),
+  placement: z.enum(['1', '2', '3', '4', '5', '6']),
+  pageSize: z.enum(['oficio', 'carta']),
+})
+
 export const NotaCreateSchema = z.object({
   contenido: z.string().min(3, 'La nota debe tener al menos 3 caracteres'),
 })

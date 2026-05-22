@@ -1,472 +1,402 @@
-import { useMemo, useState } from 'react'
-
-import {
-  useDiligencias,
-  useCreateNotificacion,
-  useDeleteNotificacion,
-  type DiligenciaItem,
-} from '@/lib/hooks/useRolWorkspace'
-
+import { useMemo, useState, type MouseEvent } from 'react'
+import { useCreateNotificacion, useDeleteNotificacion, useDiligencias, type DiligenciaItem, type NotificacionItem } from '@/lib/hooks/useRolWorkspace'
 import EjecutarWizard from './EjecutarWizard'
-import NuevaDiligenciaWizard from './NuevaDiligenciaWizard'
 import EstampoWizardModal from './EstampoWizardModal'
+import NuevaDiligenciaWizard from './NuevaDiligenciaWizard'
 
-interface DiligenciasTableProps {
-  rolId: string
+interface DiligenciasTableProps { rolId: string }
+
+type VisibleNotificacion = NotificacionItem & {
+  _estampoLabel: string
+  _ejecutadoNombre: string
+  _ejecutadoDireccion: string
+  _isWizard: boolean
+  _wizardCategoria: string | null
 }
 
-const estadoClases: Record<DiligenciaItem['estado'], string> = {
-  pendiente: 'rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800',
-  completada: 'rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-800',
-  fallida: 'rounded-full bg-rose-100 px-2 py-0.5 text-xs font-medium text-rose-800',
-}
-
-const TABLE_COLS = 4 // Tipo, Fecha encargo, Estado, Acciones
+const shellClass =
+  'rounded-[24px] border border-sky-200 bg-[linear-gradient(180deg,#f8fcff_0%,#eaf5ff_100%)] p-6 shadow-[0_24px_60px_-42px_rgba(30,64,175,0.2)]'
+const blockClass =
+  'overflow-hidden rounded-[24px] border border-sky-200 bg-white shadow-[0_18px_45px_-40px_rgba(30,64,175,0.18)]'
+const sectionHeaderClass =
+  'text-[10px] font-semibold uppercase tracking-[0.24em] text-sky-700/70'
+const subtleCellClass = 'bg-[linear-gradient(180deg,#f8fbff_0%,#edf6ff_100%)] px-5 py-4'
+const bodyCellClass = 'bg-white px-5 py-5'
+const primaryButtonClass =
+  'inline-flex items-center justify-center rounded-full border border-sky-700 bg-sky-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:-translate-y-0.5 hover:bg-sky-800 disabled:cursor-not-allowed disabled:opacity-50'
+const secondaryButtonClass =
+  'inline-flex items-center justify-center rounded-full border border-sky-200 bg-white px-4 py-2.5 text-sm font-semibold text-sky-900 transition hover:border-sky-300 hover:bg-sky-50 disabled:cursor-not-allowed disabled:opacity-50'
+const accentButtonClass =
+  'inline-flex items-center justify-center rounded-full border border-sky-300 bg-sky-100 px-4 py-2.5 text-sm font-semibold text-sky-900 transition hover:bg-sky-200 disabled:cursor-not-allowed disabled:opacity-50'
+const successButtonClass =
+  'inline-flex items-center justify-center rounded-full border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50'
+const dangerButtonClass =
+  'inline-flex items-center justify-center rounded-full border border-rose-200 bg-rose-50 px-4 py-2.5 text-sm font-semibold text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-50'
 
 export default function DiligenciasTable({ rolId }: DiligenciasTableProps) {
   const { data, isLoading, isError, error } = useDiligencias(rolId)
-
   const createNotificacion = useCreateNotificacion(rolId)
   const deleteNotificacion = useDeleteNotificacion(rolId)
   const [creatingDiligenciaId, setCreatingDiligenciaId] = useState<string | null>(null)
-
   const [showWizard, setShowWizard] = useState(false)
   const [ejecutarTarget, setEjecutarTarget] = useState<DiligenciaItem | null>(null)
   const [ejecutarNotificacionId, setEjecutarNotificacionId] = useState<string | null>(null)
   const [ejecutarInitialStep, setEjecutarInitialStep] = useState<1 | 2 | 3 | undefined>(undefined)
   const [flashMessage, setFlashMessage] = useState<string | null>(null)
-  const [wizardModalOpen, setWizardModalOpen] = useState<{
-    diligenciaId: string
-    categoria: string
-    notificacionId: string
-  } | null>(null)
-  const [ejecutadoModalOpen, setEjecutadoModalOpen] = useState<{
-    diligenciaId: string
-    ejecutados: Array<{ id: string; nombre: string; direccion: string }>
-  } | null>(null)
-  const [selectedEjecutadoId, setSelectedEjecutadoId] = useState<string>('')
+  const [wizardModalOpen, setWizardModalOpen] = useState<{ diligenciaId: string; categoria: string; notificacionId: string } | null>(null)
+  const [ejecutadoModalOpen, setEjecutadoModalOpen] = useState<{ diligenciaId: string; ejecutados: Array<{ id: string; nombre: string; direccion: string }>; startImmediately?: boolean } | null>(null)
+  const [selectedEjecutadoId, setSelectedEjecutadoId] = useState('')
 
-  const sorted = useMemo(
-    () =>
-      (data ?? []).slice().sort((a, b) => {
-        return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-      }),
-    [data]
-  )
+  const sorted = useMemo(() => (data ?? []).slice().sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()), [data])
 
-  const handleCreateNotificacion = (diligencia: DiligenciaItem) => {
+  const handleViewDocumento = (event: MouseEvent, documentoId: string) => {
+    event.stopPropagation()
+    window.open(`/api/documentos/${documentoId}/download?mode=inline`, '_blank')
+  }
+
+  const openWizardForNotificacion = (diligencia: DiligenciaItem, notificacionId: string, step: 1 | 2 | 3) => {
+    setEjecutarTarget(diligencia)
+    setEjecutarNotificacionId(notificacionId)
+    setEjecutarInitialStep(step)
+  }
+
+  const openEstampoEditor = (diligencia: DiligenciaItem, notif: VisibleNotificacion) => {
+    if (notif._isWizard && notif._wizardCategoria) {
+      setWizardModalOpen({ diligenciaId: diligencia.id, categoria: notif._wizardCategoria, notificacionId: notif.id })
+      return
+    }
+    openWizardForNotificacion(diligencia, notif.id, 3)
+  }
+
+  const createNotificacionForDiligencia = (diligencia: DiligenciaItem, options?: { startImmediately?: boolean; ejecutadoId?: string }) => {
     const ejecutados = diligencia.ejecutados ?? []
-    const ejecutadosCount = ejecutados.length
-
-    if (ejecutadosCount === 0) {
-      setFlashMessage('No se puede crear notificación: la demanda no tiene ejecutados registrados.')
+    const startImmediately = options?.startImmediately ?? false
+    if (ejecutados.length === 0) {
+      setFlashMessage('No se puede crear notificacion: la demanda no tiene ejecutados registrados.')
       return
     }
 
-    if (ejecutadosCount === 1) {
-      // Auto-create with the only ejecutado
+    const finalizeCreate = (ejecutadoId?: string) => {
       setCreatingDiligenciaId(diligencia.id)
       createNotificacion.mutate(
-        { diligenciaId: diligencia.id, ejecutadoId: ejecutados[0].id },
+        { diligenciaId: diligencia.id, ejecutadoId },
         {
-          onSuccess: () => {
-            setFlashMessage('Nueva notificación creada.')
+          onSuccess: createdNotificacion => {
+            setFlashMessage(startImmediately ? 'Ejecucion iniciada.' : 'Nueva notificacion creada.')
             setCreatingDiligenciaId(null)
+            if (startImmediately) openWizardForNotificacion(diligencia, createdNotificacion.id, 1)
           },
-          onError: (err) => {
-            console.error('Error creando notificación:', err)
-            setFlashMessage(err.message || 'Error al crear notificación. Intenta nuevamente.')
+          onError: mutationError => {
+            console.error('Error creando notificacion:', mutationError)
+            setFlashMessage(mutationError.message || 'Error al crear notificacion. Intenta nuevamente.')
             setCreatingDiligenciaId(null)
           },
         }
       )
-    } else {
-      // Multiple ejecutados: open modal
-      setEjecutadoModalOpen({
-        diligenciaId: diligencia.id,
-        ejecutados: ejecutados,
-      })
-      setSelectedEjecutadoId('')
     }
+
+    if (options?.ejecutadoId) return finalizeCreate(options.ejecutadoId)
+    if (ejecutados.length === 1) return finalizeCreate(ejecutados[0].id)
+    setEjecutadoModalOpen({ diligenciaId: diligencia.id, ejecutados, startImmediately })
+    setSelectedEjecutadoId('')
   }
 
   const handleConfirmEjecutadoSelection = () => {
     if (!ejecutadoModalOpen || !selectedEjecutadoId) return
-
-    setCreatingDiligenciaId(ejecutadoModalOpen.diligenciaId)
-    createNotificacion.mutate(
-      { diligenciaId: ejecutadoModalOpen.diligenciaId, ejecutadoId: selectedEjecutadoId },
-      {
-        onSuccess: () => {
-          setFlashMessage('Nueva notificación creada.')
-          setCreatingDiligenciaId(null)
-          setEjecutadoModalOpen(null)
-          setSelectedEjecutadoId('')
-        },
-        onError: (err) => {
-          console.error('Error creando notificación:', err)
-          setFlashMessage(err.message || 'Error al crear notificación. Intenta nuevamente.')
-          setCreatingDiligenciaId(null)
-        },
-      }
-    )
+    const diligencia = sorted.find(item => item.id === ejecutadoModalOpen.diligenciaId)
+    if (!diligencia) {
+      setFlashMessage('No fue posible encontrar la diligencia seleccionada.')
+      setEjecutadoModalOpen(null)
+      setSelectedEjecutadoId('')
+      return
+    }
+    setEjecutadoModalOpen(null)
+    createNotificacionForDiligencia(diligencia, { ejecutadoId: selectedEjecutadoId, startImmediately: ejecutadoModalOpen.startImmediately })
+    setSelectedEjecutadoId('')
   }
 
+  const renderActionButton = (label: string, onClick: (event: MouseEvent<HTMLButtonElement>) => void, className: string, disabled = false) => (
+    <button type="button" onClick={onClick} disabled={disabled} className={className}>{label}</button>
+  )
+
   return (
-    <section className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
+    <section className={shellClass}>
       <header className="flex flex-wrap items-center justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <h2 className="text-lg font-semibold text-slate-900">Diligencias</h2>
-          {isLoading && (
-            <span className="inline-flex items-center gap-2 text-xs text-slate-500">
-              <span className="h-2 w-2 animate-ping rounded-full bg-slate-400" />
-              Cargando...
-            </span>
-          )}
+        <div className="space-y-1">
+          <div className="inline-flex items-center gap-2 rounded-full border border-sky-200 bg-white/90 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.24em] text-sky-700/80">
+            Panel operativo
+          </div>
+          <div className="flex items-center gap-3">
+            <h2 className="text-2xl font-semibold tracking-tight text-slate-900">Diligencias</h2>
+            {isLoading && (
+              <span className="inline-flex items-center gap-2 text-xs text-slate-500">
+                <span className="h-2 w-2 animate-ping rounded-full bg-slate-400" />
+                Cargando...
+              </span>
+            )}
+          </div>
+          <p className="text-sm text-slate-600">
+            Cada diligencia vive en su propio bloque para que ejecutar, recibo y estampo se lean de un vistazo.
+          </p>
         </div>
         <button
           type="button"
           onClick={() => setShowWizard(true)}
-          className="inline-flex items-center gap-2 rounded bg-blue-600 px-3 py-2 text-sm font-medium text-white shadow hover:bg-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-400"
+          className={primaryButtonClass}
         >
-          <span className="text-base leading-none">＋</span>
+          <span className="text-base leading-none">+</span>
           Nueva diligencia
         </button>
       </header>
 
       {flashMessage && (
-        <div className="mt-4 rounded-md border border-emerald-200 bg-emerald-50 p-3 text-xs text-emerald-700">
+        <div className="mt-5 rounded-[20px] border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
           {flashMessage}
         </div>
       )}
 
       {isError && (
-        <p className="mt-4 rounded-md border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">
+        <p className="mt-5 rounded-[20px] border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
           Error al obtener las diligencias: {error?.message ?? 'intenta nuevamente.'}
         </p>
       )}
 
       {!isLoading && !isError && sorted.length === 0 && (
-        <p className="mt-4 rounded-md border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
-          Aún no se han registrado diligencias para este ROL.
-        </p>
+        <div className="mt-5 rounded-[22px] border border-dashed border-sky-300 bg-white/75 px-6 py-10 text-center">
+          <p className="text-base font-semibold text-slate-800">Aun no se han registrado diligencias para este ROL.</p>
+          <p className="mt-2 text-sm text-slate-500">
+            Crea la primera diligencia para empezar a ejecutar, generar recibos y trabajar estampos.
+          </p>
+        </div>
       )}
 
-      <div className="mt-4 overflow-hidden rounded-md border border-slate-200">
-        <table className="min-w-full divide-y divide-slate-200 text-sm">
-          <thead className="bg-slate-100 text-left text-xs font-semibold uppercase text-slate-600">
-            <tr>
-              <th className="px-4 py-3">Tipo</th>
-              <th className="px-4 py-3">Fecha encargo</th>
-              <th className="px-4 py-3">Estado</th>
-              <th className="px-4 py-3 text-right">Acciones</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-200 bg-white">
-            {isLoading &&
-              Array.from({ length: 4 }).map((_, index) => (
-                <tr key={`skeleton-${index}`} className="animate-pulse">
-                  <td className="px-4 py-4">
-                    <span className="inline-block h-4 w-32 rounded bg-slate-200" />
-                  </td>
-                  <td className="px-4 py-4">
-                    <span className="inline-block h-4 w-24 rounded bg-slate-200" />
-                  </td>
-                  <td className="px-4 py-4">
-                    <span className="inline-block h-4 w-16 rounded-full bg-slate-200" />
-                  </td>
-                  <td className="px-4 py-4 text-right">
-                    <span className="inline-block h-8 w-32 rounded bg-slate-200" />
-                  </td>
-                </tr>
-              ))}
+      {isLoading && (
+        <div className="mt-6 space-y-4">
+          {Array.from({ length: 3 }).map((_, index) => (
+            <div
+              key={`skeleton-${index}`}
+              className={blockClass}
+            >
+              <div className="grid animate-pulse gap-px bg-slate-200 md:grid-cols-[1.4fr_1fr_0.9fr]">
+                <div className={subtleCellClass}>
+                  <span className="mb-2 inline-block h-3 w-16 rounded-full bg-slate-200" />
+                  <span className="block h-5 w-40 rounded bg-slate-200" />
+                </div>
+                <div className={subtleCellClass}>
+                  <span className="mb-2 inline-block h-3 w-24 rounded-full bg-slate-200" />
+                  <span className="block h-5 w-32 rounded bg-slate-200" />
+                </div>
+                <div className={subtleCellClass}>
+                  <span className="mb-2 inline-block h-3 w-20 rounded-full bg-slate-200" />
+                  <span className="block h-10 w-32 rounded-full bg-slate-200" />
+                </div>
+              </div>
+              <div className="grid animate-pulse gap-px border-t border-slate-200 bg-slate-200 md:grid-cols-[1fr_1.4fr]">
+                <div className={bodyCellClass}>
+                  <span className="mb-2 inline-block h-3 w-20 rounded-full bg-slate-200" />
+                  <span className="block h-5 w-36 rounded bg-slate-200" />
+                  <span className="mt-2 block h-4 w-48 rounded bg-slate-200" />
+                </div>
+                <div className={bodyCellClass}>
+                  <span className="mb-3 inline-block h-3 w-24 rounded-full bg-slate-200" />
+                  <span className="block h-10 w-52 rounded-2xl bg-slate-200" />
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
 
-            {!isLoading &&
-              !isError &&
-              sorted.map(diligencia => {
-                const handleViewDocumento = (e: React.MouseEvent, documentoId: string) => {
-                  e.stopPropagation()
-                  window.open(`/api/documentos/${documentoId}/download?mode=inline`, '_blank')
+      {!isLoading && !isError && sorted.length > 0 && (
+        <div className="mt-6 space-y-4">
+          {sorted.map(diligencia => {
+            const notificaciones: VisibleNotificacion[] = (diligencia.notificaciones || [])
+              .filter(notif => !notif.voidedAt)
+              .slice()
+              .sort((a, b) => {
+                const aDate = a.createdAt ? new Date(a.createdAt).getTime() : Infinity
+                const bDate = b.createdAt ? new Date(b.createdAt).getTime() : Infinity
+                if (aDate !== bDate) return aDate - bDate
+                return a.id.localeCompare(b.id)
+              })
+              .map(notif => {
+                const meta = (notif.meta as Record<string, unknown> | null) ?? {}
+                const estampoTipo = meta.estampoTipo
+                const isEstampoTipoObject =
+                  !!estampoTipo && typeof estampoTipo === 'object' && !Array.isArray(estampoTipo)
+                const isWizard =
+                  isEstampoTipoObject &&
+                  (estampoTipo as { kind?: string }).kind === 'WIZARD' &&
+                  typeof (estampoTipo as { categoria?: string }).categoria === 'string' &&
+                  ((estampoTipo as { categoria?: string }).categoria?.length ?? 0) > 0
+                const ejecutado = diligencia.ejecutados.find(item => item.id === notif.ejecutadoId)
+
+                return {
+                  ...notif,
+                  _estampoLabel:
+                    notif.latestEstampo?.nombreVisible ?? notif.latestEstampo?.slug ?? 'Sin estampo',
+                  _ejecutadoNombre: ejecutado?.nombre ?? 'Ejecutado pendiente',
+                  _ejecutadoDireccion:
+                    ejecutado?.direccion ?? 'Selecciona el ejecutado para continuar con el flujo.',
+                  _isWizard: isWizard,
+                  _wizardCategoria: isWizard
+                    ? ((estampoTipo as { categoria?: string }).categoria ?? null)
+                    : null,
                 }
+              })
+            const hasNotificaciones = notificaciones.length > 0
+            const isCreating = creatingDiligenciaId === diligencia.id
 
-                const openWizardForNotificacion = (
-                  notificacionId: string,
-                  step: 1 | 2 | 3
-                ) => {
-                  setEjecutarTarget(diligencia)
-                  setEjecutarNotificacionId(notificacionId)
-                  setEjecutarInitialStep(step)
-                }
-
-                // Sort notificaciones for stable ordering
-                const notificaciones = (diligencia.notificaciones || []).slice().sort((a, b) => {
-                  // Primary: createdAt ascending (nulls last)
-                  const aDate = a.createdAt ? new Date(a.createdAt).getTime() : Infinity
-                  const bDate = b.createdAt ? new Date(b.createdAt).getTime() : Infinity
-                  
-                  if (aDate !== bDate) {
-                    return aDate - bDate
-                  }
-                  
-                  // Tie-break: id ascending (string comparison)
-                  return a.id.localeCompare(b.id)
-                })
-
-                return (
-                  <>
-                    <tr key={diligencia.id}>
-                      <td className="px-4 py-3 text-slate-800">
-                        <div className="font-medium">{diligencia.tipo.nombre}</div>
+            return (
+              <article
+                key={diligencia.id}
+                className={blockClass}
+              >
+                <div className="grid gap-px bg-slate-200 md:grid-cols-[1.45fr_1fr_0.95fr]">
+                  <div className={subtleCellClass}>
+                    <div className={sectionHeaderClass}>Tipo</div>
+                    <div className="mt-2 flex flex-wrap items-center gap-3">
+                      <div>
+                        <div className="text-xl font-semibold tracking-tight text-slate-900">{diligencia.tipo.nombre}</div>
                         {diligencia.tipo.descripcion && (
-                          <div className="text-xs text-slate-500">{diligencia.tipo.descripcion}</div>
+                          <div className="mt-1 text-sm text-slate-500">{diligencia.tipo.descripcion}</div>
                         )}
-                      </td>
-                      <td className="px-4 py-3 text-slate-700">
-                        {new Date(diligencia.fecha).toLocaleString('es-CL')}
-                      </td>
-                      <td className="px-4 py-3">
-                        <span className={estadoClases[diligencia.estado]}>{diligencia.estado}</span>
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="flex justify-end gap-2 text-xs">
-                          {/* Botón "Nueva notificación" - siempre visible */}
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              handleCreateNotificacion(diligencia)
-                            }}
-                            disabled={creatingDiligenciaId === diligencia.id}
-                            className="rounded border border-purple-200 bg-purple-50 px-3 py-1 text-purple-700 transition hover:bg-purple-100 disabled:opacity-50 disabled:cursor-not-allowed"
-                          >
-                            {creatingDiligenciaId === diligencia.id ? 'Creando...' : 'Nueva notificación'}
-                          </button>
+                      </div>
+                      <span className="rounded-full border border-sky-200 bg-white px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-sky-700/80">
+                        {diligencia.estado}
+                      </span>
+                    </div>
+                  </div>
+                  <div className={subtleCellClass}>
+                    <div className={sectionHeaderClass}>Fecha Encargo</div>
+                    <div className="mt-2 text-base font-semibold text-slate-800">
+                      {new Date(diligencia.fecha).toLocaleDateString('es-CL')}
+                    </div>
+                  </div>
+                  <div className={subtleCellClass}>
+                    <div className={sectionHeaderClass}>Acciones</div>
+                    <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
+                      {!hasNotificaciones ? (
+                        <button
+                          type="button"
+                          onClick={() => createNotificacionForDiligencia(diligencia, { startImmediately: true })}
+                          disabled={isCreating}
+                          className={`${primaryButtonClass} min-h-12 px-5`}
+                        >
+                          {isCreating ? 'Preparando...' : 'Ejecutar'}
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => createNotificacionForDiligencia(diligencia)}
+                          disabled={isCreating}
+                          className={secondaryButtonClass}
+                        >
+                          {isCreating ? 'Creando...' : 'Nueva Notificacion'}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+                {hasNotificaciones ? (
+                  <div className="border-t border-slate-200">
+                    <div className="grid gap-px bg-slate-200 md:grid-cols-[0.95fr_1.55fr]">
+                      <div className="bg-sky-50 px-5 py-3 text-[10px] font-semibold uppercase tracking-[0.2em] text-sky-700/70">Ejecutado</div>
+                      <div className="bg-sky-50 px-5 py-3 text-[10px] font-semibold uppercase tracking-[0.2em] text-sky-700/70">Acciones</div>
+                    </div>
+                    {notificaciones.map((notif, index) => (
+                      <div key={notif.id} className={`grid gap-px bg-slate-200 md:grid-cols-[0.95fr_1.55fr] ${index === 0 ? '' : 'border-t border-slate-200'}`}>
+                        <div className={`${bodyCellClass} flex h-full flex-col`}>
+                          <div className="text-[1.15rem] font-semibold text-slate-900">{notif._ejecutadoNombre}</div>
+                          <div className="mt-1 text-[0.98rem] leading-7 text-slate-500">{notif._ejecutadoDireccion}</div>
+                          <div className="mt-4 flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                            <span>{notif.createdAt ? new Date(notif.createdAt).toLocaleString('es-CL') : 'Sin fecha de creacion'}</span>
+                            {notif.latestEstampoId && (
+                              <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-1 font-medium text-emerald-700">Estampo listo</span>
+                            )}
+                          </div>
+                          <div className="mt-auto pt-5">
+                            {renderActionButton('Anular Notificacion', event => {
+                              event.stopPropagation()
+                              const ok = window.confirm('Anular esta notificacion? Los documentos asociados tambien seran anulados y ocultados de la vista normal. Esta accion puede revertirse en el futuro para auditoria.')
+                              if (!ok) return
+                              deleteNotificacion.mutate(
+                                { diligenciaId: diligencia.id, notificacionId: notif.id },
+                                { onSuccess: () => setFlashMessage('Notificacion anulada.'), onError: mutationError => setFlashMessage(mutationError.message || 'Error al anular notificacion') }
+                              )
+                            }, dangerButtonClass, deleteNotificacion.isPending)}
+                          </div>
                         </div>
-                      </td>
-                    </tr>
-                    {/* Filas anidadas para notificaciones */}
-                    {notificaciones.length > 0 ? (
-                      notificaciones
-                        .filter((notif: any) => !notif.voidedAt)
-                        .map((notif, idx) => {
-                        const meta = (notif.meta as Record<string, any> | null) ?? {}
-                        const estampoTipo = meta?.estampoTipo
-                        const isEstampoTipoObject =
-                          !!estampoTipo && typeof estampoTipo === 'object' && !Array.isArray(estampoTipo)
-
-                        const isWizard =
-                          isEstampoTipoObject &&
-                          (estampoTipo as any).kind === 'WIZARD' &&
-                          typeof (estampoTipo as any).categoria === 'string' &&
-                          (estampoTipo as any).categoria.length > 0
-
-                        // Calcular labels para la notificación
-                        const ejecutado = diligencia.ejecutados.find((e: any) => e.id === notif.ejecutadoId)
-                        const estampoLabel = notif.latestEstampo?.nombreVisible ?? 
-                                             notif.latestEstampo?.slug ?? 
-                                             'Sin estampo'
-                        const ejecutadoLabel = ejecutado 
-                          ? `${ejecutado.nombre} — ${ejecutado.direccion}`
-                          : '(Requiere selección)'
-
-                        return (
-                          <tr key={notif.id} className="bg-slate-50">
-                            <td colSpan={TABLE_COLS} className="px-4 py-2">
-                              <div className="flex items-center gap-3 pl-8 text-sm">
-                                <span className="font-medium text-slate-700">
-                                  {estampoLabel} — {ejecutadoLabel}
-                                </span>
-                                <span className="text-xs text-slate-500">
-                                  {notif.createdAt
-                                    ? new Date(notif.createdAt).toLocaleString('es-CL')
-                                    : '—'}
-                                </span>
-                                {!notif.ejecutadoId && (
-                                  <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">
-                                    Requiere selección
-                                  </span>
-                                )}
-                                <div className="ml-auto flex items-center gap-2 text-xs">
-                                  {!notif.step1Done && (
-                                  <button
-                                    type="button"
-                                    onClick={(e) => {
-                                      e.stopPropagation()
-                                      openWizardForNotificacion(notif.id, 1)
-                                    }}
-                                    className="rounded border border-slate-200 px-3 py-1 text-slate-600 transition hover:bg-slate-100"
-                                  >
-                                    Ejecutar
-                                  </button>
-                                )}
-
-                                {notif.step1Done && !notif.step2Done && (
-                                  <>
-                                    <button
-                                      type="button"
-                                      onClick={(e) => {
-                                        e.stopPropagation()
-                                        openWizardForNotificacion(notif.id, 1)
-                                      }}
-                                      className="rounded border border-slate-200 px-3 py-1 text-slate-600 transition hover:bg-slate-100"
-                                    >
-                                      Editar
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={(e) => {
-                                        e.stopPropagation()
-                                        openWizardForNotificacion(notif.id, 2)
-                                      }}
-                                      className="rounded border border-blue-200 bg-blue-50 px-3 py-1 text-blue-700 transition hover:bg-blue-100"
-                                    >
-                                      Continuar con Recibo
-                                    </button>
-                                  </>
-                                )}
-
-                                {notif.step2Done && !notif.step3Done && (
-                                  <>
-                                    <button
-                                      type="button"
-                                      onClick={(e) => {
-                                        e.stopPropagation()
-                                        openWizardForNotificacion(notif.id, 1)
-                                      }}
-                                      className="rounded border border-slate-200 px-3 py-1 text-slate-600 transition hover:bg-slate-100"
-                                    >
-                                      Editar
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={(e) => {
-                                        e.stopPropagation()
-                                        if (isWizard) {
-                                          const categoria = (estampoTipo as any).categoria as string
-                                          setWizardModalOpen({
-                                            diligenciaId: diligencia.id,
-                                            categoria,
-                                            notificacionId: notif.id,
-                                          })
-                                        } else {
-                                          openWizardForNotificacion(notif.id, 3)
-                                        }
-                                      }}
-                                      className="rounded border border-blue-200 bg-blue-50 px-3 py-1 text-blue-700 transition hover:bg-blue-100"
-                                    >
-                                      Continuar con Estampo
-                                    </button>
-                                    {notif.latestBoletaId && (
-                                      <button
-                                        type="button"
-                                        onClick={(e) =>
-                                          handleViewDocumento(e, notif.latestBoletaId!)
-                                        }
-                                        className="rounded border border-emerald-200 bg-emerald-50 px-3 py-1 text-emerald-700 transition hover:bg-emerald-100"
-                                      >
-                                        Ver Recibo
-                                      </button>
-                                    )}
-                                  </>
-                                )}
-
-                                {notif.step2Done && notif.step3Done && (
-                                  <>
-                                    <button
-                                      type="button"
-                                      onClick={(e) => {
-                                        e.stopPropagation()
-                                        openWizardForNotificacion(notif.id, 1)
-                                      }}
-                                      className="rounded border border-slate-200 px-3 py-1 text-slate-600 transition hover:bg-slate-100"
-                                    >
-                                      Editar
-                                    </button>
-                                    {notif.latestBoletaId && (
-                                      <button
-                                        type="button"
-                                        onClick={(e) =>
-                                          handleViewDocumento(e, notif.latestBoletaId!)
-                                        }
-                                        className="rounded border border-emerald-200 bg-emerald-50 px-3 py-1 text-emerald-700 transition hover:bg-emerald-100"
-                                      >
-                                        Ver Recibo
-                                      </button>
-                                    )}
-                                    {notif.latestEstampoId && (
-                                      <button
-                                        type="button"
-                                        onClick={(e) =>
-                                          handleViewDocumento(e, notif.latestEstampoId!)
-                                        }
-                                        className="rounded border border-emerald-200 bg-emerald-50 px-3 py-1 text-emerald-700 transition hover:bg-emerald-100"
-                                      >
-                                        Ver Estampo
-                                      </button>
-                                    )}
-                                  </>
-                                )}
-
-                                  {!notif.voidedAt && (
-                                    <button
-                                      type="button"
-                                      disabled={deleteNotificacion.isPending}
-                                      onClick={(e) => {
-                                        e.stopPropagation()
-                                        const ok = window.confirm(
-                                          '¿Anular esta notificación? Los documentos asociados también serán anulados y ocultados de la vista normal. Esta acción puede revertirse en el futuro para auditoría.'
-                                        )
-                                        if (!ok) return
-
-                                        deleteNotificacion.mutate(
-                                          { diligenciaId: diligencia.id, notificacionId: notif.id },
-                                          {
-                                            onSuccess: () => {
-                                              setFlashMessage('Notificación anulada.')
-                                            },
-                                            onError: (err) => {
-                                              setFlashMessage(err.message || 'Error al anular notificación')
-                                            },
-                                          }
-                                        )
-                                      }}
-                                      className="rounded border border-rose-200 bg-rose-50 px-3 py-1 text-rose-700 transition hover:bg-rose-100 disabled:opacity-50 disabled:cursor-not-allowed"
-                                    >
-                                      Anular
-                                    </button>
-                                  )}
+                        <div className={bodyCellClass}>
+                          {!notif.step1Done && (
+                            <div className="flex flex-wrap items-start justify-between gap-4">
+                              <div>
+                                <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-sky-700/70">Acciones</div>
+                                <p className="mt-2 max-w-xl text-sm leading-6 text-slate-500">Inicia la ejecucion de esta diligencia para capturar la visita y habilitar el recibo.</p>
+                              </div>
+                              {renderActionButton('Ejecutar', event => { event.stopPropagation(); openWizardForNotificacion(diligencia, notif.id, 1) }, `${accentButtonClass} min-h-12 px-5`)}
+                            </div>
+                          )}
+                          {notif.step1Done && !notif.step2Done && (
+                            <div className="flex flex-wrap items-start justify-between gap-4">
+                              <div>
+                                <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-sky-700/70">Acciones</div>
+                                <p className="mt-2 max-w-xl text-sm leading-6 text-slate-500">La ejecucion ya esta registrada. Continua con el recibo o vuelve a editar los datos previos.</p>
+                              </div>
+                              <div className="flex flex-wrap items-center gap-2">
+                                {renderActionButton('Editar ejecucion', event => { event.stopPropagation(); openWizardForNotificacion(diligencia, notif.id, 1) }, secondaryButtonClass)}
+                                {renderActionButton('Continuar con recibo', event => { event.stopPropagation(); openWizardForNotificacion(diligencia, notif.id, 2) }, primaryButtonClass)}
                               </div>
                             </div>
-                          </td>
-                          </tr>
-                        )
-                      })
-                    ) : (
-                      <tr className="bg-slate-50">
-                        <td colSpan={TABLE_COLS} className="px-4 py-2">
-                          <div className="flex items-center gap-3 pl-8 text-sm">
-                            <span className="text-slate-500">Sin ciclos de ejecución</span>
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                handleCreateNotificacion(diligencia)
-                              }}
-                              disabled={creatingDiligenciaId === diligencia.id}
-                              className="rounded border border-blue-200 bg-blue-50 px-2 py-1 text-xs text-blue-700 transition hover:bg-blue-100 disabled:opacity-50 disabled:cursor-not-allowed"
-                            >
-                              {creatingDiligenciaId === diligencia.id ? 'Creando...' : 'Nueva notificación'}
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    )}
-                  </>
-                )
-              })}
-          </tbody>
-        </table>
-      </div>
+                          )}
+                          {notif.step2Done && (
+                            <div className="grid gap-4 lg:grid-cols-2">
+                              <div className="rounded-[20px] border border-sky-200 bg-[linear-gradient(180deg,#f8fcff_0%,#eaf5ff_100%)] p-4">
+                                <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-sky-700/70">For Estampo</div>
+                                {!notif.step3Done ? (
+                                  <>
+                                    <p className="mt-2 text-sm leading-6 text-slate-600">El recibo ya fue generado. Ahora puedes continuar con el estampo de esta diligencia.</p>
+                                    <div className="mt-4 flex flex-wrap gap-2">
+                                      {renderActionButton('Continuar con estampo', event => { event.stopPropagation(); openEstampoEditor(diligencia, notif) }, accentButtonClass)}
+                                    </div>
+                                  </>
+                                ) : (
+                                  <>
+                                    <div className="mt-2 text-lg font-semibold text-slate-900">{notif._estampoLabel}</div>
+                                    <div className="mt-4 flex flex-wrap gap-2">
+                                      {notif.latestEstampoId && renderActionButton('Ver estampo', event => handleViewDocumento(event, notif.latestEstampoId!), successButtonClass)}
+                                      {renderActionButton('Editar', event => { event.stopPropagation(); openEstampoEditor(diligencia, notif) }, secondaryButtonClass)}
+                                    </div>
+                                  </>
+                                )}
+                              </div>
+                              <div className="rounded-[20px] border border-sky-200 bg-[linear-gradient(180deg,#ffffff_0%,#f2f8ff_100%)] p-4">
+                                <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-sky-700/70">Recibo</div>
+                                <p className="mt-2 text-sm leading-6 text-slate-600">El recibo ya forma parte del flujo. Puedes verlo o volver al paso correspondiente.</p>
+                                <div className="mt-4 flex flex-wrap gap-2">
+                                  {renderActionButton('Editar recibo', event => { event.stopPropagation(); openWizardForNotificacion(diligencia, notif.id, 2) }, secondaryButtonClass)}
+                                  {notif.latestBoletaId && renderActionButton('Ver recibo', event => handleViewDocumento(event, notif.latestBoletaId!), successButtonClass)}
+                                </div>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="grid gap-px border-t border-slate-200 bg-slate-200 md:grid-cols-[0.95fr_1.55fr]">
+                    <div className="bg-sky-50 px-5 py-3 text-[10px] font-semibold uppercase tracking-[0.2em] text-sky-700/70">Ejecutado</div>
+                    <div className="bg-sky-50 px-5 py-3 text-[10px] font-semibold uppercase tracking-[0.2em] text-sky-700/70">Acciones</div>
+                    <div className={bodyCellClass}><div className="text-lg font-semibold text-slate-700">Pendiente de definir</div><div className="mt-1 text-sm leading-6 text-slate-500">El ejecutado se asociara cuando inicies la ejecucion de esta diligencia.</div></div>
+                    <div className={bodyCellClass}><div className="rounded-[20px] border border-dashed border-sky-300 bg-sky-50 px-4 py-4"><div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-sky-700/70">Acciones</div><p className="mt-2 max-w-xl text-sm leading-6 text-slate-500">Todavia no existe un ciclo para esta diligencia. Usa el boton superior para ejecutar y abrir el flujo normal.</p></div></div>
+                  </div>
+                )}
+              </article>
+            )
+          })}
+        </div>
+      )}
 
       {showWizard && (
         <NuevaDiligenciaWizard
@@ -475,6 +405,7 @@ export default function DiligenciasTable({ rolId }: DiligenciasTableProps) {
           onCreated={() => setFlashMessage('Diligencia creada correctamente.')}
         />
       )}
+
       {ejecutarTarget && ejecutarNotificacionId && (
         <EjecutarWizard
           rolId={rolId}
@@ -487,7 +418,7 @@ export default function DiligenciasTable({ rolId }: DiligenciasTableProps) {
             setEjecutarInitialStep(undefined)
           }}
           onSuccess={() => {
-            setFlashMessage(`Ejecución completada para ${ejecutarTarget.tipo.nombre}.`)
+            setFlashMessage(`Ejecucion completada para ${ejecutarTarget.tipo.nombre}.`)
             setEjecutarTarget(null)
             setEjecutarNotificacionId(null)
             setEjecutarInitialStep(undefined)
@@ -497,6 +428,7 @@ export default function DiligenciasTable({ rolId }: DiligenciasTableProps) {
           }}
         />
       )}
+
       {wizardModalOpen && (
         <EstampoWizardModal
           rolId={rolId}
@@ -511,25 +443,22 @@ export default function DiligenciasTable({ rolId }: DiligenciasTableProps) {
           }}
         />
       )}
+
       {ejecutadoModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
-          <div className="w-full max-w-md rounded-lg bg-white p-6 shadow-lg">
-            <h3 className="text-lg font-semibold text-slate-800 mb-4">
-              Seleccionar Ejecutado
-            </h3>
+          <div className="w-full max-w-md rounded-[24px] border border-sky-200 bg-white p-6 shadow-xl">
+            <h3 className="mb-4 text-lg font-semibold text-slate-800">Seleccionar Ejecutado</h3>
             <div className="space-y-3">
-              <label className="block text-sm font-medium text-slate-700">
-                Ejecutado *
-              </label>
+              <label className="block text-sm font-medium text-slate-700">Ejecutado *</label>
               <select
                 value={selectedEjecutadoId}
-                onChange={(e) => setSelectedEjecutadoId(e.target.value)}
-                className="w-full rounded border border-slate-300 p-2 text-sm"
+                onChange={event => setSelectedEjecutadoId(event.target.value)}
+                className="w-full rounded-[18px] border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-slate-700 outline-none transition focus:border-sky-400 focus:bg-white"
               >
                 <option value="">Seleccione un ejecutado...</option>
-                {ejecutadoModalOpen.ejecutados.map((e) => (
-                  <option key={e.id} value={e.id}>
-                    {e.nombre} — {e.direccion}
+                {ejecutadoModalOpen.ejecutados.map(ejecutado => (
+                  <option key={ejecutado.id} value={ejecutado.id}>
+                    {ejecutado.nombre} - {ejecutado.direccion}
                   </option>
                 ))}
               </select>
@@ -541,7 +470,7 @@ export default function DiligenciasTable({ rolId }: DiligenciasTableProps) {
                   setEjecutadoModalOpen(null)
                   setSelectedEjecutadoId('')
                 }}
-                className="rounded bg-slate-200 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-300"
+                className={secondaryButtonClass}
               >
                 Cancelar
               </button>
@@ -549,9 +478,9 @@ export default function DiligenciasTable({ rolId }: DiligenciasTableProps) {
                 type="button"
                 onClick={handleConfirmEjecutadoSelection}
                 disabled={!selectedEjecutadoId || creatingDiligenciaId === ejecutadoModalOpen.diligenciaId}
-                className="rounded bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:cursor-not-allowed disabled:bg-blue-300"
+                className={primaryButtonClass}
               >
-                Crear
+                {ejecutadoModalOpen.startImmediately ? 'Crear y ejecutar' : 'Crear'}
               </button>
             </div>
           </div>
@@ -560,4 +489,3 @@ export default function DiligenciasTable({ rolId }: DiligenciasTableProps) {
     </section>
   )
 }
-

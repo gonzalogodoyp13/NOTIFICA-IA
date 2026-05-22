@@ -1,8 +1,9 @@
-import { Fragment, type ReactNode } from 'react'
+import { Fragment, useState, type ReactNode } from 'react'
 import Link from 'next/link'
-import { FileText, NotebookPen, Receipt, Scale, TimerReset } from 'lucide-react'
+import { FileText, NotebookPen, Printer, Receipt, Scale, TimerReset } from 'lucide-react'
 import { type RolWorkspaceData } from '@/lib/hooks/useRolWorkspace'
 import EjecutadoSelector from './EjecutadoSelector'
+import MembreteModal from './MembreteModal'
 
 interface RolOverviewProps {
   rolData?: RolWorkspaceData
@@ -25,6 +26,7 @@ const cards: Array<{
 ]
 
 export default function RolOverview({ rolData, isRolLoading, isRolError, rolId }: RolOverviewProps) {
+  const [showMembreteModal, setShowMembreteModal] = useState(false)
   const bancoLabel =
     rolData?.demanda?.caratula
       ? rolData.demanda.caratula
@@ -51,12 +53,23 @@ export default function RolOverview({ rolData, isRolLoading, isRolError, rolId }
         </div>
         <div className="flex items-center gap-2">
           {!isRolLoading && rolData?.demanda && (
-            <Link
-              href={`/roles/${rolId}/editar`}
-              className="inline-flex items-center gap-2 rounded-full bg-blue-700 px-4 py-2 text-sm font-semibold text-white shadow-[0_18px_36px_-20px_rgba(29,78,216,0.75)] hover:bg-blue-800"
-            >
-              Editar Demanda
-            </Link>
+            <>
+              <button
+                type="button"
+                onClick={() => setShowMembreteModal(true)}
+                disabled={!rolData.demanda.ejecutados || rolData.demanda.ejecutados.length === 0}
+                className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-800 shadow-sm transition hover:border-blue-200 hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <Printer className="h-4 w-4 text-blue-700" />
+                Generar Membrete
+              </button>
+              <Link
+                href={`/roles/${rolId}/editar`}
+                className="inline-flex items-center gap-2 rounded-full bg-blue-700 px-4 py-2 text-sm font-semibold text-white shadow-[0_18px_36px_-20px_rgba(29,78,216,0.75)] hover:bg-blue-800"
+              >
+                Editar Demanda
+              </Link>
+            </>
           )}
           {isRolLoading && (
             <span className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-2 text-xs text-slate-500 shadow-sm">
@@ -165,6 +178,14 @@ export default function RolOverview({ rolData, isRolLoading, isRolError, rolId }
             )}
           </TimelinePreview>
         </div>
+      )}
+
+      {showMembreteModal && rolData && (
+        <MembreteModal
+          rolId={rolId}
+          rolData={rolData}
+          onClose={() => setShowMembreteModal(false)}
+        />
       )}
     </section>
   )

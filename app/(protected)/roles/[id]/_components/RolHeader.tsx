@@ -1,4 +1,4 @@
-import { BriefcaseBusiness, Landmark, Scale } from 'lucide-react'
+import { Landmark } from 'lucide-react'
 import { type RolHeaderData } from '@/lib/hooks/useRolWorkspace'
 
 import RolStatusActions from './RolStatusActions'
@@ -41,16 +41,6 @@ export default function RolHeader({ data, isLoading }: RolHeaderProps) {
             <h1 className="mt-2 truncate text-2xl font-semibold tracking-tight text-slate-950 sm:text-3xl">
               {data?.rol?.numero || 'ROL sin numero'}
             </h1>
-            <div className="mt-3 flex flex-wrap items-center gap-3 text-sm text-slate-600">
-              <span className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1.5 shadow-sm">
-                <Scale className="h-4 w-4 text-blue-700" />
-                {data?.tribunal?.nombre || 'Tribunal no asignado'}
-              </span>
-              <span className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 shadow-sm">
-                <BriefcaseBusiness className="h-4 w-4 text-slate-500" />
-                Workspace operativo del caso
-              </span>
-            </div>
           </div>
         </div>
 
