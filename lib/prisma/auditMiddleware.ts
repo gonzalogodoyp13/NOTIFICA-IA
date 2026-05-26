@@ -2,6 +2,8 @@
 // Automatically logs all create/update/delete operations to audit_logs table
 import { PrismaClient } from '@prisma/client'
 import { getCurrentUserWithOffice } from '../auth-server'
+import { sanitizeAuditDiff } from '../auditSanitizer'
+import { debugLog, toSafeErrorMessage } from '../debugLog'
 
 /**
  * Registers audit middleware on Prisma Client instance
@@ -48,16 +50,18 @@ export function registerAuditMiddleware(prisma: PrismaClient) {
             officeId: user.officeId,
             tabla: safeTabla,
             accion: params.action.toUpperCase(),
-            diff: {
+            diff: sanitizeAuditDiff({
               input: params.args,
               result: result,
-            },
+            }) as any,
           },
         })
       } catch (error) {
         // All logging failures are safely swallowed
         // This ensures audit middleware NEVER blocks API responses
-        console.error('[Audit Middleware] Log skipped:', error instanceof Error ? error.message : String(error))
+        debugLog('[Audit Middleware] Log skipped', {
+          error: toSafeErrorMessage(error),
+        })
       }
     }
 

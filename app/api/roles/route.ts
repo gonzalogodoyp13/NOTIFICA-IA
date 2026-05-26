@@ -8,19 +8,14 @@ export const dynamic = 'force-dynamic'
 
 export async function GET(req: NextRequest) {
   try {
-    console.log('[GET /api/roles] Request received')
-    
     const user = await getCurrentUserWithOffice()
 
     if (!user) {
-      console.log('[GET /api/roles] Unauthorized - no user')
       return NextResponse.json(
         { ok: false, error: 'No autorizado' },
         { status: 401 }
       )
     }
-
-    console.log('[GET /api/roles] User authenticated:', { id: user.id, email: user.email, officeId: user.officeId })
 
     // Get query params for future filters (structure ready but not implemented yet)
     const { searchParams } = new URL(req.url)
@@ -58,8 +53,6 @@ export async function GET(req: NextRequest) {
       },
       orderBy: { createdAt: 'desc' },
     })
-
-    console.log(`[GET /api/roles] Found ${demandas.length} demandas`)
 
     return NextResponse.json({ ok: true, data: demandas })
   } catch (error) {

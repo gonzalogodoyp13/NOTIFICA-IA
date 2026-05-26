@@ -4,26 +4,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { Prisma } from '@prisma/client'
 import { getCurrentUserWithOffice } from '@/lib/auth-server'
+import { sanitizeAuditDiff } from '@/lib/auditSanitizer'
 import { prisma } from '@/lib/prisma'
 
 export const dynamic = 'force-dynamic'
-
-// Sanitize sensitive data from diff JSON (RUTs, phone numbers)
-function sanitizeDiff(diff: any): any {
-  if (!diff) return diff
-
-  try {
-    const jsonString = JSON.stringify(diff)
-    // Replace RUTs (format: 12345678-9 or 12345678-K)
-    const sanitized = jsonString
-      .replace(/(\b\d{7,9}-[0-9Kk]\b)/g, '[RUT oculto]')
-      .replace(/(\b\d{9,11}\b)/g, '[Teléfono oculto]')
-    return JSON.parse(sanitized)
-  } catch {
-    // If parsing fails, return original
-    return diff
-  }
-}
 
 export async function GET(req: NextRequest) {
   try {
@@ -43,10 +27,9 @@ export async function GET(req: NextRequest) {
     const from = searchParams.get('from')
     const to = searchParams.get('to')
     const page = Math.max(1, parseInt(searchParams.get('page') || '1'))
-    const limit = Math.min(100, Math.max(1, parseInt(searchParams.get('limit') || '50'))) // Enforce max 100
+    const limit = Math.min(100, Math.max(1, parseInt(searchParams.get('limit') || '50')))
     const skip = (page - 1) * limit
 
-    // Build where clause - always filter by officeId for security
     const where: any = {
       officeId: user.officeId,
     }
@@ -69,7 +52,6 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    // Get logs with user and office relations
     const [logs, total] = await Promise.all([
       prisma.auditLog.findMany({
         where,
@@ -94,10 +76,9 @@ export async function GET(req: NextRequest) {
       prisma.auditLog.count({ where }),
     ])
 
-    // Sanitize sensitive data from diff fields
     const sanitizedLogs = logs.map((log) => ({
       ...log,
-      diff: sanitizeDiff(log.diff),
+      diff: sanitizeAuditDiff(log.diff),
     }))
 
     return NextResponse.json({
@@ -113,7 +94,6 @@ export async function GET(req: NextRequest) {
   } catch (error) {
     console.error('Error fetching audit logs:', error)
 
-    // Handle Prisma connection errors (P1001 - DB unreachable)
     if (
       error instanceof Prisma.PrismaClientKnownRequestError &&
       error.code === 'P1001'
@@ -129,7 +109,6 @@ export async function GET(req: NextRequest) {
       )
     }
 
-    // Handle other Prisma errors
     if (error instanceof Prisma.PrismaClientKnownRequestError) {
       const errorMessage = 'Error al procesar la solicitud.'
       return NextResponse.json(
@@ -138,8 +117,7 @@ export async function GET(req: NextRequest) {
       )
     }
 
-    // Handle generic errors
-    const errorMessage = error instanceof Error ? error.message : 'Error al obtener los logs de auditoría'
+    const errorMessage = error instanceof Error ? error.message : 'Error al obtener los logs de auditoria'
     return NextResponse.json(
       { ok: false, message: errorMessage, error: errorMessage },
       { status: 500 }
@@ -175,7 +153,7 @@ export async function POST(req: NextRequest) {
         officeId: user.officeId,
         tabla,
         accion,
-        diff: diff || null,
+        diff: diff ? sanitizeAuditDiff(diff) as any : null,
       },
     })
 
@@ -183,7 +161,6 @@ export async function POST(req: NextRequest) {
   } catch (error) {
     console.error('Error creating audit log:', error)
 
-    // Handle Prisma connection errors (P1001 - DB unreachable)
     if (
       error instanceof Prisma.PrismaClientKnownRequestError &&
       error.code === 'P1001'
@@ -199,7 +176,6 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    // Handle other Prisma errors
     if (error instanceof Prisma.PrismaClientKnownRequestError) {
       const errorMessage = 'Error al procesar la solicitud.'
       return NextResponse.json(
@@ -208,12 +184,10 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    // Handle generic errors
-    const errorMessage = error instanceof Error ? error.message : 'Error al crear el log de auditoría'
+    const errorMessage = error instanceof Error ? error.message : 'Error al crear el log de auditoria'
     return NextResponse.json(
       { ok: false, message: errorMessage, error: errorMessage },
       { status: 500 }
     )
   }
 }
-

@@ -2,6 +2,7 @@
 // POST: Create a new Demanda with ejecutados (Phase 3)
 import { NextRequest, NextResponse } from 'next/server'
 import { getCurrentUserWithOffice } from '@/lib/auth-server'
+import { debugLog, toSafeErrorMessage } from '@/lib/debugLog'
 import { prisma } from '@/lib/prisma'
 import { parseCuantiaForStorage } from '@/lib/utils/cuantia'
 
@@ -9,26 +10,16 @@ export const dynamic = 'force-dynamic'
 
 export async function POST(req: NextRequest) {
   try {
-    console.log('[POST /api/demandas] Request received')
-
     const user = await getCurrentUserWithOffice()
 
     if (!user) {
-      console.log('[POST /api/demandas] Unauthorized - no user')
       return NextResponse.json(
         { ok: false, error: 'No autorizado' },
         { status: 401 }
       )
     }
 
-    console.log('[POST /api/demandas] User authenticated:', {
-      id: user.id,
-      email: user.email,
-      officeId: user.officeId,
-    })
-
     const body = await req.json()
-    console.log('[POST /api/demandas] Request body:', JSON.stringify(body, null, 2))
 
     const { rol, tribunalId, caratula, cuantia, abogadoId, materiaId, ejecutados, procuradorId } = body
 
@@ -165,19 +156,12 @@ export async function POST(req: NextRequest) {
             officeId: currentOfficeId,
           },
         })
-
-        console.log('[POST /api/demandas] Created new Tribunal:', {
-          id: tribunalMatch.id,
-          nombre: tribunalMatch.nombre,
-        })
       }
 
       return tribunalMatch
     }
 
     const normalizedTribunal = await findOrCreateTribunal(tribunalIdInt, officeId)
-
-    console.log('[POST /api/demandas] Creating demanda and rolCausa...')
 
     const result = await prisma.$transaction(
       async (tx) => {
@@ -232,10 +216,6 @@ export async function POST(req: NextRequest) {
         })
 
         if (existingRolCausa) {
-          console.log(
-            `[POST /api/demandas] RolCausa already exists for demanda.id ${demanda.id}, updating...`
-          )
-
           await tx.rolCausa.update({
             where: { id: demanda.id },
             data: {
@@ -258,8 +238,6 @@ export async function POST(req: NextRequest) {
               createdAt: demanda.createdAt,
             },
           })
-
-          console.log(`[POST /api/demandas] Created RolCausa with id: ${demanda.id}`)
         }
 
         return demanda
@@ -271,17 +249,6 @@ export async function POST(req: NextRequest) {
 
     const demanda = result
 
-    if (process.env.NODE_ENV === 'development') {
-      console.log('[POST /api/demandas] Demanda created successfully:', {
-        id: demanda.id,
-        rol: demanda.rol,
-        officeId: demanda.officeId,
-        rolId: demanda.id,
-      })
-    } else {
-      console.log('[POST /api/demandas] Demanda created successfully:', demanda.id)
-    }
-
     return NextResponse.json({
       ok: true,
       data: {
@@ -290,11 +257,8 @@ export async function POST(req: NextRequest) {
       },
     })
   } catch (error: any) {
-    console.error('[POST /api/demandas] Error creating demanda:', error)
-    console.error('[POST /api/demandas] Error details:', {
-      message: error?.message,
-      code: error?.code,
-      meta: error?.meta,
+    debugLog('[POST /api/demandas] Error creating demanda', {
+      error: toSafeErrorMessage(error),
     })
 
     return NextResponse.json(

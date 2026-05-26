@@ -1,6 +1,7 @@
 // API Latency Middleware
 // Logs every API request with pathname, method, and handler duration
 import { NextResponse } from "next/server";
+import { debugLog } from "@/lib/debugLog";
 
 export async function middleware(req: Request) {
   const start = Date.now();
@@ -15,7 +16,7 @@ export async function middleware(req: Request) {
   res.headers.set("X-API-Path", pathname);
   res.headers.set("X-API-Method", method);
 
-  console.log("[API LATENCY]", {
+  debugLog("[API LATENCY]", {
     path: pathname,
     method: method,
     totalMs: duration,

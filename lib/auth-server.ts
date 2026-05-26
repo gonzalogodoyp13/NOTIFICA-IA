@@ -5,6 +5,7 @@ import 'server-only'
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 import { redirect } from 'next/navigation'
+import { debugLog, toSafeErrorMessage } from './debugLog'
 import { prisma } from './prisma'
 import { prismaNoMiddleware } from './prismaNoMiddleware'
 
@@ -39,7 +40,9 @@ export async function getSession(): Promise<{ email: string } | null> {
 
     return { email: data.user.email }
   } catch (error) {
-    console.error('Error getting session:', error)
+    debugLog('[getSession] Exception', {
+      error: toSafeErrorMessage(error),
+    })
     return null
   }
 }
@@ -56,74 +59,6 @@ export async function getCurrentUser(): Promise<{
 } | null> {
   try {
     const cookieStore = cookies()
-
-    // Debug: Log auth cookies
-    const authCookies = cookieStore.getAll().filter(cookie => 
-      cookie.name.includes('sb-') || cookie.name.includes('supabase')
-    )
-    console.log('[getCurrentUser] Auth cookies found:', authCookies.map(c => c.name))
-
-    const supabase = createServerClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-      {
-        cookies: {
-          get(name: string) {
-            const value = cookieStore.get(name)?.value
-            if (name.includes('sb-') || name.includes('supabase')) {
-              console.log(`[getCurrentUser] Cookie ${name}:`, value ? 'present' : 'missing')
-            }
-            return value
-          },
-          set() {},
-          remove() {},
-        },
-      }
-    )
-
-    const { data, error } = await supabase.auth.getUser()
-
-    if (error) {
-      console.log('[getCurrentUser] Supabase auth error:', error.message)
-      return null
-    }
-
-    if (!data?.user) {
-      console.log('[getCurrentUser] No user data returned from Supabase')
-      return null
-    }
-
-    console.log('[getCurrentUser] User found:', { id: data.user.id, email: data.user.email })
-    return {
-      id: data.user.id,
-      email: data.user.email || '',
-      metadata: data.user.user_metadata || {},
-    }
-  } catch (error) {
-    console.error('[getCurrentUser] Exception:', error)
-    return null
-  }
-}
-
-/**
- * Get the current authenticated user with officeId from database
- * Returns user information including officeId for scoping queries
- * Uses official Supabase SSR authentication handling
- * @returns User object with id, email, and officeId, or null if not authenticated
- */
-export async function getCurrentUserWithOffice(): Promise<{
-  id: string
-  email: string
-  officeId: number
-} | null> {
-  try {
-    const cookieStore = cookies()
-    
-    // Debug: Check for auth cookies
-    const authCookies = cookieStore.getAll().filter(cookie => 
-      cookie.name.includes('sb-') || cookie.name.includes('supabase')
-    )
-    console.log('[getCurrentUserWithOffice] Auth cookies found:', authCookies.length)
 
     const supabase = createServerClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -142,16 +77,66 @@ export async function getCurrentUserWithOffice(): Promise<{
     const { data, error } = await supabase.auth.getUser()
 
     if (error) {
-      console.error('[getCurrentUserWithOffice] Supabase auth error:', error.message)
       return null
     }
 
     if (!data?.user) {
-      console.error('[getCurrentUserWithOffice] No user data from Supabase')
       return null
     }
 
-    console.log('[getCurrentUserWithOffice] Supabase user found:', data.user.email)
+    return {
+      id: data.user.id,
+      email: data.user.email || '',
+      metadata: data.user.user_metadata || {},
+    }
+  } catch (error) {
+    debugLog('[getCurrentUser] Exception', {
+      error: toSafeErrorMessage(error),
+    })
+    return null
+  }
+}
+
+/**
+ * Get the current authenticated user with officeId from database
+ * Returns user information including officeId for scoping queries
+ * Uses official Supabase SSR authentication handling
+ * @returns User object with id, email, and officeId, or null if not authenticated
+ */
+export async function getCurrentUserWithOffice(): Promise<{
+  id: string
+  email: string
+  officeId: number
+} | null> {
+  try {
+    const cookieStore = cookies()
+
+    const supabase = createServerClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        cookies: {
+          get(name: string) {
+            return cookieStore.get(name)?.value
+          },
+          set() {},
+          remove() {},
+        },
+      }
+    )
+
+    const { data, error } = await supabase.auth.getUser()
+
+    if (error) {
+      debugLog('[getCurrentUserWithOffice] Supabase auth error', {
+        error: error.message,
+      })
+      return null
+    }
+
+    if (!data?.user) {
+      return null
+    }
 
     const dbUser = await prismaNoMiddleware.user.findUnique({
       where: { email: data.user.email! },
@@ -163,12 +148,10 @@ export async function getCurrentUserWithOffice(): Promise<{
     })
 
     if (!dbUser) {
-      console.error('[getCurrentUserWithOffice] User not provisioned in app database:', data.user.email)
       return null
     }
 
     if (!dbUser.officeId) {
-      console.error('[getCurrentUserWithOffice] User has no office binding:', dbUser.email)
       return null
     }
 
@@ -178,18 +161,8 @@ export async function getCurrentUserWithOffice(): Promise<{
     })
 
     if (!office) {
-      console.error('[getCurrentUserWithOffice] User office does not exist:', {
-        email: dbUser.email,
-        officeId: dbUser.officeId,
-      })
       return null
     }
-
-    console.log('[getCurrentUserWithOffice] Success:', { 
-      userId: dbUser.id, 
-      email: dbUser.email, 
-      officeId: dbUser.officeId,
-    })
 
     return {
       id: dbUser.id,
@@ -197,7 +170,9 @@ export async function getCurrentUserWithOffice(): Promise<{
       officeId: dbUser.officeId,
     }
   } catch (error) {
-    console.error('Error getting current user with office:', error)
+    debugLog('[getCurrentUserWithOffice] Exception', {
+      error: toSafeErrorMessage(error),
+    })
     return null
   }
 }

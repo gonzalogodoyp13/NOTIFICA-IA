@@ -10,12 +10,9 @@ export const dynamic = 'force-dynamic'
 
 export async function GET(req: NextRequest) {
   try {
-    console.log('[GET /api/roles/search] Request received')
-    
     const user = await getCurrentUserWithOffice()
 
     if (!user) {
-      console.log('[GET /api/roles/search] Unauthorized - no user')
       return NextResponse.json(
         { ok: false, error: 'No autorizado' },
         { status: 401 }
@@ -27,14 +24,11 @@ export async function GET(req: NextRequest) {
     const rol = searchParams.get('rol')
 
     if (!rol) {
-      console.log('[GET /api/roles/search] Missing rol parameter')
       return NextResponse.json(
         { ok: false, error: 'Parámetro rol requerido' },
         { status: 400 }
       )
     }
-
-    console.log(`[GET /api/roles/search] Searching for rol: ${rol}, officeId: ${user.officeId}`)
 
     // Search RolCausa (not Demanda) with exact match, scoped by officeId
     const rolCausa = await prisma.rolCausa.findFirst({
@@ -51,7 +45,6 @@ export async function GET(req: NextRequest) {
     })
 
     if (!rolCausa) {
-      console.log(`[GET /api/roles/search] Rol not found: ${rol}`)
       return NextResponse.json({
         ok: false,
         error: 'NOT_FOUND',
@@ -59,7 +52,6 @@ export async function GET(req: NextRequest) {
       })
     }
 
-    console.log(`[GET /api/roles/search] Rol found: ${rolCausa.id}`)
     return NextResponse.json({
       ok: true,
       data: {

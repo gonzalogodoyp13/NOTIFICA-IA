@@ -8,26 +8,10 @@ const globalForPrisma = globalThis as unknown as {
   prisma: PrismaClient | undefined
 }
 
-const prismaClientOptions = {
-  log: [{ emit: 'event' as const, level: 'query' as const }],
-}
-
 // Create or reuse existing Prisma Client
 // In development: reuse instance to avoid too many connections
 // In production: create new instance
-export const prisma = globalForPrisma.prisma ?? new PrismaClient(prismaClientOptions)
-
-// Register Prisma query logging if not already registered
-// Check if logging is already applied by checking for a custom property
-if (!(prisma as any).__queryLoggingRegistered) {
-  ;(prisma as any).$on("query", (e: any) => {
-    console.log("\n[PRISMA QUERY]");
-    console.log("SQL:", e.query);
-    console.log("Params:", e.params);
-    console.log("Duration:", e.duration, "ms");
-  });
-  ;(prisma as any).__queryLoggingRegistered = true
-}
+export const prisma = globalForPrisma.prisma ?? new PrismaClient()
 
 // Register audit middleware if not already registered
 // Check if middleware is already applied by checking for a custom property

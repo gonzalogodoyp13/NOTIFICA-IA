@@ -3,6 +3,7 @@
 // Validates user, officeId, and ensures ROL uniqueness per office
 import { NextRequest, NextResponse } from 'next/server'
 import { getCurrentUserWithOffice } from '@/lib/auth-server'
+import { debugLog, toSafeErrorMessage } from '@/lib/debugLog'
 import { prisma } from '@/lib/prisma'
 import { parseCuantiaForStorage } from '@/lib/utils/cuantia'
 
@@ -31,26 +32,16 @@ export async function PUT(
   { params }: { params: { id: string } }
 ) {
   try {
-    console.log(`[PUT /api/demandas/${params.id}] Request received`)
-
     const user = await getCurrentUserWithOffice()
 
     if (!user) {
-      console.log(`[PUT /api/demandas/${params.id}] Unauthorized - no user`)
       return NextResponse.json(
         { ok: false, error: 'No autorizado' },
         { status: 401 }
       )
     }
 
-    console.log(`[PUT /api/demandas/${params.id}] User authenticated:`, {
-      id: user.id,
-      email: user.email,
-      officeId: user.officeId,
-    })
-
     const body = await req.json()
-    console.log(`[PUT /api/demandas/${params.id}] Request body:`, JSON.stringify(body, null, 2))
 
     const { rol, tribunalId, caratula, cuantia, abogadoId, materiaId, ejecutados, procuradorId } = body
 
@@ -69,7 +60,6 @@ export async function PUT(
     })
 
     if (!demanda) {
-      console.log(`[PUT /api/demandas/${params.id}] Demanda not found or doesn't belong to user's office`)
       return NextResponse.json(
         { ok: false, error: 'Demanda no encontrada o no pertenece a tu oficina' },
         { status: 404 }
@@ -255,15 +245,12 @@ export async function PUT(
       })
 
       if (existingDemanda) {
-        console.log(`[PUT /api/demandas/${params.id}] ROL conflict: ${rol} already exists in office ${user.officeId}`)
         return NextResponse.json(
           { ok: false, error: `Ya existe una causa con el ROL ${rol} en esta oficina.` },
           { status: 400 }
         )
       }
     }
-
-    console.log(`[PUT /api/demandas/${params.id}] Updating demanda and rolCausa...`)
 
     const result = await prisma.$transaction(async (tx) => {
       const updatedDemanda = await tx.demanda.update({
@@ -386,10 +373,6 @@ export async function PUT(
             },
           })
         }
-
-        console.log(
-          `[PUT /api/demandas/${params.id}] Synced ejecutados: kept=${incomingExisting.length}, new=${incomingNew.length}, removed=${removedIds.length}`
-        )
       }
 
       if (rolChanged) {
@@ -407,16 +390,11 @@ export async function PUT(
               rol,
             },
           })
-          console.log(`[PUT /api/demandas/${params.id}] Updated RolCausa.rol to: ${rol}`)
-        } else {
-          console.log(`[PUT /api/demandas/${params.id}] RolCausa not found for demandaId: ${params.id}`)
         }
       }
 
       return updatedDemanda
     })
-
-    console.log(`[PUT /api/demandas/${params.id}] Demanda updated successfully:`, { id: result.id, rol: result.rol })
 
     return NextResponse.json({
       ok: true,
@@ -426,11 +404,8 @@ export async function PUT(
       },
     })
   } catch (error: any) {
-    console.error(`[PUT /api/demandas/${params.id}] Error updating demanda:`, error)
-    console.error(`[PUT /api/demandas/${params.id}] Error details:`, {
-      message: error?.message,
-      code: error?.code,
-      meta: error?.meta,
+    debugLog('[PUT /api/demandas/[id]] Error updating demanda', {
+      error: toSafeErrorMessage(error),
     })
 
     if (error instanceof DemandaUpdateValidationError) {

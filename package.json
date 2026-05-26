@@ -9,8 +9,8 @@
     "lint": "next lint",
     "check:utf8": "node scripts/check-utf8.mjs",
     "db:generate": "prisma generate",
-    "db:push": "prisma db push",
-    "db:migrate": "prisma migrate dev",
+    "db:status": "prisma migrate status",
+    "db:migrate": "prisma migrate deploy",
     "db:studio": "prisma studio",
     "db:seed": "prisma db seed",
     "db:backfill:recibos": "ts-node --compiler-options {\"module\":\"commonjs\"} scripts/backfill-recibo-linkage.ts"

@@ -1,177 +1,151 @@
-# NOTIFICA IA - Phase 0
+# NOTIFICA IA
 
-Initial skeleton for the SaaS application "NOTIFICA IA". Management system for Receiver Offices.
+Management system for receiver offices. The app runs on Next.js, uses Supabase for authentication, and stores operational data in PostgreSQL through Prisma.
 
-## 🚀 Tech Stack
+## Tech Stack
 
-- **Next.js 14** (App Router) with TypeScript
-- **Prisma ORM** connected to PostgreSQL (Railway)
-- **Supabase Auth** for authentication (email + password, via HTTPS API)
-- **TailwindCSS** for styling
-- **pdf-lib** (placeholder for future functionality)
-- Deployment on **Vercel**
+- Next.js 14 App Router with TypeScript
+- React 18 and TailwindCSS
+- Prisma ORM with PostgreSQL
+- Supabase Auth through `@supabase/ssr`
+- Vercel for the web app and Railway/Supabase-compatible PostgreSQL for the database
+- `pdf-lib` for generated document workflows
 
-## 📋 Prerequisites
+## Prerequisites
 
-- Node.js 18+ installed
-- Railway account with PostgreSQL database created
-- Supabase account (free) for authentication
-- NPM or Yarn
+- Node.js 18+
+- npm
+- A PostgreSQL database URL
+- A Supabase project for authentication
 
-## ⚙️ Configuración Inicial
+## Environment
 
-### 1. Instalar dependencias
+Create `.env` from `.env.example` and fill in the active values:
 
-```bash
+```env
+NEXT_PUBLIC_SUPABASE_URL=
+NEXT_PUBLIC_SUPABASE_ANON_KEY=
+DATABASE_URL=
+NEXT_PUBLIC_APP_NAME=NOTIFICA IA
+DEBUG_LOGS=false
+NEXT_PUBLIC_ENVIRONMENT=development
+```
+
+`DATABASE_URL` must point to the application PostgreSQL database. Supabase is used for authentication; the application data remains in PostgreSQL through Prisma.
+
+Set `DEBUG_LOGS=true` only while troubleshooting locally. Leave it disabled in production so Prisma, auth, and API diagnostic logs stay quiet unless they are true operational errors.
+
+## Required Prisma Startup Rule
+
+Before implementation work, and before schema-dependent changes, run these commands in this order:
+
+```powershell
+prisma migrate status
+prisma migrate deploy
+prisma generate
+```
+
+If the global `prisma` command is not available, use the local binary:
+
+```powershell
+.\node_modules\.bin\prisma.cmd migrate status
+.\node_modules\.bin\prisma.cmd migrate deploy
+.\node_modules\.bin\prisma.cmd generate
+```
+
+Do not use Prisma's development migration flow unless the user explicitly asks for it. This project has had migration-history and baseline drift issues, so local development must use committed migrations with `migrate deploy`.
+
+Do not push Prisma schema changes directly to the database. Schema changes must be represented by committed Prisma migrations.
+
+## Local Setup
+
+Install dependencies:
+
+```powershell
 npm install
 ```
 
-### 2. Configurar variables de entorno
+Apply committed migrations and generate Prisma Client:
 
-Crea un archivo `.env` en la raíz del proyecto (copia de `.env.example`):
-
-```env
-DATABASE_URL="postgresql://user:password@host:port/database"
-NEXT_PUBLIC_SUPABASE_URL="https://your-project.supabase.co"
-NEXT_PUBLIC_SUPABASE_ANON_KEY="your-anon-key-here"
-```
-
-**Obtener DATABASE_URL desde Railway:**
-1. Ve a tu proyecto en Railway
-2. Selecciona la base de datos PostgreSQL
-3. Ve a la pestaña "Variables"
-4. Copia la variable `DATABASE_URL` o `POSTGRES_URL`
-
-**Configurar Supabase Auth (solo autenticación, sin migrar la base de datos):**
-1. Ve a [supabase.com](https://supabase.com) y crea una cuenta gratuita
-2. Crea un nuevo proyecto (puede ser un proyecto mínimo, solo para Auth)
-3. Ve a **Project Settings** → **API**
-4. Copia los siguientes valores:
-   - **Project URL** → pégalo en `NEXT_PUBLIC_SUPABASE_URL`
-   - **anon/public key** → pégalo en `NEXT_PUBLIC_SUPABASE_ANON_KEY`
-5. La base de datos PostgreSQL sigue en Railway (no se migra a Supabase)
-6. La autenticación usa la API HTTPS de Supabase (IPv4 seguro, evita problemas IPv6 desde Chile)
-
-### 3. Generar Prisma Client
-
-```bash
+```powershell
+npm run db:status
+npm run db:migrate
 npm run db:generate
 ```
 
-### 4. Crear tablas en la base de datos
+Start the development server:
 
-```bash
-npm run db:push
-```
-
-This will create the `users` table in your PostgreSQL database.
-
-## 🏃 Ejecutar Localmente
-
-### Modo desarrollo
-
-```bash
+```powershell
 npm run dev
 ```
 
-Abre [http://localhost:3000](http://localhost:3000) en tu navegador.
+Open [http://localhost:3000](http://localhost:3000).
 
-### Verificar API
+Before release or deployment, run:
 
-Visita [http://localhost:3000/api/ping](http://localhost:3000/api/ping) - deberías ver `{"ok":true}`
-
-### Probar Autenticación
-
-1. Visita [http://localhost:3000/signin](http://localhost:3000/signin)
-2. Crea un usuario en Supabase:
-   - Ve a tu proyecto en Supabase Dashboard
-   - Ve a **Authentication** → **Users**
-   - Haz clic en **Add user** → **Create new user**
-   - Ingresa un email y contraseña
-3. Inicia sesión con esas credenciales en `/signin`
-4. Serás redirigido a `/dashboard` después del login exitoso
-
-## 📁 Project Structure
-
-```
-├── app/                 # Next.js App Router
-│   ├── api/            # API routes
-│   │   └── ping/       # Health check endpoint
-│   ├── signin/         # Sign-in page (authentication)
-│   ├── dashboard/      # Protected dashboard (requires authentication)
-│   ├── layout.tsx      # Root layout
-│   └── page.tsx        # Homepage
-├── components/          # React components
-│   └── Navbar.tsx      # Navigation bar
-├── lib/                # Utility libraries
-│   ├── prisma.ts       # Prisma Client instance
-│   ├── supabaseClient.ts  # Supabase client initialization
-│   └── auth.ts         # Authentication utilities (getSession, requireSession)
-├── prisma/             # Database schema
-│   └── schema.prisma   # User model definition
-└── package.json        # Dependencies
+```powershell
+npm run build
 ```
 
-## 🗄️ Data Model
+## Available Commands
 
-### User (Usuario)
+```powershell
+npm run dev               # Start the local Next.js dev server
+npm run build             # Build the app for production
+npm start                 # Start the production server
+npm run lint              # Run Next.js linting
+npm run check:utf8        # Check source files for UTF-8 issues
 
-Each account represents a "Receiver Office" (Oficina de Receptor).
-
-- `id`: Unique identifier (CUID)
-- `email`: Unique user email
-- `officeName`: Office name
-- `createdAt`: Creation date (automatic)
-
-## 📝 Available Commands
-
-```bash
-# Development
-npm run dev          # Start development server
-
-# Database
-npm run db:generate  # Generate Prisma Client
-npm run db:push      # Sync schema with DB (no migrations)
-npm run db:migrate   # Create migration and apply changes
-npm run db:studio    # Open Prisma Studio (GUI for DB)
-
-# Production
-npm run build        # Build for production
-npm start            # Start production server
+npm run db:status         # Check Prisma migration status
+npm run db:migrate        # Apply committed Prisma migrations with migrate deploy
+npm run db:generate       # Generate Prisma Client
+npm run db:studio         # Open Prisma Studio
+npm run db:seed           # Run the Prisma seed script
+npm run db:backfill:recibos
 ```
 
-## 🔐 Supabase Authentication
+## Application Modules
 
-The project uses **Supabase Auth** for user authentication:
+- Authentication and session handling through Supabase.
+- Users and office ownership for tenant-aware data access.
+- Roles and case management through `RolCausa`.
+- Demandas for intake and case creation.
+- Diligencias, notifications, scheduling, status updates, and completion flows.
+- Document generation and storage workflows.
+- Audit logs, recent logs, summaries, and exports.
+- Recibos and linkage/backfill utilities.
+- Ajustes and catalog modules for bancos, comunas, materias, tribunales, procuradores, abogados, aranceles, diligencia tipos, and estampos.
+- PDF and estampo generation workflows for operational documents.
 
-- ✅ **Authentication**: Performed via Supabase HTTPS API (no direct database connection)
-- ✅ **Database**: Remains on Railway PostgreSQL (not migrated)
-- ✅ **IPv4 safe**: Avoids IPv6 issues from Chile
-- ✅ **Protected routes**: Uses `requireSession()` to protect pages like `/dashboard`
+## Project Structure
 
-### Authentication Functions
+```text
+app/                    Next.js App Router pages and API routes
+app/api/                Server API modules for the application workflows
+components/             Shared React UI components
+lib/                    Auth, Prisma, roles, PDF, recibos, estampos, and utility code
+prisma/schema.prisma    Prisma data model
+prisma/migrations/      Committed database migrations
+prisma/seed.ts          Seed data script
+scripts/                One-off and backfill scripts
+public/                 Static assets
+```
 
-- `getSession()`: Gets the current user session (returns `{ email }` or `null`)
-- `requireSession()`: Requires authentication, redirects to `/signin` if not authenticated
-- `signIn(email, password)`: Signs in with email and password
-- `signOut()`: Signs out the current user
+## Current Workflow
 
-## 📦 Despliegue en Vercel
+1. Pull the latest code.
+2. Install dependencies if `package-lock.json` changed.
+3. Run the Prisma startup sequence with `db:status`, `db:migrate`, and `db:generate`.
+4. Start the app with `npm run dev`.
+5. Make code changes without using forbidden Prisma commands.
+6. Run `npm run build` before handing off or deploying changes.
 
-1. Conecta tu repositorio a Vercel
-2. Agrega la variable de entorno `DATABASE_URL` en la configuración de Vercel
-3. Vercel detectará Next.js y desplegará automáticamente
+## Deployment Notes
 
-## 🎯 Next Steps (Phase 1+)
+- Configure `DATABASE_URL`, `NEXT_PUBLIC_SUPABASE_URL`, and `NEXT_PUBLIC_SUPABASE_ANON_KEY` in the deployment environment.
+- Apply committed Prisma migrations with `prisma migrate deploy`.
+- Generate Prisma Client during install/build as required by the deployment platform.
 
-- ✅ User authentication (implemented)
-- ✅ Main dashboard (implemented)
-- Document management functionality
-- pdf-lib integration
-- Role and permission system
-- New user registration
-
-## 📄 License
+## License
 
 Private - NOTIFICA IA
-
