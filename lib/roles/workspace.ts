@@ -151,11 +151,11 @@ export async function loadRoleSummaryData(roleId: string, officeId: number) {
           monto: true,
           medio: true,
           ref: true,
+          fechaEjecucion: true,
+          fechaRecibo: true,
           createdAt: true,
         },
-        orderBy: {
-          createdAt: 'desc',
-        },
+        orderBy: [{ fechaRecibo: 'desc' }, { createdAt: 'desc' }],
       },
     },
   }) as any
@@ -304,6 +304,8 @@ export async function loadRoleSummaryData(roleId: string, officeId: number) {
     monto: Number(recibo.monto),
     medio: recibo.medio,
     ref: recibo.ref ?? null,
+    fechaEjecucion: recibo.fechaEjecucion ? recibo.fechaEjecucion.toISOString() : null,
+    fechaRecibo: (recibo.fechaRecibo ?? recibo.createdAt).toISOString(),
     createdAt: recibo.createdAt.toISOString(),
   }))
 

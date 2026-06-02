@@ -8,6 +8,10 @@ import { parseCuantiaForStorage } from '@/lib/utils/cuantia'
 
 export const dynamic = 'force-dynamic'
 
+function normalizeRol(value: unknown) {
+  return typeof value === 'string' ? value.trim().toUpperCase() : ''
+}
+
 export async function POST(req: NextRequest) {
   try {
     const user = await getCurrentUserWithOffice()
@@ -22,8 +26,9 @@ export async function POST(req: NextRequest) {
     const body = await req.json()
 
     const { rol, tribunalId, caratula, cuantia, abogadoId, materiaId, ejecutados, procuradorId } = body
+    const normalizedRol = normalizeRol(rol)
 
-    if (!rol || !tribunalId || !caratula || !abogadoId) {
+    if (!normalizedRol || !tribunalId || !caratula || !abogadoId) {
       return NextResponse.json(
         { ok: false, error: 'rol, tribunalId, caratula y abogadoId son requeridos' },
         { status: 400 }
@@ -120,13 +125,16 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    const existingDemanda = await prisma.demanda.findUnique({
-      where: { rol },
+    const existingDemanda = await prisma.demanda.findFirst({
+      where: {
+        officeId,
+        rol: normalizedRol,
+      },
     })
 
     if (existingDemanda) {
       return NextResponse.json(
-        { ok: false, error: 'El ROL ya existe' },
+        { ok: false, error: `Ya existe una causa con el ROL ${normalizedRol} en esta oficina.` },
         { status: 400 }
       )
     }
@@ -167,7 +175,7 @@ export async function POST(req: NextRequest) {
       async (tx) => {
         const demanda = await tx.demanda.create({
           data: {
-            rol,
+            rol: normalizedRol,
             tribunalId: tribunalIdInt,
             caratula,
             cuantia: parseCuantiaForStorage(cuantia),

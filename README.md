@@ -104,6 +104,26 @@ npm run db:seed           # Run the Prisma seed script
 npm run db:backfill:recibos
 ```
 
+## Domain Date Semantics
+
+These terms are the canonical business dates for diligence, receipt, and document workflows:
+
+- `fechaEncargo`: date entered by the user when creating "Nueva Diligencia" inside a Rol workspace. This is the assignment or request date for the diligencia.
+- `fechaEjecucion`: date when the receptor actually performed the diligencia. This is the visible date that should be used on the recibo PDF.
+- `fechaRecibo`: date and time when the recibo or estampo document is generated. This is for admin filtering and reporting, not the visible receipt date.
+- `fechaPago`: retired. This is not part of the official workflow; future implementation should remove or ignore it safely without breaking legacy behavior.
+- `fechaBoleta`: retired. This is not part of the official workflow; future implementation should not add a business date for boleta.
+
+`Recibo.fechaEjecucion` and `Recibo.fechaRecibo` are persisted business dates. Receipt PDFs use `fechaEjecucion` as their visible date, while Recibos admin filters and exports use `fechaRecibo`.
+
+`createdAt` is a technical audit timestamp. Do not treat it as a business date except as a temporary legacy fallback when older records are missing explicit business dates.
+
+In receipt workflows, `recibo` means the generated PDF receipt for a notificacion. `boleta` means only the external boleta number that can be attached to selected recibos from Gestion de Recibos. `estadoCobro` is the paid/unpaid collection status and is not a boleta document or date.
+
+ROL records are office-scoped. The same normalized ROL, such as `C-2020-2025`, may exist in different offices as separate private records, but it may not be duplicated inside the same office. ROL values are stored trimmed and uppercase so casing differences do not create separate causes.
+
+New recibos use sequential receipt numbers per office and generation year in the format `R-YYYY-000001`. The sequence is independent per office/year, so two offices can both have `R-2026-000001`, while one office's 2026 receipts continue as `R-2026-000001`, `R-2026-000002`, and so on. Legacy receipt numbers are preserved.
+
 ## Application Modules
 
 - Authentication and session handling through Supabase.

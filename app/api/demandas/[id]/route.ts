@@ -9,6 +9,10 @@ import { parseCuantiaForStorage } from '@/lib/utils/cuantia'
 
 export const dynamic = 'force-dynamic'
 
+function normalizeRol(value: unknown) {
+  return typeof value === 'string' ? value.trim().toUpperCase() : ''
+}
+
 class DemandaUpdateValidationError extends Error {
   status: number
 
@@ -44,8 +48,9 @@ export async function PUT(
     const body = await req.json()
 
     const { rol, tribunalId, caratula, cuantia, abogadoId, materiaId, ejecutados, procuradorId } = body
+    const normalizedRol = normalizeRol(rol)
 
-    if (!rol || !tribunalId || !caratula) {
+    if (!normalizedRol || !tribunalId || !caratula) {
       return NextResponse.json(
         { ok: false, error: 'rol, tribunalId y caratula son requeridos' },
         { status: 400 }
@@ -233,12 +238,12 @@ export async function PUT(
       }
     }
 
-    const rolChanged = demanda.rol !== rol
+    const rolChanged = demanda.rol !== normalizedRol
 
     if (rolChanged) {
       const existingDemanda = await prisma.demanda.findFirst({
         where: {
-          rol,
+          rol: normalizedRol,
           officeId: user.officeId,
           id: { not: params.id },
         },
@@ -246,7 +251,7 @@ export async function PUT(
 
       if (existingDemanda) {
         return NextResponse.json(
-          { ok: false, error: `Ya existe una causa con el ROL ${rol} en esta oficina.` },
+          { ok: false, error: `Ya existe una causa con el ROL ${normalizedRol} en esta oficina.` },
           { status: 400 }
         )
       }
@@ -256,7 +261,7 @@ export async function PUT(
       const updatedDemanda = await tx.demanda.update({
         where: { id: params.id },
         data: {
-          rol,
+          rol: normalizedRol,
           tribunalId: tribunalIdInt,
           caratula,
           cuantia:
@@ -387,7 +392,7 @@ export async function PUT(
           await tx.rolCausa.update({
             where: { id: rolCausa.id },
             data: {
-              rol,
+              rol: normalizedRol,
             },
           })
         }

@@ -135,7 +135,7 @@ export async function POST(
         step1Done: false,
         step2Done: false,
         step3Done: false,
-        latestBoletaId: null,
+        latestReciboId: null,
         latestEstampoId: null,
         latestEstampo: null,
       },

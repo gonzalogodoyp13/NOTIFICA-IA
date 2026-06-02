@@ -16,7 +16,8 @@ export interface ReceiptListRow {
   procurador: string
   banco: string
   valor: number
-  fechaCreacionRecibo: string
+  fechaRecibo: string
+  fechaEjecucion: string | null
   estado: string
   numeroBoleta: string
 }
@@ -122,11 +123,11 @@ function getEstadoLabel(recibo: any, documento: any, diligencia: any) {
     return 'Anulado'
   }
 
-  if (diligencia?.boletaEstado === 'PAGADO') {
+  if (diligencia?.estadoCobro === 'PAGADO') {
     return 'Pagado'
   }
 
-  if (diligencia?.boletaEstado === 'NO_PAGADO' || !diligencia?.boletaEstado) {
+  if (diligencia?.estadoCobro === 'NO_PAGADO' || !diligencia?.estadoCobro) {
     return 'Sin pagar'
   }
 
@@ -232,7 +233,15 @@ export async function getReceiptList(
     },
     ...(filters.fechaDesde && filters.fechaHasta
       ? {
-          createdAt: toDateRange(filters.fechaDesde, filters.fechaHasta),
+          OR: [
+            {
+              fechaRecibo: toDateRange(filters.fechaDesde, filters.fechaHasta),
+            },
+            {
+              fechaRecibo: null,
+              createdAt: toDateRange(filters.fechaDesde, filters.fechaHasta),
+            },
+          ],
         }
       : {}),
   }
@@ -245,7 +254,7 @@ export async function getReceiptList(
 
   const recibos = await prisma.recibo.findMany({
     where,
-    orderBy: { createdAt: 'desc' },
+    orderBy: [{ fechaRecibo: 'desc' }, { createdAt: 'desc' }],
     skip,
     take: pageSize,
     include: {
@@ -335,7 +344,7 @@ export async function getReceiptList(
           select: {
             id: true,
             meta: true,
-            boletaEstado: true,
+            estadoCobro: true,
             tipo: {
               select: {
                 nombre: true,
@@ -388,7 +397,8 @@ export async function getReceiptList(
       procurador: normalizeLabel(recibo.rol?.demanda?.procurador?.nombre),
       banco: getBancoLabel(recibo),
       valor: Number(recibo.monto ?? 0),
-      fechaCreacionRecibo: recibo.createdAt.toISOString(),
+      fechaRecibo: (recibo.fechaRecibo ?? recibo.createdAt).toISOString(),
+      fechaEjecucion: recibo.fechaEjecucion ? recibo.fechaEjecucion.toISOString() : null,
       estado: getEstadoLabel(recibo, documento, diligencia),
       numeroBoleta: normalizeLabel(recibo.numeroBoleta ?? recibo.ref),
     }

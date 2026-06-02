@@ -2,7 +2,7 @@
  * Utilidades para búsqueda de Aranceles
  * 
  * Funciones para encontrar aranceles basados en contexto de ROL/Demanda
- * para auto-completar montos en Boletas/Estampos
+ * para auto-completar montos en Recibos/Estampos
  */
 
 import { prisma } from '@/lib/prisma'
@@ -139,7 +139,7 @@ export async function lookupArancelByCategoria(
  * Esta función está lista para ser usada en:
  * - app/api/diligencias/[id]/estampo/route.ts
  * - app/(protected)/roles/[id]/diligencias/EstampoModal.tsx
- * - app/(protected)/roles/[id]/diligencias/BoletaModal.tsx
+ * - app/(protected)/roles/[id]/diligencias/ReciboModal.tsx
  * 
  * Ejemplo de uso en EstampoModal:
  * 

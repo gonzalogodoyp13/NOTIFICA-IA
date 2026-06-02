@@ -3,10 +3,10 @@ import { useMutation, useQuery, useQueryClient, type UseMutationResult } from '@
 import { z } from 'zod'
 
 import {
-  BoletaGenerateSchema,
   DiligenciaCreateSchema,
   EstampoGenerateSchema,
   NotaCreateSchema,
+  ReciboGenerateSchema,
 } from '@/lib/validations/rol-workspace'
 
 const estadoRolEnum = z.enum(['pendiente', 'en_proceso', 'terminado', 'archivado'])
@@ -39,7 +39,7 @@ const NotificacionItemSchema = z.object({
   step1Done: z.boolean().optional(),
   step2Done: z.boolean().optional(),
   step3Done: z.boolean().optional(),
-  latestBoletaId: z.string().nullable().optional(),
+  latestReciboId: z.string().nullable().optional(),
   latestEstampoId: z.string().nullable().optional(),
 })
 
@@ -109,6 +109,8 @@ const ReciboItemSchema = z.object({
   monto: z.number(),
   medio: z.string(),
   ref: z.string().nullable().optional(),
+  fechaEjecucion: z.string().nullable().optional(),
+  fechaRecibo: z.string().nullable().optional(),
   createdAt: z.string(),
 })
 
@@ -554,17 +556,17 @@ export function useCreateNotificacion(
   })
 }
 
-export function useGenerateBoleta(
+export function useGenerateRecibo(
   rolId: string,
   diligenciaId: string
-): UseMutationResult<unknown, Error, z.infer<typeof BoletaGenerateSchema>> {
+): UseMutationResult<unknown, Error, z.infer<typeof ReciboGenerateSchema>> {
   const queryClient = useQueryClient()
 
   return useMutation({
-    mutationFn: async (input: z.infer<typeof BoletaGenerateSchema>) => {
-      const body = BoletaGenerateSchema.parse(input)
+    mutationFn: async (input: z.infer<typeof ReciboGenerateSchema>) => {
+      const body = ReciboGenerateSchema.parse(input)
 
-      const response = await fetch(`/api/diligencias/${diligenciaId}/boleta`, {
+      const response = await fetch(`/api/diligencias/${diligenciaId}/recibo`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
@@ -575,7 +577,7 @@ export function useGenerateBoleta(
       if (!response.ok || result?.ok !== true) {
         throw new Error(
           (result && typeof result.error === 'string' && result.error) ||
-            'Error al generar boleta'
+            'Error al generar recibo'
         )
       }
 

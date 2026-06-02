@@ -43,6 +43,8 @@ model Office {
   auditLogs      AuditLog[]
   demandas       Demanda[]
   estampoCustoms EstampoCustom[] @relation("OfficeEstampoCustoms")
+  recibos        Recibo[]
+  documentNumberSequences DocumentNumberSequence[]
 
   @@map("offices")
 }
@@ -203,7 +205,7 @@ model Materia {
 
 model Demanda {
   id         String      @id @default(cuid())
-  rol        String      @unique
+  rol        String
   tribunalId Int
   caratula   String
   cuantia    Float
@@ -222,6 +224,7 @@ model Demanda {
   users      User        @relation(fields: [userId], references: [id])
   ejecutados Ejecutado[]
 
+  @@unique([officeId, rol])
   @@map("demandas")
 }
 
@@ -291,7 +294,7 @@ model Diligencia {
   estado         EstadoDiligencia @default(pendiente)
   fecha          DateTime
   meta           Json?
-  boletaEstado   BoletaEstado     @default(NO_PAGADO)
+  estadoCobro    EstadoCobro      @default(NO_PAGADO)
   createdAt      DateTime         @default(now())
   rol            RolCausa         @relation(fields: [rolId], references: [id])
   tipo           DiligenciaTipo   @relation(fields: [tipoId], references: [id])
@@ -358,22 +361,44 @@ model Nota {
 model Recibo {
   id             String   @id @default(cuid())
   rolId          String
+  officeId       Int?
   diligenciaId   String?
   notificacionId String?
   documentoId    String?
   numeroRecibo   String?
+  numeroReciboYear Int?
   numeroBoleta   String?
   monto          Float
   medio          String
   ref            String?
+  fechaEjecucion DateTime?
+  fechaRecibo    DateTime?
   createdAt      DateTime @default(now())
   rol            RolCausa @relation(fields: [rolId], references: [id])
+  office         Office?  @relation(fields: [officeId], references: [id], onDelete: Restrict, onUpdate: Cascade)
 
+  @@index([officeId, numeroReciboYear])
+  @@index([rolId, fechaRecibo])
+  @@index([fechaRecibo])
   @@index([rolId, createdAt])
   @@index([createdAt])
   @@index([diligenciaId])
   @@index([notificacionId])
   @@index([documentoId])
+}
+
+model DocumentNumberSequence {
+  id           String       @id @default(cuid())
+  officeId     Int
+  year         Int
+  documentType DocumentType
+  nextNumber   Int          @default(1)
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+  office       Office       @relation(fields: [officeId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  @@unique([officeId, year, documentType])
+  @@index([officeId, year])
 }
 
 model Tribunal {
@@ -466,7 +491,11 @@ enum EstadoDiligencia {
   fallida
 }
 
-enum BoletaEstado {
+enum EstadoCobro {
   PAGADO
   NO_PAGADO
+}
+
+enum DocumentType {
+  RECIBO
 }

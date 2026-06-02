@@ -165,7 +165,7 @@ export function buildRecibosWorkbook(rows: ReceiptListRow[], totalValor: number)
       'Procurador',
       'Banco',
       'Valor',
-      'Fecha creacion recibo',
+      'Fecha recibo',
     ],
     ...rows.map(row => [
       row.rol,
@@ -176,7 +176,7 @@ export function buildRecibosWorkbook(rows: ReceiptListRow[], totalValor: number)
       row.procurador,
       row.banco,
       row.valor,
-      formatDateOnly(row.fechaCreacionRecibo),
+      formatDateOnly(row.fechaRecibo),
     ]),
     ['Total filas', rows.length, '', '', '', '', '', totalValor, ''],
   ]

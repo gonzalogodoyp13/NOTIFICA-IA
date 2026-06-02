@@ -30,7 +30,6 @@ export type ReciboVariables = {
   receptor_direccion_linea: string
   fecha_recibo: string
   numero_recibo: string
-  fecha_pago: string
   nombre_abogado: string
   direccion_abogado: string
   causa: string
@@ -54,8 +53,10 @@ export type ReciboVariables = {
 export function buildReciboVariables(
   diligencia: DiligenciaWithReciboRelations,
   dbUser: { officeName: string } | null,
+  numeroRecibo: string,
   monto: number,
   medio: string,
+  fechaEjecucion: Date,
   referencia?: string,
   tipoEstampoNombre?: string,
   ejecutadoFromNotificacion?: any
@@ -73,13 +74,6 @@ export function buildReciboVariables(
   // Receptor
   const receptorNombre = dbUser?.officeName ?? 'Receptor Judicial'
   const receptorDireccion = 'Dirección: Irarrázabal 0276 - Puente Alto - Fono: (22) 723 2376'
-  
-  // Fechas
-  const fechaRecibo = new Date()
-  const fechaPago = new Date() // Igual a fecha_recibo por ahora
-  
-  // Número de recibo
-  const numeroRecibo = `R-${diligencia.id.slice(0, 8).toUpperCase()}`
   
   // Datos del abogado
   const nombreAbogado = abogado?.nombre ?? ''
@@ -141,9 +135,8 @@ export function buildReciboVariables(
   return {
     receptor_nombre: receptorNombre,
     receptor_direccion_linea: receptorDireccion,
-    fecha_recibo: formatDateToSpanishWords(fechaRecibo),
+    fecha_recibo: formatDateToSpanishWords(fechaEjecucion),
     numero_recibo: numeroRecibo,
-    fecha_pago: formatDateToSpanishWords(fechaPago),
     nombre_abogado: nombreAbogado,
     direccion_abogado: direccionAbogado,
     causa,
@@ -216,12 +209,11 @@ export async function buildReciboPdf(
     y -= 12
   })
   
-  // Columna derecha: Fecha, Número, Fecha de pago
+  // Columna derecha: fecha visible del recibo y numero
   y = pageHeight - margin
   const rightLabels = [
     { label: 'Fecha', value: variables.fecha_recibo },
     { label: 'N°', value: variables.numero_recibo },
-    { label: 'Pagado el', value: variables.fecha_pago },
   ]
   
   rightLabels.forEach(({ label, value }) => {

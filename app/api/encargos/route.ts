@@ -28,7 +28,7 @@ export async function GET(req: NextRequest) {
       select: {
         id: true,
         createdAt: true,
-        boletaEstado: true,
+        estadoCobro: true,
         tipo: {
           select: {
             id: true,
@@ -207,7 +207,7 @@ export async function GET(req: NextRequest) {
         estado,
         fechaRealizado,
         estamposExtraCount,
-        boletaEstado: diligencia.boletaEstado === 'PAGADO' ? ('PAGADO' as const) : ('NO_PAGADO' as const),
+        estadoCobro: diligencia.estadoCobro === 'PAGADO' ? ('PAGADO' as const) : ('NO_PAGADO' as const),
       }
     })
 
@@ -215,8 +215,8 @@ export async function GET(req: NextRequest) {
     const kpis = {
       total: data.length,
       activos: data.filter(d => d.estado === 'ACTIVO').length,
-      realizadosCobrados: data.filter(d => d.estado === 'REALIZADO' && d.boletaEstado === 'PAGADO').length,
-      realizadosNoCobrados: data.filter(d => d.estado === 'REALIZADO' && d.boletaEstado === 'NO_PAGADO').length,
+      realizadosCobrados: data.filter(d => d.estado === 'REALIZADO' && d.estadoCobro === 'PAGADO').length,
+      realizadosNoCobrados: data.filter(d => d.estado === 'REALIZADO' && d.estadoCobro === 'NO_PAGADO').length,
     }
 
     return NextResponse.json({

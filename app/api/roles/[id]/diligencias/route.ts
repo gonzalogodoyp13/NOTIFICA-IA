@@ -37,7 +37,7 @@ function mapLatestEstampo(documento: any) {
 function mapNotificacion(notificacion: any) {
   const meta = isPlainObject(notificacion.meta) ? notificacion.meta : {}
   const documentos = Array.isArray(notificacion.documentos) ? notificacion.documentos : []
-  const latestBoleta = documentos.find((doc: any) => doc.tipo === 'Recibo') ?? null
+  const latestRecibo = documentos.find((doc: any) => doc.tipo === 'Recibo') ?? null
   const latestEstampoDoc = documentos.find((doc: any) => doc.tipo === 'Estampo') ?? null
 
   return {
@@ -51,9 +51,9 @@ function mapNotificacion(notificacion: any) {
     voidReason: (notificacion as any).voidReason ?? null,
     voidedByUserId: (notificacion as any).voidedByUserId ?? null,
     step1Done: !!meta.fechaEjecucion,
-    step2Done: !!latestBoleta,
+    step2Done: !!latestRecibo,
     step3Done: !!latestEstampoDoc,
-    latestBoletaId: latestBoleta?.id ?? null,
+    latestReciboId: latestRecibo?.id ?? null,
     latestEstampoId: latestEstampoDoc?.id ?? null,
     latestEstampo: mapLatestEstampo(latestEstampoDoc),
   }

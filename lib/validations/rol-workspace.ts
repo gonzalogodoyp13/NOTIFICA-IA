@@ -40,7 +40,7 @@ export const DiligenciaScheduleSchema = z.object({
   observaciones: z.string().max(1000).optional(),
 })
 
-export const BoletaGenerateSchema = z.object({
+export const ReciboGenerateSchema = z.object({
   monto: z.number().min(0, 'El monto debe ser mayor o igual a 0'),
   medio: z.string().min(1, 'El medio de pago es requerido'),
   referencia: z.string().optional(),

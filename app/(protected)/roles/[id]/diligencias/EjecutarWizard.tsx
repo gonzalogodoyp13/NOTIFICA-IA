@@ -12,7 +12,7 @@ import {
   type RolWorkspaceData,
   useUpdateNotificacionMeta,
 } from '@/lib/hooks/useRolWorkspace'
-import { BoletaGenerateSchema, EstampoGenerateSchema } from '@/lib/validations/rol-workspace'
+import { EstampoGenerateSchema, ReciboGenerateSchema } from '@/lib/validations/rol-workspace'
 import { cleanCuantiaInput } from '@/lib/utils/cuantia'
 import { parseEstampoTipo, type EstampoTipo } from '@/lib/estampos/selection'
 
@@ -69,7 +69,7 @@ export default function EjecutarWizard({
 
   const { data: estamposGrouped, isLoading: estamposLoading } = useEstamposGrouped()
   const updateMeta = useUpdateNotificacionMeta(rolId, diligencia.id, notificacionId)
-  const [creatingBoleta, setCreatingBoleta] = useState(false)
+  const [creatingRecibo, setCreatingRecibo] = useState(false)
   const [creatingEstampo, setCreatingEstampo] = useState(false)
 
   // Step state
@@ -310,7 +310,7 @@ export default function EjecutarWizard({
     })
   }
 
-  // Handle Step II: Generate Boleta
+  // Handle Step II: Generate Recibo
   const handleStepIIGenerate = async (continueToStep3: boolean) => {
     setErrorMsg(null)
 
@@ -344,7 +344,7 @@ export default function EjecutarWizard({
       tipoEstampoNombre = categoria?.label
     }
 
-    const validation = BoletaGenerateSchema.safeParse({
+    const validation = ReciboGenerateSchema.safeParse({
       monto: montoNum,
       medio: 'No especificado',
       referencia: undefined,
@@ -356,9 +356,9 @@ export default function EjecutarWizard({
       return
     }
 
-    setCreatingBoleta(true)
+    setCreatingRecibo(true)
     try {
-      const response = await fetch(`/api/diligencias/${diligencia.id}/boleta`, {
+      const response = await fetch(`/api/diligencias/${diligencia.id}/recibo`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
@@ -377,7 +377,7 @@ export default function EjecutarWizard({
         appendDocumentoToCaches(result.data as Record<string, unknown>)
         patchNotificacionProgress({
           step2Done: true,
-          latestBoletaId: typeof result.data.id === 'string' ? result.data.id : null,
+          latestReciboId: typeof result.data.id === 'string' ? result.data.id : null,
         })
       }
 
@@ -412,7 +412,7 @@ export default function EjecutarWizard({
           }
         },
         onError: () => {
-          // Boleta was generated but meta update failed - still continue
+          // Recibo was generated but meta update failed - still continue
           if (continueToStep3) {
             if (selectedEstampoTipo.kind === 'WIZARD' && selectedEstampoTipo.categoria) {
                 onOpenWizard?.(diligencia.id, selectedEstampoTipo.categoria, notificacionId)
@@ -428,7 +428,7 @@ export default function EjecutarWizard({
     } catch (error) {
       setErrorMsg(error instanceof Error ? error.message : 'No se pudo generar el recibo.')
     } finally {
-      setCreatingBoleta(false)
+      setCreatingRecibo(false)
     }
   }
 
@@ -557,7 +557,7 @@ export default function EjecutarWizard({
       .finally(() => setCreatingEstampo(false))
   }
 
-  const isLoading = updateMeta.isPending || creatingBoleta || creatingEstampo
+  const isLoading = updateMeta.isPending || creatingRecibo || creatingEstampo
 
   if (!notificacion) {
     return (

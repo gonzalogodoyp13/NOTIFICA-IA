@@ -36,7 +36,8 @@ type ReceiptRow = {
   procurador: string
   banco: string
   valor: number
-  fechaCreacionRecibo: string
+  fechaRecibo: string
+  fechaEjecucion: string | null
   estado: string
   numeroBoleta: string
 }
@@ -909,7 +910,7 @@ export default function RecibosPage() {
                 }}
                 disabled={loading || bulkUpdating || selectedRowCount === 0}
               >
-                Asociar Nro Boleta
+                Asociar Nro Boleta externa
               </Button>
               <span className="rounded-full bg-slate-100 px-3 py-1 text-slate-700">
                 Total filas mostradas: {data?.summary.totalRowsShown ?? 0}
@@ -945,7 +946,7 @@ export default function RecibosPage() {
                     'Procurador',
                     'Banco',
                     'Valor',
-                    'Fecha creacion recibo',
+                    'Fecha recibo',
                     'Estado',
                     'Nro Boleta',
                   ].map(column => (
@@ -1013,7 +1014,7 @@ export default function RecibosPage() {
                         {formatCurrency(row.valor)}
                       </td>
                       <td className="px-3 py-3 align-top text-slate-700 whitespace-nowrap">
-                        {formatDateTime(row.fechaCreacionRecibo)}
+                        {formatDateTime(row.fechaRecibo)}
                       </td>
                       <td className="px-3 py-3 align-top">
                         <span
@@ -1071,7 +1072,7 @@ export default function RecibosPage() {
               <div className="flex items-start justify-between gap-4">
                 <div>
                   <div className="page-kicker">Recibos seleccionados</div>
-                  <h3 className="mt-2 text-xl font-semibold text-slate-950">Asociar Nro Boleta</h3>
+                  <h3 className="mt-2 text-xl font-semibold text-slate-950">Asociar Nro Boleta externa</h3>
                 </div>
                 <Button
                   variant="outline"
@@ -1089,7 +1090,7 @@ export default function RecibosPage() {
 
               <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center">
                 <p className="text-sm text-slate-700">
-                  Los recibos seleccionados se asociaran a la boleta N°:
+                  Los recibos seleccionados se asociaran a la boleta externa N°:
                 </p>
                 <Input
                   value={numeroBoletaDraft}
