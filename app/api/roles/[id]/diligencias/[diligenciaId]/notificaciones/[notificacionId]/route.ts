@@ -66,7 +66,7 @@ export async function PATCH(
 
     if (!existing) {
       return NextResponse.json(
-        { ok: false, error: 'Notificación no encontrada o no pertenece a esta diligencia' },
+        { ok: false, error: 'Notificacion no encontrada o no pertenece a esta diligencia' },
         { status: 404 }
       )
     }
@@ -127,9 +127,9 @@ export async function PATCH(
       },
     })
   } catch (error) {
-    console.error('Error actualizando meta de notificación:', error)
+    console.error('Error actualizando meta de notificacion:', error)
     return NextResponse.json(
-      { ok: false, error: 'Error al actualizar la notificación' },
+      { ok: false, error: 'Error al actualizar la notificacion' },
       { status: 500 }
     )
   }
@@ -188,58 +188,32 @@ export async function DELETE(
 
     if (!existing) {
       return NextResponse.json(
-        { ok: false, error: 'Notificación no encontrada o no pertenece a esta diligencia' },
+        { ok: false, error: 'Notificacion no encontrada o no pertenece a esta diligencia' },
         { status: 404 }
       )
     }
 
-    // Obtener body opcional con razón
-    const body = await req.json().catch(() => null)
-    const reason = (body && typeof body === 'object' && !Array.isArray(body) && typeof (body as any).reason === 'string')
-      ? (body as any).reason
-      : 'Anulado por usuario'
+    await req.json().catch(() => null)
 
-    // Contar documentos asociados
-    const count = await prisma.documento.count({
-      where: { notificacionId: params.notificacionId } as any,
-    })
-
-    if (count > 0) {
-      // CASO 1: Hay documentos → ANULAR (soft delete con cascade)
-      const now = new Date()
-      await prisma.$transaction(async (tx) => {
-        // Anular notificación
-        await tx.notificacion.update({
-          where: { id: params.notificacionId },
-          data: {
-            voidedAt: now,
-            voidReason: reason,
-            voidedByUserId: user.id,
-            updatedAt: now,
-          } as any,
-        })
-
-        // Anular todos los documentos asociados (mismo timestamp)
-        await tx.documento.updateMany({
-          where: { notificacionId: params.notificacionId } as any,
-          data: {
-            voidedAt: now,
-            voidReason: reason,
-            voidedByUserId: user.id,
-          } as any,
-        })
+    await prisma.$transaction(async tx => {
+      await tx.recibo.deleteMany({
+        where: { notificacionId: params.notificacionId },
       })
 
-      return NextResponse.json({ ok: true, mode: 'VOIDED' })
-    } else {
-      // CASO 2: No hay documentos → HARD DELETE (como antes)
-      await prisma.notificacion.delete({ where: { id: params.notificacionId } })
-      return NextResponse.json({ ok: true, mode: 'DELETED' })
-    }
+      await tx.documento.deleteMany({
+        where: { notificacionId: params.notificacionId } as any,
+      })
+
+      await tx.notificacion.delete({
+        where: { id: params.notificacionId },
+      })
+    })
+
+    return NextResponse.json({ ok: true, mode: 'DELETED' })
   } catch (error) {
-    console.error('Error eliminando notificación:', error)
+    console.error('Error eliminando notificacion:', error)
     return NextResponse.json(
-      { ok: false, error: 'Error al eliminar la notificación' },
+      { ok: false, error: 'Error al eliminar la notificacion' },
       { status: 500 }
     )
   }

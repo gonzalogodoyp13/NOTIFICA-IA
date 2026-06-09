@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 
 import { getCurrentUserWithOffice } from '@/lib/auth-server'
+import { buildDocumentGenerationMetadata } from '@/lib/documents/generationMetadata'
 import { prisma } from '@/lib/prisma'
 import { ReciboGenerateSchema } from '@/lib/validations/rol-workspace'
 import { buildReciboVariables, buildReciboPdf, loadReciboStamp } from '@/lib/pdf/recibo'
@@ -158,7 +159,69 @@ export async function POST(
     const numeroReciboYear = fechaRecibo.getFullYear()
     const stampBytes = await loadReciboStamp()
 
-    const documento = await prisma.$transaction(async tx => {
+    const result = await prisma.$transaction(async tx => {
+      if (notificacionId) {
+        await tx.$queryRaw`
+          SELECT pg_advisory_xact_lock(hashtext(${`recibo-notificacion-${notificacionId}`}))
+        `
+
+        const existingDocumento = await tx.documento.findFirst({
+          where: {
+            notificacionId,
+            tipo: 'Recibo',
+            voidedAt: null,
+            pdfId: { not: null },
+          },
+          orderBy: { createdAt: 'desc' },
+        })
+
+        if (existingDocumento && data.regenerate !== true) {
+          const existingRecibo = await tx.recibo.findFirst({
+            where: {
+              notificacionId,
+              documentoId: existingDocumento.id,
+            },
+            orderBy: { createdAt: 'desc' },
+          })
+
+          return {
+            kind: 'conflict' as const,
+            existing: {
+              reciboId: existingRecibo?.id ?? null,
+              documentoId: existingDocumento.id,
+              numeroRecibo: existingRecibo?.numeroRecibo ?? null,
+              createdAt: existingDocumento.createdAt.toISOString(),
+            },
+          }
+        }
+
+        if (data.regenerate === true) {
+          const existingReciboDocumentos = await tx.documento.findMany({
+            where: {
+              notificacionId,
+              tipo: 'Recibo',
+            },
+            select: { id: true },
+          })
+          const documentoIds = existingReciboDocumentos.map(documento => documento.id)
+
+          await tx.recibo.deleteMany({
+            where: {
+              OR: [
+                { notificacionId },
+                ...(documentoIds.length > 0 ? [{ documentoId: { in: documentoIds } }] : []),
+              ],
+            },
+          })
+
+          await tx.documento.deleteMany({
+            where: {
+              id: { in: documentoIds },
+            },
+          })
+        }
+      }
+
       const sequenceRows = await tx.$queryRaw<Array<{ assignedNumber: number }>>`
         INSERT INTO "DocumentNumberSequence" (
           "id",
@@ -201,6 +264,16 @@ export async function POST(
       )
       const pdfBase64 = await buildReciboPdf(variables, stampBytes)
       const numeroBoleta = data.referencia?.trim() || variables.n_operacion.trim() || null
+      const generationMetadata = buildDocumentGenerationMetadata({
+        userId: user.id,
+        generatedAt: fechaRecibo,
+        sourceTemplate: {
+          type: 'recibo',
+          name: 'default-recibo-pdf',
+          version: 1,
+        },
+        variables,
+      })
 
       const createdDocumento = await tx.documento.create({
         data: {
@@ -211,6 +284,7 @@ export async function POST(
           tipo: 'Recibo',
           pdfId: pdfBase64,
           version: 1,
+          ...generationMetadata,
         },
       })
 
@@ -239,8 +313,25 @@ export async function POST(
         },
       })
 
-      return createdDocumento
+      return {
+        kind: 'created' as const,
+        documento: createdDocumento,
+      }
     })
+
+    if (result.kind === 'conflict') {
+      return NextResponse.json(
+        {
+          ok: false,
+          code: 'RECIBO_EXISTS',
+          error: 'Ya existe un recibo para esta notificacion.',
+          existing: result.existing,
+        },
+        { status: 409 }
+      )
+    }
+
+    const documento = result.documento
 
     return NextResponse.json({
       ok: true,
@@ -256,6 +347,11 @@ export async function POST(
         voidedAt: null,
         voidReason: null,
         voidedByUserId: null,
+        generatedByUserId: documento.generatedByUserId,
+        generatedAt: documento.generatedAt ? documento.generatedAt.toISOString() : null,
+        sourceTemplate: documento.sourceTemplate,
+        generationVariables: documento.generationVariables,
+        generationVersion: documento.generationVersion,
         diligencia: {
           id: diligencia.id,
           tipo: diligencia.tipo?.nombre ?? null,

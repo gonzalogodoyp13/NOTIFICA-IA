@@ -5,6 +5,8 @@ import { Prisma } from '@prisma/client'
 import { getCurrentUserWithOffice } from '@/lib/auth-server'
 import { prisma } from '@/lib/prisma'
 import { DiligenciaCreateSchema } from '@/lib/validations/rol-workspace'
+import { deriveNotificationCompleteness } from '@/lib/workflow/completeness'
+import { deriveNotificationWorkflowState } from '@/lib/workflow/notificationStatus'
 
 export const dynamic = 'force-dynamic'
 
@@ -37,8 +39,9 @@ function mapLatestEstampo(documento: any) {
 function mapNotificacion(notificacion: any) {
   const meta = isPlainObject(notificacion.meta) ? notificacion.meta : {}
   const documentos = Array.isArray(notificacion.documentos) ? notificacion.documentos : []
-  const latestRecibo = documentos.find((doc: any) => doc.tipo === 'Recibo') ?? null
-  const latestEstampoDoc = documentos.find((doc: any) => doc.tipo === 'Estampo') ?? null
+  const workflow = deriveNotificationWorkflowState(documentos)
+  const latestRecibo = workflow.latestRecibo
+  const latestEstampoDoc = workflow.latestEstampo
 
   return {
     id: notificacion.id,
@@ -50,9 +53,11 @@ function mapNotificacion(notificacion: any) {
     voidedAt: (notificacion as any).voidedAt ? (notificacion as any).voidedAt.toISOString() : null,
     voidReason: (notificacion as any).voidReason ?? null,
     voidedByUserId: (notificacion as any).voidedByUserId ?? null,
+    workflowStatus: workflow.workflowStatus,
+    completeness: deriveNotificationCompleteness({ notificacion, diligencia: notificacion.diligencia }),
     step1Done: !!meta.fechaEjecucion,
-    step2Done: !!latestRecibo,
-    step3Done: !!latestEstampoDoc,
+    step2Done: workflow.hasReciboPdf,
+    step3Done: workflow.hasEstampoPdf,
     latestReciboId: latestRecibo?.id ?? null,
     latestEstampoId: latestEstampoDoc?.id ?? null,
     latestEstampo: mapLatestEstampo(latestEstampoDoc),
@@ -150,6 +155,15 @@ export async function GET(
           include: {
             demanda: {
               include: {
+                abogados: {
+                  include: {
+                    bancos: {
+                      include: {
+                        banco: true,
+                      },
+                    },
+                  },
+                },
                 ejecutados: {
                   include: {
                     comunas: {
@@ -167,10 +181,37 @@ export async function GET(
         notificaciones: {
           orderBy: { createdAt: 'asc' },
           include: {
+            diligencia: {
+              include: {
+                rol: {
+                  include: {
+                    demanda: {
+                      include: {
+                        abogados: {
+                          include: {
+                            bancos: {
+                              include: {
+                                banco: true,
+                              },
+                            },
+                          },
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+            ejecutado: {
+              include: {
+                comunas: true,
+              },
+            },
             documentos: {
               where: {
                 tipo: { in: ['Recibo', 'Estampo'] },
                 voidedAt: null,
+                pdfId: { not: null },
               },
               orderBy: { createdAt: 'desc' },
               include: {

@@ -11,6 +11,7 @@ import {
 
 const estadoRolEnum = z.enum(['pendiente', 'en_proceso', 'terminado', 'archivado'])
 const estadoDiligenciaEnum = z.enum(['pendiente', 'completada', 'fallida'])
+const notificationWorkflowStatusEnum = z.enum(['nueva', 'recibo_generado', 'ejecutada'])
 
 const DiligenciaTipoSchema = z.object({
   id: z.string(),
@@ -28,6 +29,13 @@ const NotificacionItemSchema = z.object({
   voidedAt: z.string().nullable().optional(),
   voidReason: z.string().nullable().optional(),
   voidedByUserId: z.string().nullable().optional(),
+  workflowStatus: notificationWorkflowStatusEnum.default('nueva'),
+  completeness: z
+    .object({
+      isComplete: z.boolean(),
+      missingFields: z.array(z.string()),
+    })
+    .optional(),
   latestEstampo: z
     .object({
       documentoId: z.string(),
@@ -72,6 +80,11 @@ const DocumentoItemSchema = z.object({
   voidedAt: z.string().nullable().optional(),
   voidReason: z.string().nullable().optional(),
   voidedByUserId: z.string().nullable().optional(),
+  generatedByUserId: z.string().nullable().optional(),
+  generatedAt: z.string().nullable().optional(),
+  sourceTemplate: z.unknown().nullable().optional(),
+  generationVariables: z.unknown().nullable().optional(),
+  generationVersion: z.number().optional(),
   diligencia: z
     .object({
       id: z.string(),
@@ -106,6 +119,7 @@ const NotaItemSchema = z.object({
 
 const ReciboItemSchema = z.object({
   id: z.string(),
+  notificacionId: z.string().nullable().optional(),
   monto: z.number(),
   medio: z.string(),
   ref: z.string().nullable().optional(),
@@ -777,16 +791,22 @@ export function useDeleteNotificacion(
         documentosKey(rolId),
         (current: DocumentoItem[] | undefined) =>
           patchDocumentosList(current, items =>
-            items.map(item =>
-              item.notificacionId === variables.notificacionId
-                ? {
-                    ...item,
-                    voidedAt: new Date().toISOString(),
-                    voidReason: variables.reason ?? 'Anulado por usuario',
-                  }
-                : item
-            )
+            items.filter(item => item.notificacionId !== variables.notificacionId)
           )
+      )
+
+      queryClient.setQueryData(
+        rolQueryKey(rolId),
+        (current: RolWorkspaceData | undefined) =>
+          updateRolWorkspaceSummary(current, summary => ({
+            ...summary,
+            documentos: summary.documentos.filter(
+              item => item.notificacionId !== variables.notificacionId
+            ),
+            recibos: summary.recibos.filter(
+              item => item.notificacionId !== variables.notificacionId
+            ),
+          }))
       )
     },
   })

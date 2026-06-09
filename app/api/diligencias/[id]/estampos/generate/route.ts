@@ -4,6 +4,7 @@ import fs from 'fs'
 import path from 'path'
 
 import { getCurrentUserWithOffice } from '@/lib/auth-server'
+import { buildDocumentGenerationMetadata } from '@/lib/documents/generationMetadata'
 import { prisma } from '@/lib/prisma'
 import { buildWizardInitialVariables, loadWizardDiligenciaContext, loadWizardEstampoTemplate } from '@/lib/estampos/server'
 import { computeDerivedVariables, renderEstampoTemplate, type DiligenciaWithRelations } from '@/lib/estampos/runtime'
@@ -150,6 +151,18 @@ export async function POST(
     }
 
     const pdfBase64 = await buildEstampoPdf(finalText, headerData, officeImages)
+    const generationMetadata = buildDocumentGenerationMetadata({
+      userId: user.id,
+      sourceTemplate: {
+        type: 'wizard-estampo',
+        estampoBaseId: estampoBase.id,
+        slug: estampoBase.slug,
+        categoria: estampoBase.categoria,
+        customized: !!estampoCustom || !!textoEditado,
+        version: 1,
+      },
+      variables: finalVariables,
+    })
 
     const documento = await prisma.documento.create({
       data: {
@@ -162,6 +175,7 @@ export async function POST(
         pdfId: pdfBase64,
         textoEditado: textoEditado || null,
         version: 1,
+        ...generationMetadata,
       },
     })
 
@@ -180,6 +194,11 @@ export async function POST(
           voidedAt: null,
           voidReason: null,
           voidedByUserId: null,
+          generatedByUserId: documento.generatedByUserId,
+          generatedAt: documento.generatedAt ? documento.generatedAt.toISOString() : null,
+          sourceTemplate: documento.sourceTemplate,
+          generationVariables: documento.generationVariables,
+          generationVersion: documento.generationVersion,
           diligencia: {
             id: diligencia.id,
             tipo: null,

@@ -132,6 +132,7 @@ export async function POST(
         meta: notificacion.meta,
         createdAt: notificacion.createdAt ? notificacion.createdAt.toISOString() : null,
         updatedAt: notificacion.updatedAt ? notificacion.updatedAt.toISOString() : null,
+        workflowStatus: 'nueva',
         step1Done: false,
         step2Done: false,
         step3Done: false,

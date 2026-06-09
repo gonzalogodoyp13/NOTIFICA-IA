@@ -1,0 +1,71 @@
+model = "gpt-5.5"
+model_reasoning_effort = "medium"
+
+notify = [ "C:\\Users\\gonza\\.codex\\plugins\\cache\\openai-bundled\\computer-use\\26.601.21317\\node_modules\\@oai\\sky\\bin\\windows\\codex-computer-use.exe", "turn-ended" ]
+[windows]
+sandbox = "elevated"
+
+[features]
+multi_agent = true
+js_repl = false
+
+[marketplaces.openai-bundled]
+last_updated = "2026-06-03T23:15:18Z"
+source_type = "local"
+source = '\\?\C:\Users\gonza\.codex\.tmp\bundled-marketplaces\openai-bundled'
+
+[marketplaces.openai-primary-runtime]
+last_updated = "2026-06-02T20:37:36Z"
+source_type = "local"
+source = '\\?\C:\Users\gonza\.cache\codex-runtimes\codex-primary-runtime\plugins\openai-primary-runtime'
+
+[plugins."documents@openai-primary-runtime"]
+enabled = true
+
+[plugins."spreadsheets@openai-primary-runtime"]
+enabled = true
+
+[plugins."presentations@openai-primary-runtime"]
+enabled = true
+
+[plugins."chrome@openai-bundled"]
+enabled = true
+
+[plugins."computer-use@openai-bundled"]
+enabled = true
+
+[plugins."browser@openai-bundled"]
+enabled = true
+
+[projects.'c:\users\gonza\desktop\notifica ia - web - (2)']
+trust_level = "trusted"
+
+[desktop]
+keepRemoteControlAwakeWhilePluggedIn = true
+
+[desktop.open-in-target-preferences]
+global = "vscode"
+
+[desktop.open-in-target-preferences.perPath]
+'C:\Users\gonza\Desktop\NOTIFICA IA - WEB - (2)' = "vscode"
+
+[mcp_servers.node_repl]
+args = []
+command = 'C:\Users\gonza\AppData\Local\OpenAI\Codex\bin\34ab3e1324cc55b5\node_repl.exe'
+startup_timeout_sec = 120
+
+[mcp_servers.node_repl.env]
+NODE_REPL_NATIVE_PIPE_CONNECT_TIMEOUT_MS = "1000"
+NODE_REPL_NODE_MODULE_DIRS = ""
+NODE_REPL_NODE_PATH = 'C:\Users\gonza\AppData\Local\OpenAI\Codex\bin\5b9024f90663758b\node.exe'
+NODE_REPL_TRUSTED_CODE_PATHS = 'C:\Users\gonza\.codex'
+CODEX_HOME = 'C:\Users\gonza\.codex'
+NODE_REPL_TRUSTED_BROWSER_CLIENT_SHA256S = "2de792ebdf729e85542c94275f6654821dddce546d9c7374c915f2297529e313,e13c388c2427308a68dffc803e1f28316077b719672e4518a621ae6ab56ad7cf"
+BROWSER_USE_AVAILABLE_BACKENDS = "chrome,iab"
+NODE_REPL_INSTRUCTIONS_USE_CASE_BROWSER = "Control the in-app browser in conjunction with the Browser Plugin."
+NODE_REPL_INSTRUCTIONS_USE_CASE_CHROME = "Control the Chrome browser in conjunction with the Chrome Plugin. Prefer this method of controlling Chrome over alternatives (such as Computer Use) unless the user explicitly mentions an alternative."
+BROWSER_USE_CODEX_APP_BUILD_FLAVOR = "prod"
+BROWSER_USE_CODEX_APP_VERSION = "26.602.40724"
+SKY_CUA_NATIVE_PIPE = "1"
+SKY_CUA_NATIVE_PIPE_DIRECTORY = '\\.\pipe\codex-computer-use-49d8a3cd-b5f9-46ed-a89e-bbfaa7ddf3f9'
+CODEX_CLI_PATH = 'C:\Users\gonza\AppData\Local\OpenAI\Codex\bin\fb2111b91430cb17\codex.exe'

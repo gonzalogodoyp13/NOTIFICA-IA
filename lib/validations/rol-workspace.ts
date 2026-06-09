@@ -46,6 +46,7 @@ export const ReciboGenerateSchema = z.object({
   referencia: z.string().optional(),
   variables: z.record(z.string()).optional(),
   tipoEstampoNombre: z.string().optional(), // Nuevo campo para el nombre del estampo
+  regenerate: z.boolean().optional(),
 })
 
 export const EstampoGenerateSchema = z.object({

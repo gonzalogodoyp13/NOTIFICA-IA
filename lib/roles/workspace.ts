@@ -148,6 +148,7 @@ export async function loadRoleSummaryData(roleId: string, officeId: number) {
       recibos: {
         select: {
           id: true,
+          notificacionId: true,
           monto: true,
           medio: true,
           ref: true,
@@ -270,6 +271,13 @@ export async function loadRoleSummaryData(roleId: string, officeId: number) {
     version: doc.version,
     hasPdf: !!doc.pdfId,
     createdAt: doc.createdAt.toISOString(),
+    diligenciaId: doc.diligenciaId ?? doc.diligencia?.id ?? null,
+    notificacionId: doc.notificacionId ?? null,
+    generatedByUserId: doc.generatedByUserId ?? null,
+    generatedAt: doc.generatedAt ? doc.generatedAt.toISOString() : null,
+    sourceTemplate: doc.sourceTemplate ?? null,
+    generationVariables: doc.generationVariables ?? null,
+    generationVersion: doc.generationVersion ?? 1,
     diligencia: doc.diligencia
       ? {
           id: doc.diligencia.id,
@@ -301,6 +309,7 @@ export async function loadRoleSummaryData(roleId: string, officeId: number) {
 
   const resumenRecibos = rolCausa.recibos.map((recibo: any) => ({
     id: recibo.id,
+    notificacionId: recibo.notificacionId ?? null,
     monto: Number(recibo.monto),
     medio: recibo.medio,
     ref: recibo.ref ?? null,

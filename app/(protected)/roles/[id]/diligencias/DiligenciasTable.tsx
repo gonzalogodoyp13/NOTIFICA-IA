@@ -33,6 +33,30 @@ const successButtonClass =
 const dangerButtonClass =
   'inline-flex items-center justify-center rounded-full border border-rose-200 bg-rose-50 px-4 py-2.5 text-sm font-semibold text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-50'
 
+function getWorkflowStatusLabel(status: NotificacionItem['workflowStatus']) {
+  switch (status) {
+    case 'ejecutada':
+      return 'Ejecutada'
+    case 'recibo_generado':
+      return 'Recibo generado'
+    case 'nueva':
+    default:
+      return 'Nueva'
+  }
+}
+
+function getWorkflowStatusClass(status: NotificacionItem['workflowStatus']) {
+  switch (status) {
+    case 'ejecutada':
+      return 'border-emerald-200 bg-emerald-50 text-emerald-700'
+    case 'recibo_generado':
+      return 'border-sky-200 bg-sky-50 text-sky-700'
+    case 'nueva':
+    default:
+      return 'border-slate-200 bg-white text-slate-600'
+  }
+}
+
 export default function DiligenciasTable({ rolId }: DiligenciasTableProps) {
   const { data, isLoading, isError, error } = useDiligencias(rolId)
   const createNotificacion = useCreateNotificacion(rolId)
@@ -262,9 +286,6 @@ export default function DiligenciasTable({ rolId }: DiligenciasTableProps) {
                           <div className="mt-1 text-sm text-slate-500">{diligencia.tipo.descripcion}</div>
                         )}
                       </div>
-                      <span className="rounded-full border border-sky-200 bg-white px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-sky-700/80">
-                        {diligencia.estado}
-                      </span>
                     </div>
                   </div>
                   <div className={subtleCellClass}>
@@ -304,21 +325,27 @@ export default function DiligenciasTable({ rolId }: DiligenciasTableProps) {
                       <div className="bg-sky-50 px-5 py-3 text-[10px] font-semibold uppercase tracking-[0.2em] text-sky-700/70">Ejecutado</div>
                       <div className="bg-sky-50 px-5 py-3 text-[10px] font-semibold uppercase tracking-[0.2em] text-sky-700/70">Acciones</div>
                     </div>
-                    {notificaciones.map((notif, index) => (
-                      <div key={notif.id} className={`grid gap-px bg-slate-200 md:grid-cols-[0.95fr_1.55fr] ${index === 0 ? '' : 'border-t border-slate-200'}`}>
+                    {notificaciones.map((notif, index) => {
+                      const hasReciboPdf =
+                        notif.workflowStatus === 'recibo_generado' ||
+                        notif.workflowStatus === 'ejecutada'
+                      const hasCompletedCycle = notif.workflowStatus === 'ejecutada'
+
+                      return (
+                        <div key={notif.id} className={`grid gap-px bg-slate-200 md:grid-cols-[0.95fr_1.55fr] ${index === 0 ? '' : 'border-t border-slate-200'}`}>
                         <div className={`${bodyCellClass} flex h-full flex-col`}>
                           <div className="text-[1.15rem] font-semibold text-slate-900">{notif._ejecutadoNombre}</div>
                           <div className="mt-1 text-[0.98rem] leading-7 text-slate-500">{notif._ejecutadoDireccion}</div>
                           <div className="mt-4 flex flex-wrap items-center gap-2 text-xs text-slate-500">
                             <span>{notif.createdAt ? new Date(notif.createdAt).toLocaleString('es-CL') : 'Sin fecha de creacion'}</span>
-                            {notif.latestEstampoId && (
-                              <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-1 font-medium text-emerald-700">Estampo listo</span>
-                            )}
+                            <span className={`rounded-full border px-2 py-1 font-medium ${getWorkflowStatusClass(notif.workflowStatus)}`}>
+                              {getWorkflowStatusLabel(notif.workflowStatus)}
+                            </span>
                           </div>
                           <div className="mt-auto pt-5">
                             {renderActionButton('Anular Notificacion', event => {
                               event.stopPropagation()
-                              const ok = window.confirm('Anular esta notificacion? Los documentos asociados tambien seran anulados y ocultados de la vista normal. Esta accion puede revertirse en el futuro para auditoria.')
+                              const ok = window.confirm('Anular esta notificacion? Se eliminara de la tabla junto con sus recibos y estampos asociados.')
                               if (!ok) return
                               deleteNotificacion.mutate(
                                 { diligenciaId: diligencia.id, notificacionId: notif.id },
@@ -337,7 +364,7 @@ export default function DiligenciasTable({ rolId }: DiligenciasTableProps) {
                               {renderActionButton('Ejecutar', event => { event.stopPropagation(); openWizardForNotificacion(diligencia, notif.id, 1) }, `${accentButtonClass} min-h-12 px-5`)}
                             </div>
                           )}
-                          {notif.step1Done && !notif.step2Done && (
+                          {notif.step1Done && !hasReciboPdf && (
                             <div className="flex flex-wrap items-start justify-between gap-4">
                               <div>
                                 <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-sky-700/70">Acciones</div>
@@ -349,11 +376,11 @@ export default function DiligenciasTable({ rolId }: DiligenciasTableProps) {
                               </div>
                             </div>
                           )}
-                          {notif.step2Done && (
+                          {hasReciboPdf && (
                             <div className="grid gap-4 lg:grid-cols-2">
                               <div className="rounded-[20px] border border-sky-200 bg-[linear-gradient(180deg,#f8fcff_0%,#eaf5ff_100%)] p-4">
                                 <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-sky-700/70">For Estampo</div>
-                                {!notif.step3Done ? (
+                                {!hasCompletedCycle ? (
                                   <>
                                     <p className="mt-2 text-sm leading-6 text-slate-600">El recibo ya fue generado. Ahora puedes continuar con el estampo de esta diligencia.</p>
                                     <div className="mt-4 flex flex-wrap gap-2">
@@ -381,14 +408,15 @@ export default function DiligenciasTable({ rolId }: DiligenciasTableProps) {
                             </div>
                           )}
                         </div>
-                      </div>
-                    ))}
+                        </div>
+                      )
+                    })}
                   </div>
                 ) : (
                   <div className="grid gap-px border-t border-slate-200 bg-slate-200 md:grid-cols-[0.95fr_1.55fr]">
                     <div className="bg-sky-50 px-5 py-3 text-[10px] font-semibold uppercase tracking-[0.2em] text-sky-700/70">Ejecutado</div>
                     <div className="bg-sky-50 px-5 py-3 text-[10px] font-semibold uppercase tracking-[0.2em] text-sky-700/70">Acciones</div>
-                    <div className={bodyCellClass}><div className="text-lg font-semibold text-slate-700">Pendiente de definir</div><div className="mt-1 text-sm leading-6 text-slate-500">El ejecutado se asociara cuando inicies la ejecucion de esta diligencia.</div></div>
+                    <div className={bodyCellClass}><div className="text-lg font-semibold text-slate-700">Sin ciclo creado</div><div className="mt-1 text-sm leading-6 text-slate-500">El ejecutado se asociara cuando inicies la ejecucion de esta diligencia.</div></div>
                     <div className={bodyCellClass}><div className="rounded-[20px] border border-dashed border-sky-300 bg-sky-50 px-4 py-4"><div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-sky-700/70">Acciones</div><p className="mt-2 max-w-xl text-sm leading-6 text-slate-500">Todavia no existe un ciclo para esta diligencia. Usa el boton superior para ejecutar y abrir el flujo normal.</p></div></div>
                   </div>
                 )}

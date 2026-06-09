@@ -64,6 +64,11 @@ export async function GET(
       voidedAt: (doc as any).voidedAt ? (doc as any).voidedAt.toISOString() : null,
       voidReason: (doc as any).voidReason ?? null,
       voidedByUserId: (doc as any).voidedByUserId ?? null,
+      generatedByUserId: (doc as any).generatedByUserId ?? null,
+      generatedAt: (doc as any).generatedAt ? (doc as any).generatedAt.toISOString() : null,
+      sourceTemplate: (doc as any).sourceTemplate ?? null,
+      generationVariables: (doc as any).generationVariables ?? null,
+      generationVersion: (doc as any).generationVersion ?? 1,
       diligencia: doc.diligencia
         ? {
             id: doc.diligencia.id,

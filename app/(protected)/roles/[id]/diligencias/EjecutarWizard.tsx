@@ -358,14 +358,34 @@ export default function EjecutarWizard({
 
     setCreatingRecibo(true)
     try {
-      const response = await fetch(`/api/diligencias/${diligencia.id}/recibo`, {
+      let response = await fetch(`/api/diligencias/${diligencia.id}/recibo`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
         body: JSON.stringify({ ...validation.data, notificacionId }),
       })
 
-      const result = await response.json().catch(() => null)
+      let result = await response.json().catch(() => null)
+
+      if (response.status === 409 && result?.code === 'RECIBO_EXISTS') {
+        const ok = window.confirm(
+          'Ya existe un recibo para esta notificacion. Quieres regenerarlo y reemplazar el PDF anterior?'
+        )
+
+        if (!ok) {
+          return
+        }
+
+        response = await fetch(`/api/diligencias/${diligencia.id}/recibo`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({ ...validation.data, notificacionId, regenerate: true }),
+        })
+
+        result = await response.json().catch(() => null)
+      }
+
       if (!response.ok || result?.ok !== true) {
         throw new Error(
           (result && typeof result.error === 'string' && result.error) ||
@@ -378,7 +398,10 @@ export default function EjecutarWizard({
         patchNotificacionProgress({
           step2Done: true,
           latestReciboId: typeof result.data.id === 'string' ? result.data.id : null,
+          workflowStatus: 'recibo_generado',
         })
+        queryClient.invalidateQueries({ queryKey: ['rol', rolId, 'documentos'] })
+        queryClient.invalidateQueries({ queryKey: ['rol', rolId] })
       }
 
       // Guardar estampoTipo (nuevo formato) y monto
@@ -518,6 +541,10 @@ export default function EjecutarWizard({
           patchNotificacionProgress({
             step3Done: true,
             latestEstampoId: typeof result.data.id === 'string' ? result.data.id : null,
+            workflowStatus:
+              notificacion.workflowStatus === 'recibo_generado' || notificacion.latestReciboId
+                ? 'ejecutada'
+                : notificacion.workflowStatus,
             latestEstampo:
               result.data.estampo && typeof result.data.estampo === 'object'
                 ? {

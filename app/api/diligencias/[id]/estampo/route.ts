@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 
 import { getCurrentUserWithOffice } from '@/lib/auth-server'
+import { buildDocumentGenerationMetadata } from '@/lib/documents/generationMetadata'
 import { prisma } from '@/lib/prisma'
 import { EstampoGenerateSchema } from '@/lib/validations/rol-workspace'
 import { formatCuantiaCLP } from '@/lib/utils/cuantia'
@@ -270,6 +271,16 @@ export async function POST(
     }
 
     const pdfBase64 = await buildEstampoPdf(filled, headerData, officeImages)
+    const generationMetadata = buildDocumentGenerationMetadata({
+      userId: user.id,
+      sourceTemplate: {
+        type: 'legacy-estampo',
+        estampoId: estampo.id,
+        name: estampo.nombre,
+        version: 1,
+      },
+      variables: variableMap,
+    })
 
     const documento = await prisma.documento.create({
       data: {
@@ -281,6 +292,7 @@ export async function POST(
         tipo: 'Estampo',
         pdfId: pdfBase64,
         version: 1,
+        ...generationMetadata,
       },
     })
 
@@ -298,6 +310,11 @@ export async function POST(
         voidedAt: null,
         voidReason: null,
         voidedByUserId: null,
+        generatedByUserId: documento.generatedByUserId,
+        generatedAt: documento.generatedAt ? documento.generatedAt.toISOString() : null,
+        sourceTemplate: documento.sourceTemplate,
+        generationVariables: documento.generationVariables,
+        generationVersion: documento.generationVersion,
         diligencia: {
           id: diligencia.id,
           tipo: null,

@@ -85,9 +85,21 @@ export default function EstampoWizardModal({
           ? diligencia
           : {
               ...diligencia,
-              notificaciones: (diligencia.notificaciones ?? []).map((notif: any) =>
-                notif.id === notificacionId ? { ...notif, ...patch } : notif
-              ),
+              notificaciones: (diligencia.notificaciones ?? []).map((notif: any) => {
+                if (notif.id !== notificacionId) return notif
+
+                const nextPatch = { ...patch }
+                const hasReciboPdf =
+                  notif.workflowStatus === 'recibo_generado' ||
+                  notif.workflowStatus === 'ejecutada' ||
+                  !!notif.latestReciboId
+
+                if (nextPatch.workflowStatus === 'ejecutada' && !hasReciboPdf) {
+                  nextPatch.workflowStatus = notif.workflowStatus ?? 'nueva'
+                }
+
+                return { ...notif, ...nextPatch }
+              }),
             }
       )
     })
@@ -287,6 +299,7 @@ export default function EstampoWizardModal({
         patchNotificacionProgress({
           step3Done: true,
           latestEstampoId: typeof documento.id === 'string' ? documento.id : null,
+          workflowStatus: 'ejecutada',
           latestEstampo:
             documento.estampoBase && typeof documento.estampoBase === 'object'
               ? {
