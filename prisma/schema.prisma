@@ -24,6 +24,15 @@ model User {
 model Office {
   id             Int             @id @default(autoincrement())
   nombre         String
+  pdfReceptorNombre String?
+  pdfReceptorDireccionLinea String?
+  pdfReceptorTelefono String?
+  pdfFirmaStorageBucket String?
+  pdfFirmaStorageKey String?
+  pdfSelloStorageBucket String?
+  pdfSelloStorageKey String?
+  pdfReciboStampStorageBucket String?
+  pdfReciboStampStorageKey String?
   createdAt      DateTime        @default(now())
   users          User[]
   abogados       Abogado[]
@@ -328,6 +337,7 @@ model Documento {
   diligenciaId   String?
   notificacionId String?
   estampoId      String?
+  currentVersionId String?
   nombre         String
   tipo           String
   pdfId          String?
@@ -348,8 +358,34 @@ model Documento {
   estampoBase    EstampoBase?  @relation(fields: [estampoBaseId], references: [id])
   estampo        Estampo?      @relation(fields: [estampoId], references: [id])
   rol            RolCausa      @relation(fields: [rolId], references: [id])
+  versions       DocumentoVersion[] @relation("DocumentoVersions")
+  currentVersion DocumentoVersion? @relation("DocumentoCurrentVersion", fields: [currentVersionId], references: [id], onDelete: SetNull)
 
   @@index([rolId, createdAt])
+  @@index([currentVersionId])
+}
+
+model DocumentoVersion {
+  id               String      @id @default(cuid())
+  documentoId      String
+  versionNumber    Int
+  storageBucket    String
+  storageKey       String
+  fileName         String
+  sizeBytes        Int
+  checksumSha256   String
+  mimeType         String
+  createdAt        DateTime    @default(now())
+  createdByUserId  String?
+  deletedAt        DateTime?
+  deletedByUserId  String?
+  documento        Documento   @relation("DocumentoVersions", fields: [documentoId], references: [id], onDelete: Cascade)
+  currentForDocuments Documento[] @relation("DocumentoCurrentVersion")
+  recibos          Recibo[]
+
+  @@unique([documentoId, versionNumber])
+  @@index([documentoId, createdAt])
+  @@index([storageBucket, storageKey])
 }
 
 model Nota {
@@ -370,6 +406,7 @@ model Recibo {
   diligenciaId   String?
   notificacionId String?
   documentoId    String?
+  documentVersionId String?
   numeroRecibo   String?
   numeroReciboYear Int?
   numeroBoleta   String?
@@ -381,6 +418,7 @@ model Recibo {
   createdAt      DateTime @default(now())
   rol            RolCausa @relation(fields: [rolId], references: [id])
   office         Office?  @relation(fields: [officeId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  documentVersion DocumentoVersion? @relation(fields: [documentVersionId], references: [id], onDelete: SetNull)
 
   @@index([officeId, numeroReciboYear])
   @@index([rolId, fechaRecibo])
@@ -390,6 +428,7 @@ model Recibo {
   @@index([diligenciaId])
   @@index([notificacionId])
   @@index([documentoId])
+  @@index([documentVersionId])
 }
 
 model DocumentNumberSequence {

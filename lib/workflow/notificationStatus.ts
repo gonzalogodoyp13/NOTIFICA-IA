@@ -4,6 +4,8 @@ type WorkflowDocument = {
   id?: string | null
   tipo?: string | null
   pdfId?: string | null
+  currentVersionId?: string | null
+  currentVersion?: { deletedAt?: Date | string | null } | null
   voidedAt?: Date | string | null
   createdAt?: Date | string | null
 }
@@ -26,7 +28,8 @@ function documentTime(document: WorkflowDocument) {
 }
 
 function isValidWorkflowDocument(document: WorkflowDocument, tipo: 'Recibo' | 'Estampo') {
-  return document.tipo === tipo && !document.voidedAt && !!document.pdfId
+  const hasActiveStoredVersion = !!document.currentVersionId && !document.currentVersion?.deletedAt
+  return document.tipo === tipo && !document.voidedAt && (!!document.pdfId || hasActiveStoredVersion)
 }
 
 function latestValidDocument(documents: WorkflowDocument[], tipo: 'Recibo' | 'Estampo') {

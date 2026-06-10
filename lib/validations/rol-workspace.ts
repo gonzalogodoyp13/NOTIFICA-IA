@@ -44,6 +44,7 @@ export const ReciboGenerateSchema = z.object({
   monto: z.number().min(0, 'El monto debe ser mayor o igual a 0'),
   medio: z.string().min(1, 'El medio de pago es requerido'),
   referencia: z.string().optional(),
+  otros: z.number().min(0, 'Otros debe ser mayor o igual a 0').optional(),
   variables: z.record(z.string()).optional(),
   tipoEstampoNombre: z.string().optional(), // Nuevo campo para el nombre del estampo
   regenerate: z.boolean().optional(),

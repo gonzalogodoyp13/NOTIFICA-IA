@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 
 import { getCurrentUserWithOffice } from '@/lib/auth-server'
 import { buildDocumentGenerationMetadata } from '@/lib/documents/generationMetadata'
+import { hasStoredPdf, uploadPdfToDocumentStorage } from '@/lib/documents/storage'
 import { prisma } from '@/lib/prisma'
 import { EstampoGenerateSchema } from '@/lib/validations/rol-workspace'
 import { formatCuantiaCLP } from '@/lib/utils/cuantia'
@@ -9,8 +10,7 @@ import { formatDateToSpanishWords } from '@/lib/utils/dateFormat'
 import { drawRolHeader, type HeaderData } from '@/lib/pdf/header'
 import { replaceVariables } from '@/lib/estampos/text'
 import { buildEstampoPdf } from '@/lib/estampos/pdf'
-import fs from 'fs'
-import path from 'path'
+import { loadOfficePdfConfig, loadOfficePdfImages, type OfficePdfConfig } from '@/lib/pdf/officeConfig'
 
 export const dynamic = 'force-dynamic'
 
@@ -22,6 +22,7 @@ type DiligenciaWithRelations = NonNullable<
 function buildEstampoVariables(
   diligencia: DiligenciaWithRelations,
   dbUser: { officeName: string } | null,
+  officePdfConfig: Pick<OfficePdfConfig, 'receptorNombre'> | null,
   ejecutadoFromNotificacion?: any
 ): Record<string, string> {
   const meta = diligencia.meta as Record<string, unknown> | null
@@ -108,7 +109,7 @@ function buildEstampoVariables(
     hora_diligencia: horaEjecucion,
 
     // Receptor
-    receptor_nombre: dbUser?.officeName ?? 'Receptor Judicial',
+    receptor_nombre: officePdfConfig?.receptorNombre ?? dbUser?.officeName ?? 'Receptor Judicial',
 
     // Placeholders vacíos (para futuro uso)
     n_operacion: (meta?.n_operacion as string) ?? '',
@@ -241,29 +242,21 @@ export async function POST(
       ? data.contenidoPersonalizado
       : (estampo.contenido || 'Estampo generado para $rol')
 
+    const [officeImages, officePdfConfig] = await Promise.all([
+      loadOfficePdfImages(user.officeId),
+      loadOfficePdfConfig(user.officeId, dbUser?.officeName ?? null),
+    ])
+
     // Build complete variable map from diligencia data
-    const variableMap = buildEstampoVariables(diligencia, dbUser, ejecutadoFromNotificacion)
+    const variableMap = buildEstampoVariables(diligencia, dbUser, officePdfConfig, ejecutadoFromNotificacion)
     const filled = replaceVariables(template, variableMap)
 
     // Get ejecutadoNombre for header (from variableMap)
     const ejecutadoNombre = variableMap.nombre_ejecutado || null
 
-    // Load signature and seal images
-    const firmaPath = path.resolve('./public/mock-firma.png')
-    const selloPath = path.resolve('./public/mock-sello.png')
-    const officeImages: { firma?: Uint8Array; sello?: Uint8Array } = {}
-
-    if (fs.existsSync(firmaPath)) {
-      officeImages.firma = await fs.promises.readFile(firmaPath)
-    }
-
-    if (fs.existsSync(selloPath)) {
-      officeImages.sello = await fs.promises.readFile(selloPath)
-    }
-
     // Extract header data
     const headerData: HeaderData = {
-      receptorNombre: dbUser?.officeName ?? 'Receptor Judicial', // User authenticated (receptor)
+      receptorNombre: officePdfConfig.receptorNombre,
       tribunalNombre: diligencia.rol.tribunal?.nombre ?? null,
       rolNumero: diligencia.rol.rol,
       bancoNombre: diligencia.rol.demanda?.abogados?.bancos?.[0]?.banco?.nombre ?? null,
@@ -290,31 +283,53 @@ export async function POST(
         estampoId: estampo.id,
         nombre: `Estampo ${estampo.nombre}`,
         tipo: 'Estampo',
-        pdfId: pdfBase64,
+        pdfId: null,
         version: 1,
         ...generationMetadata,
       },
+    })
+    const storedPdf = await uploadPdfToDocumentStorage({
+      pdfBase64,
+      officeId: user.officeId,
+      rolId: diligencia.rolId,
+      documentoId: documento.id,
+      versionNumber: 1,
+      fileName: documento.nombre,
+      createdAt: documento.createdAt,
+    })
+    const documentVersion = await prisma.documentoVersion.create({
+      data: {
+        documentoId: documento.id,
+        versionNumber: 1,
+        ...storedPdf,
+        createdByUserId: user.id,
+      },
+    })
+    const documentoWithVersion = await prisma.documento.update({
+      where: { id: documento.id },
+      data: { currentVersionId: documentVersion.id },
+      include: { currentVersion: true },
     })
 
     return NextResponse.json({
       ok: true,
       data: {
-        id: documento.id,
-        nombre: documento.nombre,
-        tipo: documento.tipo,
-        version: documento.version,
-        hasPdf: !!documento.pdfId,
-        createdAt: documento.createdAt.toISOString(),
-        diligenciaId: documento.diligenciaId,
-        notificacionId: documento.notificacionId,
+        id: documentoWithVersion.id,
+        nombre: documentoWithVersion.nombre,
+        tipo: documentoWithVersion.tipo,
+        version: documentoWithVersion.version,
+        hasPdf: hasStoredPdf(documentoWithVersion),
+        createdAt: documentoWithVersion.createdAt.toISOString(),
+        diligenciaId: documentoWithVersion.diligenciaId,
+        notificacionId: documentoWithVersion.notificacionId,
         voidedAt: null,
         voidReason: null,
         voidedByUserId: null,
-        generatedByUserId: documento.generatedByUserId,
-        generatedAt: documento.generatedAt ? documento.generatedAt.toISOString() : null,
-        sourceTemplate: documento.sourceTemplate,
-        generationVariables: documento.generationVariables,
-        generationVersion: documento.generationVersion,
+        generatedByUserId: documentoWithVersion.generatedByUserId,
+        generatedAt: documentoWithVersion.generatedAt ? documentoWithVersion.generatedAt.toISOString() : null,
+        sourceTemplate: documentoWithVersion.sourceTemplate,
+        generationVariables: documentoWithVersion.generationVariables,
+        generationVersion: documentoWithVersion.generationVersion,
         diligencia: {
           id: diligencia.id,
           tipo: null,

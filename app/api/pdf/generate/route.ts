@@ -7,8 +7,7 @@ import { drawRolHeader } from "@/lib/pdf/header";
 import { getCurrentUserWithOffice } from "@/lib/auth-server";
 import { prisma } from "@/lib/prisma";
 import { formatCuantiaCLP } from "@/lib/utils/cuantia";
-import fs from "fs";
-import path from "path";
+import { loadOfficePdfConfig, loadOfficePdfImages } from "@/lib/pdf/officeConfig";
 
 export async function POST(req: NextRequest) {
   try {
@@ -36,18 +35,6 @@ export async function POST(req: NextRequest) {
       filled = filled.replaceAll(`$${key}`, String(val ?? ""));
     });
 
-    const firmaPath = path.resolve("./public/mock-firma.png");
-    const selloPath = path.resolve("./public/mock-sello.png");
-    const officeImages: { firma?: Uint8Array; sello?: Uint8Array } = {};
-
-    if (fs.existsSync(firmaPath)) {
-      officeImages.firma = await fs.promises.readFile(firmaPath);
-    }
-
-    if (fs.existsSync(selloPath)) {
-      officeImages.sello = await fs.promises.readFile(selloPath);
-    }
-
     const pdf = await PDFDocument.create();
     let page = pdf.addPage();
     const margin = 50;
@@ -65,10 +52,16 @@ export async function POST(req: NextRequest) {
           select: { officeName: true },
         })
       : null;
+    const [officeImages, officePdfConfig] = user
+      ? await Promise.all([
+          loadOfficePdfImages(user.officeId),
+          loadOfficePdfConfig(user.officeId, dbUser?.officeName ?? null),
+        ])
+      : [{}, null] as const;
 
     // Draw header before content
     const headerData = {
-      receptorNombre: dbUser?.officeName ?? "Receptor Judicial",
+      receptorNombre: officePdfConfig?.receptorNombre ?? dbUser?.officeName ?? "Receptor Judicial",
       tribunalNombre: (variables.tribunal as string | undefined) ?? sample.tribunal,
       rolNumero: (variables.rol as string | undefined) ?? sample.rol,
       bancoNombre: "Banco de Chile", // Mock for preview

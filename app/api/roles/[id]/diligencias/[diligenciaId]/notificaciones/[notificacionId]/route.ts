@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { Prisma } from '@prisma/client'
 
 import { getCurrentUserWithOffice } from '@/lib/auth-server'
+import { deletePdfFromDocumentStorage } from '@/lib/documents/storage'
 import { prisma } from '@/lib/prisma'
 
 export const dynamic = 'force-dynamic'
@@ -194,6 +195,25 @@ export async function DELETE(
     }
 
     await req.json().catch(() => null)
+
+    const documentos = await prisma.documento.findMany({
+      where: { notificacionId: params.notificacionId } as any,
+      include: {
+        versions: {
+          where: { deletedAt: null },
+          select: {
+            storageBucket: true,
+            storageKey: true,
+          },
+        },
+      },
+    })
+
+    for (const documento of documentos) {
+      for (const version of documento.versions) {
+        await deletePdfFromDocumentStorage(version.storageBucket, version.storageKey)
+      }
+    }
 
     await prisma.$transaction(async tx => {
       await tx.recibo.deleteMany({

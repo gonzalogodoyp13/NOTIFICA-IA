@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 
 import { getCurrentUserWithOffice } from '@/lib/auth-server'
+import { hasStoredPdf, uploadPdfToDocumentStorage } from '@/lib/documents/storage'
 import { prisma } from '@/lib/prisma'
 import { buildMembretePdf } from '@/lib/pdf/membrete'
 import { MembreteGenerateSchema } from '@/lib/validations/rol-workspace'
@@ -97,20 +98,42 @@ export async function POST(
         rolId: rol.id,
         nombre: `Membrete ${ejecutado.nombre}`,
         tipo: 'Membrete',
-        pdfId: pdfBase64,
+        pdfId: null,
         version: 1,
       },
+    })
+    const storedPdf = await uploadPdfToDocumentStorage({
+      pdfBase64,
+      officeId: user.officeId,
+      rolId: rol.id,
+      documentoId: documento.id,
+      versionNumber: 1,
+      fileName: documento.nombre,
+      createdAt: documento.createdAt,
+    })
+    const documentVersion = await prisma.documentoVersion.create({
+      data: {
+        documentoId: documento.id,
+        versionNumber: 1,
+        ...storedPdf,
+        createdByUserId: user.id,
+      },
+    })
+    const documentoWithVersion = await prisma.documento.update({
+      where: { id: documento.id },
+      data: { currentVersionId: documentVersion.id },
+      include: { currentVersion: true },
     })
 
     return NextResponse.json({
       ok: true,
       data: {
-        id: documento.id,
-        nombre: documento.nombre,
-        tipo: documento.tipo,
-        version: documento.version,
-        hasPdf: !!documento.pdfId,
-        createdAt: documento.createdAt.toISOString(),
+        id: documentoWithVersion.id,
+        nombre: documentoWithVersion.nombre,
+        tipo: documentoWithVersion.tipo,
+        version: documentoWithVersion.version,
+        hasPdf: hasStoredPdf(documentoWithVersion),
+        createdAt: documentoWithVersion.createdAt.toISOString(),
       },
     })
   } catch (error) {

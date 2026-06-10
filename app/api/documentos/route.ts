@@ -2,6 +2,7 @@
 // GET/POST/PUT/DELETE: CRUD operations for Documento (ROL Phase 4)
 import { NextRequest, NextResponse } from 'next/server'
 import { getCurrentUserWithOffice } from '@/lib/auth-server'
+import { deletePdfFromDocumentStorage } from '@/lib/documents/storage'
 import { prisma } from '@/lib/prisma'
 import { zDocumento, zDocumentoUpdate } from '@/lib/validations/documento'
 import { ZodError } from 'zod'
@@ -52,6 +53,7 @@ export async function GET(req: NextRequest) {
       include: {
         estampo: true,
         estampoBase: true,
+        currentVersion: true,
         diligencia: {
           select: {
             id: true,
@@ -154,12 +156,13 @@ export async function POST(req: NextRequest) {
         estampoBaseId: parsed.data.estampoBaseId || null,
         nombre: parsed.data.nombre,
         tipo: parsed.data.tipo,
-        pdfId: parsed.data.pdfId || null,
+        pdfId: null,
         version: parsed.data.version,
       },
       include: {
         estampo: true,
         estampoBase: true,
+        currentVersion: true,
         diligencia: {
           select: {
             id: true,
@@ -248,6 +251,7 @@ export async function PUT(req: NextRequest) {
       include: {
         estampo: true,
         estampoBase: true,
+        currentVersion: true,
         diligencia: {
           select: {
             id: true,
@@ -306,6 +310,17 @@ export async function DELETE(req: NextRequest) {
           officeId: user.officeId,
         },
       },
+      include: {
+        versions: {
+          where: {
+            deletedAt: null,
+          },
+          select: {
+            storageBucket: true,
+            storageKey: true,
+          },
+        },
+      },
     })
 
     if (!documento) {
@@ -313,6 +328,10 @@ export async function DELETE(req: NextRequest) {
         { ok: false, error: 'Documento no encontrado o no pertenece a tu oficina' },
         { status: 404 }
       )
+    }
+
+    for (const version of documento.versions) {
+      await deletePdfFromDocumentStorage(version.storageBucket, version.storageKey)
     }
 
     await prisma.documento.delete({

@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
-import fs from 'fs'
-import path from 'path'
 
 import { getCurrentUserWithOffice } from '@/lib/auth-server'
 import { buildDocumentGenerationMetadata } from '@/lib/documents/generationMetadata'
+import { hasStoredPdf, uploadPdfToDocumentStorage } from '@/lib/documents/storage'
 import { prisma } from '@/lib/prisma'
+import { loadOfficePdfConfig, loadOfficePdfImages } from '@/lib/pdf/officeConfig'
 import { buildWizardInitialVariables, loadWizardDiligenciaContext, loadWizardEstampoTemplate } from '@/lib/estampos/server'
 import { computeDerivedVariables, renderEstampoTemplate, type DiligenciaWithRelations } from '@/lib/estampos/runtime'
 import { buildEstampoPdf } from '@/lib/estampos/pdf'
@@ -130,20 +130,13 @@ export async function POST(
       finalText = renderEstampoTemplate(textoTemplate, finalVariables)
     }
 
-    const firmaPath = path.resolve('./public/mock-firma.png')
-    const selloPath = path.resolve('./public/mock-sello.png')
-    const officeImages: { firma?: Uint8Array; sello?: Uint8Array } = {}
-
-    if (fs.existsSync(firmaPath)) {
-      officeImages.firma = await fs.promises.readFile(firmaPath)
-    }
-
-    if (fs.existsSync(selloPath)) {
-      officeImages.sello = await fs.promises.readFile(selloPath)
-    }
+    const [officeImages, officePdfConfig] = await Promise.all([
+      loadOfficePdfImages(user.officeId),
+      loadOfficePdfConfig(user.officeId, dbUser?.officeName ?? null),
+    ])
 
     const headerData: HeaderData = {
-      receptorNombre: dbUser?.officeName ?? 'Receptor Judicial',
+      receptorNombre: officePdfConfig.receptorNombre,
       tribunalNombre: diligencia.rol.tribunal?.nombre ?? null,
       rolNumero: diligencia.rol.rol,
       bancoNombre: diligencia.rol.demanda?.abogados?.bancos?.[0]?.banco?.nombre ?? null,
@@ -172,33 +165,55 @@ export async function POST(
         estampoBaseId,
         nombre: `Estampo ${estampoBase.nombreVisible}`,
         tipo: 'Estampo',
-        pdfId: pdfBase64,
+        pdfId: null,
         textoEditado: textoEditado || null,
         version: 1,
         ...generationMetadata,
       },
+    })
+    const storedPdf = await uploadPdfToDocumentStorage({
+      pdfBase64,
+      officeId: user.officeId,
+      rolId: diligencia.rolId,
+      documentoId: documento.id,
+      versionNumber: 1,
+      fileName: documento.nombre,
+      createdAt: documento.createdAt,
+    })
+    const documentVersion = await prisma.documentoVersion.create({
+      data: {
+        documentoId: documento.id,
+        versionNumber: 1,
+        ...storedPdf,
+        createdByUserId: user.id,
+      },
+    })
+    const documentoWithVersion = await prisma.documento.update({
+      where: { id: documento.id },
+      data: { currentVersionId: documentVersion.id },
+      include: { currentVersion: true },
     })
 
     return NextResponse.json({
       ok: true,
       data: {
         documento: {
-          id: documento.id,
-          nombre: documento.nombre,
-          tipo: documento.tipo,
-          version: documento.version,
-          hasPdf: !!documento.pdfId,
-          createdAt: documento.createdAt.toISOString(),
-          diligenciaId: documento.diligenciaId,
-          notificacionId: documento.notificacionId,
+          id: documentoWithVersion.id,
+          nombre: documentoWithVersion.nombre,
+          tipo: documentoWithVersion.tipo,
+          version: documentoWithVersion.version,
+          hasPdf: hasStoredPdf(documentoWithVersion),
+          createdAt: documentoWithVersion.createdAt.toISOString(),
+          diligenciaId: documentoWithVersion.diligenciaId,
+          notificacionId: documentoWithVersion.notificacionId,
           voidedAt: null,
           voidReason: null,
           voidedByUserId: null,
-          generatedByUserId: documento.generatedByUserId,
-          generatedAt: documento.generatedAt ? documento.generatedAt.toISOString() : null,
-          sourceTemplate: documento.sourceTemplate,
-          generationVariables: documento.generationVariables,
-          generationVersion: documento.generationVersion,
+          generatedByUserId: documentoWithVersion.generatedByUserId,
+          generatedAt: documentoWithVersion.generatedAt ? documentoWithVersion.generatedAt.toISOString() : null,
+          sourceTemplate: documentoWithVersion.sourceTemplate,
+          generationVariables: documentoWithVersion.generationVariables,
+          generationVersion: documentoWithVersion.generationVersion,
           diligencia: {
             id: diligencia.id,
             tipo: null,

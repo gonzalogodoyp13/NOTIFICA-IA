@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 
 import { getCurrentUserWithOffice } from '@/lib/auth-server'
+import { hasStoredPdf } from '@/lib/documents/storage'
 import { prisma } from '@/lib/prisma'
 
 export const dynamic = 'force-dynamic'
@@ -48,6 +49,7 @@ export async function GET(
         },
         estampo: true,
         estampoBase: true,
+        currentVersion: true,
       },
       orderBy: { createdAt: 'desc' },
     })
@@ -57,7 +59,7 @@ export async function GET(
       nombre: doc.nombre,
       tipo: doc.tipo,
       version: doc.version,
-      hasPdf: !!doc.pdfId,
+      hasPdf: hasStoredPdf(doc),
       createdAt: doc.createdAt.toISOString(),
       diligenciaId: doc.diligenciaId ?? doc.diligencia?.id ?? null,
       notificacionId: (doc as any).notificacionId ?? null,

@@ -89,8 +89,11 @@ export async function GET(req: NextRequest) {
         documentos: {
           where: {
             tipo: 'Estampo',
-            pdfId: { not: null },
             voidedAt: null,
+            OR: [
+              { pdfId: { not: null } },
+              { currentVersion: { is: { deletedAt: null } } },
+            ],
           },
           select: {
             id: true,
@@ -106,8 +109,11 @@ export async function GET(req: NextRequest) {
             documentos: {
               where: {
                 tipo: 'Estampo',
-                pdfId: { not: null },
                 voidedAt: null,
+                OR: [
+                  { pdfId: { not: null } },
+                  { currentVersion: { is: { deletedAt: null } } },
+                ],
               },
               select: {
                 id: true,

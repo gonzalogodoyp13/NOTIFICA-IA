@@ -2,9 +2,11 @@ import { NextRequest, NextResponse } from 'next/server'
 
 import { getCurrentUserWithOffice } from '@/lib/auth-server'
 import { buildDocumentGenerationMetadata } from '@/lib/documents/generationMetadata'
+import { hasStoredPdf, uploadPdfToDocumentStorage } from '@/lib/documents/storage'
 import { prisma } from '@/lib/prisma'
 import { ReciboGenerateSchema } from '@/lib/validations/rol-workspace'
-import { buildReciboVariables, buildReciboPdf, loadReciboStamp } from '@/lib/pdf/recibo'
+import { buildReciboVariables, buildReciboPdf, loadOfficeReciboStampForPdf } from '@/lib/pdf/recibo'
+import { loadOfficePdfConfig } from '@/lib/pdf/officeConfig'
 import type { DiligenciaWithReciboRelations } from '@/lib/pdf/recibo'
 
 export const dynamic = 'force-dynamic'
@@ -157,7 +159,10 @@ export async function POST(
 
     const fechaRecibo = new Date()
     const numeroReciboYear = fechaRecibo.getFullYear()
-    const stampBytes = await loadReciboStamp()
+    const [stampBytes, officePdfConfig] = await Promise.all([
+      loadOfficeReciboStampForPdf(user.officeId),
+      loadOfficePdfConfig(user.officeId, dbUser?.officeName ?? null),
+    ])
 
     const result = await prisma.$transaction(async tx => {
       if (notificacionId) {
@@ -170,12 +175,18 @@ export async function POST(
             notificacionId,
             tipo: 'Recibo',
             voidedAt: null,
-            pdfId: { not: null },
+            OR: [
+              { pdfId: { not: null } },
+              { currentVersion: { is: { deletedAt: null } } },
+            ],
+          },
+          include: {
+            currentVersion: true,
           },
           orderBy: { createdAt: 'desc' },
         })
 
-        if (existingDocumento && data.regenerate !== true) {
+        if (existingDocumento && hasStoredPdf(existingDocumento) && data.regenerate !== true) {
           const existingRecibo = await tx.recibo.findFirst({
             where: {
               notificacionId,
@@ -193,32 +204,6 @@ export async function POST(
               createdAt: existingDocumento.createdAt.toISOString(),
             },
           }
-        }
-
-        if (data.regenerate === true) {
-          const existingReciboDocumentos = await tx.documento.findMany({
-            where: {
-              notificacionId,
-              tipo: 'Recibo',
-            },
-            select: { id: true },
-          })
-          const documentoIds = existingReciboDocumentos.map(documento => documento.id)
-
-          await tx.recibo.deleteMany({
-            where: {
-              OR: [
-                { notificacionId },
-                ...(documentoIds.length > 0 ? [{ documentoId: { in: documentoIds } }] : []),
-              ],
-            },
-          })
-
-          await tx.documento.deleteMany({
-            where: {
-              id: { in: documentoIds },
-            },
-          })
         }
       }
 
@@ -254,13 +239,15 @@ export async function POST(
       const variables = buildReciboVariables(
         diligencia,
         dbUser,
+        officePdfConfig,
         numeroRecibo,
         data.monto,
         data.medio,
         fechaEjecucion,
         data.referencia,
         data.tipoEstampoNombre,
-        ejecutadoFromNotificacion
+        ejecutadoFromNotificacion,
+        data.otros ?? 0
       )
       const pdfBase64 = await buildReciboPdf(variables, stampBytes)
       const numeroBoleta = data.referencia?.trim() || variables.n_operacion.trim() || null
@@ -275,16 +262,75 @@ export async function POST(
         variables,
       })
 
-      const createdDocumento = await tx.documento.create({
+      const existingLogicalDocumento =
+        notificacionId && data.regenerate === true
+          ? await tx.documento.findFirst({
+              where: {
+                notificacionId,
+                tipo: 'Recibo',
+                voidedAt: null,
+              },
+              orderBy: { createdAt: 'desc' },
+            })
+          : null
+
+      const documento = existingLogicalDocumento
+        ? await tx.documento.update({
+            where: { id: existingLogicalDocumento.id },
+            data: {
+              nombre: `Recibo ${variables.numero_recibo}`,
+              version: { increment: 1 },
+              ...generationMetadata,
+            },
+          })
+        : await tx.documento.create({
+            data: {
+              rolId: diligencia.rolId,
+              diligenciaId: diligencia.id,
+              notificacionId: notificacionId ?? null,
+              nombre: `Recibo ${variables.numero_recibo}`,
+              tipo: 'Recibo',
+              pdfId: null,
+              version: 1,
+              ...generationMetadata,
+            },
+          })
+
+      const latestVersion = await tx.documentoVersion.findFirst({
+        where: { documentoId: documento.id },
+        orderBy: { versionNumber: 'desc' },
+        select: { versionNumber: true },
+      })
+      const nextVersionNumber = Math.max(
+        latestVersion?.versionNumber ?? 0,
+        existingLogicalDocumento?.version ?? 0
+      ) + 1
+      const storedPdf = await uploadPdfToDocumentStorage({
+        pdfBase64,
+        officeId: user.officeId,
+        rolId: diligencia.rolId,
+        documentoId: documento.id,
+        versionNumber: nextVersionNumber,
+        fileName: documento.nombre,
+        createdAt: fechaRecibo,
+      })
+      const documentVersion = await tx.documentoVersion.create({
         data: {
-          rolId: diligencia.rolId,
-          diligenciaId: diligencia.id,
-          notificacionId: notificacionId ?? null,
-          nombre: `Recibo ${variables.numero_recibo}`,
-          tipo: 'Recibo',
-          pdfId: pdfBase64,
-          version: 1,
-          ...generationMetadata,
+          documentoId: documento.id,
+          versionNumber: nextVersionNumber,
+          ...storedPdf,
+          createdAt: fechaRecibo,
+          createdByUserId: user.id,
+        },
+      })
+      const createdDocumento = await tx.documento.update({
+        where: { id: documento.id },
+        data: {
+          currentVersionId: documentVersion.id,
+          version: nextVersionNumber,
+        },
+        include: {
+          currentVersion: true,
         },
       })
 
@@ -295,6 +341,7 @@ export async function POST(
           diligenciaId: diligencia.id,
           notificacionId: notificacionId ?? null,
           documentoId: createdDocumento.id,
+          documentVersionId: documentVersion.id,
           numeroRecibo: variables.numero_recibo,
           numeroReciboYear,
           numeroBoleta,
@@ -340,7 +387,7 @@ export async function POST(
         nombre: documento.nombre,
         tipo: documento.tipo,
         version: documento.version,
-        hasPdf: !!documento.pdfId,
+        hasPdf: hasStoredPdf(documento),
         createdAt: documento.createdAt.toISOString(),
         diligenciaId: documento.diligenciaId,
         notificacionId: documento.notificacionId,

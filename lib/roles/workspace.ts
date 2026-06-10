@@ -1,4 +1,5 @@
 import { prisma } from '@/lib/prisma'
+import { hasStoredPdf } from '@/lib/documents/storage'
 
 export async function loadRoleHeaderData(roleId: string, officeId: number) {
   const rolCausa = await prisma.rolCausa.findFirst({
@@ -129,6 +130,7 @@ export async function loadRoleSummaryData(roleId: string, officeId: number) {
               categoria: true,
             },
           },
+          currentVersion: true,
         },
         orderBy: {
           createdAt: 'desc',
@@ -269,7 +271,7 @@ export async function loadRoleSummaryData(roleId: string, officeId: number) {
     nombre: doc.nombre,
     tipo: doc.tipo,
     version: doc.version,
-    hasPdf: !!doc.pdfId,
+    hasPdf: hasStoredPdf(doc),
     createdAt: doc.createdAt.toISOString(),
     diligenciaId: doc.diligenciaId ?? doc.diligencia?.id ?? null,
     notificacionId: doc.notificacionId ?? null,

@@ -211,10 +211,14 @@ export async function GET(
               where: {
                 tipo: { in: ['Recibo', 'Estampo'] },
                 voidedAt: null,
-                pdfId: { not: null },
+                OR: [
+                  { pdfId: { not: null } },
+                  { currentVersion: { is: { deletedAt: null } } },
+                ],
               },
               orderBy: { createdAt: 'desc' },
               include: {
+                currentVersion: true,
                 estampoBase: {
                   select: {
                     id: true,

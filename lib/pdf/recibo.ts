@@ -3,8 +3,7 @@ import type { Diligencia, RolCausa, Demanda, Abogado, Banco, Ejecutado, Comuna, 
 import { formatCuantiaCLP } from '@/lib/utils/cuantia'
 import { formatDateToSpanishWords } from '@/lib/utils/dateFormat'
 import { wrapText } from '@/lib/pdf/textLayout'
-import fs from 'fs'
-import path from 'path'
+import { loadOfficeReciboStamp, type OfficePdfConfig } from '@/lib/pdf/officeConfig'
 
 // Tipo para diligencia con todas las relaciones necesarias para Recibo
 export type DiligenciaWithReciboRelations = Diligencia & {
@@ -53,13 +52,15 @@ export type ReciboVariables = {
 export function buildReciboVariables(
   diligencia: DiligenciaWithReciboRelations,
   dbUser: { officeName: string } | null,
+  officePdfConfig: Pick<OfficePdfConfig, 'receptorNombre' | 'receptorDireccionLinea'> | null,
   numeroRecibo: string,
   monto: number,
   medio: string,
   fechaEjecucion: Date,
   referencia?: string,
   tipoEstampoNombre?: string,
-  ejecutadoFromNotificacion?: any
+  ejecutadoFromNotificacion?: any,
+  otrosMonto: number = 0
 ): ReciboVariables {
   const meta = diligencia.meta as Record<string, unknown> | null
   
@@ -72,8 +73,8 @@ export function buildReciboVariables(
   const tipoDiligencia = diligencia.tipo ?? null
   
   // Receptor
-  const receptorNombre = dbUser?.officeName ?? 'Receptor Judicial'
-  const receptorDireccion = 'Dirección: Irarrázabal 0276 - Puente Alto - Fono: (22) 723 2376'
+  const receptorNombre = officePdfConfig?.receptorNombre ?? dbUser?.officeName ?? 'Receptor Judicial'
+  const receptorDireccion = officePdfConfig?.receptorDireccionLinea ?? ''
   
   // Datos del abogado
   const nombreAbogado = abogado?.nombre ?? ''
@@ -129,7 +130,7 @@ export function buildReciboVariables(
   
   // Montos
   const valorGestion = formatCuantiaCLP(monto || 0)
-  const otros = '0' // Hard-coded por ahora
+  const otros = formatCuantiaCLP(otrosMonto || 0)
   const totalAPagar = formatCuantiaCLP(monto || 0)
   
   return {
@@ -421,18 +422,11 @@ export async function buildReciboPdf(
   return Buffer.from(pdfBytes).toString('base64')
 }
 
-/**
- * Carga la imagen del sello "RECIBO PAGADO" desde public/
- */
 export async function loadReciboStamp(): Promise<Uint8Array | undefined> {
-  const stampPath = path.resolve('./public/recibo-pagado.png')
-  try {
-    if (fs.existsSync(stampPath)) {
-      return await fs.promises.readFile(stampPath)
-    }
-  } catch (error) {
-    console.warn('Error loading recibo stamp:', error)
-  }
-  return undefined
+  return loadOfficeReciboStamp(0)
+}
+
+export async function loadOfficeReciboStampForPdf(officeId: number): Promise<Uint8Array | undefined> {
+  return loadOfficeReciboStamp(officeId)
 }
 

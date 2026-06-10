@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 
 import { getCurrentUserWithOffice } from '@/lib/auth-server'
+import { downloadPdfFromDocumentStorage, hasStoredPdf, pdfBase64ToBuffer } from '@/lib/documents/storage'
 import { prisma } from '@/lib/prisma'
 
 export const dynamic = 'force-dynamic'
@@ -31,6 +32,7 @@ export async function GET(
             officeId: true,
           },
         },
+        currentVersion: true,
       },
     })
 
@@ -49,19 +51,24 @@ export async function GET(
       )
     }
 
-    // Validar que el documento tiene PDF
-    if (!documento.pdfId) {
+    // Validar que el documento tiene PDF almacenado o PDF legacy en base64
+    if (!hasStoredPdf(documento)) {
       return NextResponse.json(
         { ok: false, error: 'Este documento no tiene PDF asociado' },
         { status: 400 }
       )
     }
 
-    // Decodificar Base64 a Buffer
-    const pdfBuffer = Buffer.from(documento.pdfId, 'base64')
+    const pdfBuffer = documento.currentVersion && !documento.currentVersion.deletedAt
+      ? await downloadPdfFromDocumentStorage(
+          documento.currentVersion.storageBucket,
+          documento.currentVersion.storageKey
+        )
+      : pdfBase64ToBuffer(documento.pdfId ?? '')
 
     // Sanitizar nombre de archivo para evitar problemas
-    const fileName = documento.nombre.replace(/[^a-zA-Z0-9._-]/g, '_') + '.pdf'
+    const fileName = documento.currentVersion?.fileName ??
+      documento.nombre.replace(/[^a-zA-Z0-9._-]/g, '_') + '.pdf'
 
     // Determine Content-Disposition based on mode parameter
     const disposition = mode === 'inline' || mode === 'view'
