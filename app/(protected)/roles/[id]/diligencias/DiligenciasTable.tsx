@@ -1,4 +1,5 @@
-import { useMemo, useState, type MouseEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type MouseEvent } from 'react'
+import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { useCreateNotificacion, useDeleteNotificacion, useDiligencias, type DiligenciaItem, type NotificacionItem } from '@/lib/hooks/useRolWorkspace'
 import EjecutarWizard from './EjecutarWizard'
 import EstampoWizardModal from './EstampoWizardModal'
@@ -58,6 +59,11 @@ function getWorkflowStatusClass(status: NotificacionItem['workflowStatus']) {
 }
 
 export default function DiligenciasTable({ rolId }: DiligenciasTableProps) {
+  const router = useRouter()
+  const pathname = usePathname()
+  const searchParams = useSearchParams()
+  const consumedTargetRef = useRef<string | null>(null)
+  const highlightTimerRef = useRef<number | null>(null)
   const { data, isLoading, isError, error } = useDiligencias(rolId)
   const createNotificacion = useCreateNotificacion(rolId)
   const deleteNotificacion = useDeleteNotificacion(rolId)
@@ -67,6 +73,7 @@ export default function DiligenciasTable({ rolId }: DiligenciasTableProps) {
   const [ejecutarNotificacionId, setEjecutarNotificacionId] = useState<string | null>(null)
   const [ejecutarInitialStep, setEjecutarInitialStep] = useState<1 | 2 | 3 | undefined>(undefined)
   const [flashMessage, setFlashMessage] = useState<string | null>(null)
+  const [highlightedNotificationId, setHighlightedNotificationId] = useState<string | null>(null)
   const [wizardModalOpen, setWizardModalOpen] = useState<{ diligenciaId: string; categoria: string; notificacionId: string } | null>(null)
   const [ejecutadoModalOpen, setEjecutadoModalOpen] = useState<{ diligenciaId: string; ejecutados: Array<{ id: string; nombre: string; direccion: string }>; startImmediately?: boolean } | null>(null)
   const [selectedEjecutadoId, setSelectedEjecutadoId] = useState('')
@@ -91,6 +98,39 @@ export default function DiligenciasTable({ rolId }: DiligenciasTableProps) {
     }
     openWizardForNotificacion(diligencia, notif.id, 3)
   }
+
+  useEffect(() => {
+    if (!data) return
+    const diligenciaId = searchParams.get('diligenciaId')
+    const notificacionId = searchParams.get('notificacionId')
+    const step = Number(searchParams.get('step'))
+    if (!diligenciaId || !notificacionId || ![1, 2, 3].includes(step)) return
+    const targetKey = `${diligenciaId}:${notificacionId}:${step}`
+    if (consumedTargetRef.current === targetKey) return
+    consumedTargetRef.current = targetKey
+    const diligencia = data.find(item => item.id === diligenciaId)
+    const notification = diligencia?.notificaciones.find(item => item.id === notificacionId)
+    if (!diligencia || !notification) {
+      setFlashMessage('La notificacion solicitada ya no esta disponible.')
+    } else {
+      setHighlightedNotificationId(notificacionId)
+      if (highlightTimerRef.current) window.clearTimeout(highlightTimerRef.current)
+      highlightTimerRef.current = window.setTimeout(() => setHighlightedNotificationId(null), 4_000)
+      window.setTimeout(() => document.querySelector(`[data-notification-id="${notificacionId}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 50)
+      if (step === 3) openEstampoEditor(diligencia, notification as VisibleNotificacion)
+      else openWizardForNotificacion(diligencia, notificacionId, step as 1 | 2)
+    }
+    const params = new URLSearchParams(searchParams.toString())
+    params.delete('diligenciaId')
+    params.delete('notificacionId')
+    params.delete('step')
+    params.set('tab', 'diligencias')
+    router.replace(`${pathname}?${params.toString()}`, { scroll: false })
+  }, [data, pathname, router, searchParams]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => () => {
+    if (highlightTimerRef.current) window.clearTimeout(highlightTimerRef.current)
+  }, [])
 
   const createNotificacionForDiligencia = (diligencia: DiligenciaItem, options?: { startImmediately?: boolean; ejecutadoId?: string }) => {
     const ejecutados = diligencia.ejecutados ?? []
@@ -332,7 +372,7 @@ export default function DiligenciasTable({ rolId }: DiligenciasTableProps) {
                       const hasCompletedCycle = notif.workflowStatus === 'ejecutada'
 
                       return (
-                        <div key={notif.id} className={`grid gap-px bg-slate-200 md:grid-cols-[0.95fr_1.55fr] ${index === 0 ? '' : 'border-t border-slate-200'}`}>
+                        <div key={notif.id} data-notification-id={notif.id} className={`grid gap-px bg-slate-200 transition-shadow duration-500 md:grid-cols-[0.95fr_1.55fr] ${index === 0 ? '' : 'border-t border-slate-200'} ${highlightedNotificationId === notif.id ? 'relative z-10 ring-4 ring-amber-300 ring-offset-2' : ''}`}>
                         <div className={`${bodyCellClass} flex h-full flex-col`}>
                           <div className="text-[1.15rem] font-semibold text-slate-900">{notif._ejecutadoNombre}</div>
                           <div className="mt-1 text-[0.98rem] leading-7 text-slate-500">{notif._ejecutadoDireccion}</div>

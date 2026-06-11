@@ -3,7 +3,7 @@ const RUT_REDACTED = '[RUT oculto]'
 const PHONE_REDACTED = '[Telefono oculto]'
 
 const SENSITIVE_KEY_PATTERN =
-  /password|pass|token|authorization|cookie|secret|api[_-]?key|access[_-]?token|refresh[_-]?token/i
+  /password|pass|token|authorization|cookie|secret|api[_-]?key|access[_-]?token|refresh[_-]?token|pdf|base64|storage(Key|Bucket)|generationVariables/i
 
 const RUT_PATTERN = /\b\d{7,9}-[0-9Kk]\b/g
 const PHONE_PATTERN = /\b\d{9,11}\b/g

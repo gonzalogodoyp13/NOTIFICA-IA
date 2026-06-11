@@ -356,7 +356,7 @@ export async function POST(
       await tx.diligencia.update({
         where: { id: diligencia.id },
         data: {
-          estadoCobro: 'PAGADO',
+          estadoCobro: 'NO_PAGADO',
         },
       })
 

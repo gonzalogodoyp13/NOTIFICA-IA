@@ -1,10 +1,12 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 
 import RolHeader from './RolHeader'
 import RolTabs from './RolTabs'
 import { useRolData, useRolHeaderData } from '@/lib/hooks/useRolWorkspace'
+import { rememberRecentRole } from '@/lib/client/recentRoles'
 
 type RolTabKey = 'resumen' | 'diligencias' | 'documentos' | 'notas' | 'historial'
 
@@ -13,10 +15,29 @@ interface RolWorkspaceClientProps {
 }
 
 export default function RolWorkspaceClient({ rolId }: RolWorkspaceClientProps) {
-  const [activeTab, setActiveTab] = useState<RolTabKey>('resumen')
+  const router = useRouter()
+  const pathname = usePathname()
+  const searchParams = useSearchParams()
+  const requestedTab = searchParams.get('tab') as RolTabKey | null
+  const validTab = requestedTab && ['resumen', 'diligencias', 'documentos', 'notas', 'historial'].includes(requestedTab) ? requestedTab : 'resumen'
+  const [activeTab, setActiveTab] = useState<RolTabKey>(validTab)
   const { data: headerData, isLoading: isHeaderLoading, isError: isHeaderError, error: headerError } = useRolHeaderData(rolId)
   const isResumenTab = activeTab === 'resumen'
   const { data: rolData, isLoading: isRolLoading, isError: isRolError, error: rolError } = useRolData(rolId, isResumenTab)
+
+  useEffect(() => setActiveTab(validTab), [validTab])
+  useEffect(() => {
+    if (!headerData) return
+    rememberRecentRole({ id: rolId, rol: headerData.rol.numero, tribunal: headerData.tribunal?.nombre || 'Sin tribunal', caratula: '' })
+  }, [headerData, rolId])
+
+  const changeTab = (tab: RolTabKey) => {
+    setActiveTab(tab)
+    const params = new URLSearchParams(searchParams.toString())
+    params.set('tab', tab)
+    if (tab !== 'diligencias') { params.delete('diligenciaId'); params.delete('notificacionId'); params.delete('step') }
+    router.replace(`${pathname}?${params.toString()}`, { scroll: false })
+  }
 
   const ActiveTabComponent = useMemo(() => {
     switch (activeTab) {
@@ -39,7 +60,7 @@ export default function RolWorkspaceClient({ rolId }: RolWorkspaceClientProps) {
     <div className="min-h-screen bg-transparent">
       <RolHeader data={headerData} isLoading={isHeaderLoading} />
       <div className="mx-auto max-w-7xl">
-        <RolTabs activeTab={activeTab} onTabChange={setActiveTab} />
+        <RolTabs activeTab={activeTab} onTabChange={changeTab} />
       </div>
       <main className="page-frame pb-10">
         <div className="app-section px-6 py-6">

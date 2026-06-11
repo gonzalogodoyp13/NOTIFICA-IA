@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 
 import { getCurrentUserWithOffice } from '@/lib/auth-server'
 import { prisma } from '@/lib/prisma'
+import { recordOperationalActivity } from '@/lib/audit/operationalActivity'
 
 export const dynamic = 'force-dynamic'
 
@@ -69,6 +70,8 @@ export async function POST(req: NextRequest) {
         })
       }
 
+      await recordOperationalActivity({ userId: user.id, officeId: user.officeId, eventType: 'bulk_payment', reciboIds, count: recibos.length })
+
       return NextResponse.json({ ok: true, data: { updatedCount: recibos.length } })
     }
 
@@ -90,6 +93,8 @@ export async function POST(req: NextRequest) {
           numeroBoleta,
         },
       })
+
+      await recordOperationalActivity({ userId: user.id, officeId: user.officeId, eventType: 'bulk_boleta', reciboIds, count: recibos.length, numeroBoleta })
 
       return NextResponse.json({
         ok: true,

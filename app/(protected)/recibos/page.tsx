@@ -633,6 +633,7 @@ export default function RecibosPage() {
     }
   }
 
+  const associateBoletaMode = searchParams.get('action') === 'associateBoleta'
   const rows = useMemo(() => data?.rows ?? [], [data?.rows])
   const rowIdsSignature = useMemo(() => rows.map(row => row.reciboId).join('|'), [rows])
   const selectedRowCount = rows.filter(row => selectedReceiptIds.includes(row.reciboId)).length
@@ -640,11 +641,11 @@ export default function RecibosPage() {
   const someRowsSelected = selectedRowCount > 0 && selectedRowCount < rows.length
 
   useEffect(() => {
-    const nextSelectedIds = rows.map(row => row.reciboId)
+    const nextSelectedIds = associateBoletaMode ? [] : rows.map(row => row.reciboId)
     setSelectedReceiptIds(current =>
       arraysMatch(current, nextSelectedIds) ? current : nextSelectedIds
     )
-  }, [rowIdsSignature, rows])
+  }, [associateBoletaMode, rowIdsSignature, rows])
 
   useEffect(() => {
     if (selectAllRef.current) {
@@ -800,6 +801,12 @@ export default function RecibosPage() {
               </Button>
             </div>
           </div>
+
+          {associateBoletaMode && (
+            <div className="mt-5 rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
+              <strong>Modo asociar boleta:</strong> selecciona uno o mas recibos, incluidos pagados o no pagados, y usa &quot;Asociar Nro Boleta externa&quot;. La seleccion comienza vacia.
+            </div>
+          )}
 
           <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
             <MultiSelectFilter

@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getCurrentUserWithOffice } from '@/lib/auth-server'
 import { getReceiptList, parseReceiptFilters } from '@/lib/recibos/query'
 import { buildRecibosWorkbook } from '@/lib/recibos/xlsx'
+import { recordOperationalActivity } from '@/lib/audit/operationalActivity'
 
 export const dynamic = 'force-dynamic'
 
@@ -29,6 +30,7 @@ export async function GET(req: NextRequest) {
       reciboIds,
     })
     const workbook = buildRecibosWorkbook(result.rows, result.summary.totalValorShown)
+    await recordOperationalActivity({ userId: user.id, officeId: user.officeId, eventType: 'receipt_export', reciboIds, count: result.rows.length })
 
     return new NextResponse(workbook, {
       status: 200,
