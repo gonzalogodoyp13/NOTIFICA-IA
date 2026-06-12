@@ -1,65 +1,55 @@
 import { z } from 'zod'
 
-const optionalIntArrayFromStrings = z
-  .array(z.string().trim())
-  .optional()
-  .default([])
-  .transform(values =>
-    values
-      .map(value => value.trim())
-      .filter(Boolean)
-      .map(value => Number.parseInt(value, 10))
-  )
-  .refine(values => values.every(value => Number.isInteger(value)), {
-    message: 'Valor numerico invalido',
-  })
+const stringArray = z.array(z.string().trim()).optional().default([])
 
-const optionalDateString = z
+const intArray = stringArray
+  .transform(values => values.filter(Boolean).map(value => Number.parseInt(value, 10)))
+  .refine(values => values.every(Number.isInteger), { message: 'Valor numerico invalido' })
+
+const optionalDate = z
   .string()
   .trim()
-  .refine(value => !value || !Number.isNaN(Date.parse(value)), {
-    message: 'Fecha invalida',
-  })
   .optional()
+  .transform(value => value || undefined)
+  .refine(value => !value || /^\d{4}-\d{2}-\d{2}$/.test(value), { message: 'Fecha invalida' })
+
+const optionalNumber = z.preprocess(
+  value => (value === '' || value === null || value === undefined ? undefined : value),
+  z.coerce.number().min(0).optional()
+)
 
 export const ReceiptFilterSchema = z
   .object({
-    procuradorIds: optionalIntArrayFromStrings,
-    bancoIds: optionalIntArrayFromStrings,
-    abogadoIds: optionalIntArrayFromStrings,
-    rol: z.string().trim().max(100).optional(),
-    fechaDesde: optionalDateString,
-    fechaHasta: optionalDateString,
+    procuradorIds: intArray,
+    bancoIds: intArray,
+    abogadoIds: intArray,
+    estados: z.array(z.enum(['PAGADO', 'NO_PAGADO'])).optional().default([]),
+    estampoTemplates: stringArray,
+    rol: z.string().trim().max(100).optional().transform(value => value || undefined),
+    fechaEjecucionDesde: optionalDate,
+    fechaEjecucionHasta: optionalDate,
+    numeroBoleta: z.string().trim().max(100).optional().transform(value => value || undefined),
+    boletaMatch: z.enum(['contains', 'exact']).default('contains'),
+    montoMin: optionalNumber,
+    montoMax: optionalNumber,
     page: z.coerce.number().int().min(1).default(1),
     pageSize: z.coerce.number().int().min(1).max(100).default(25),
   })
   .superRefine((value, ctx) => {
-    const requiresDateRange =
-      value.procuradorIds.length > 0 ||
-      value.bancoIds.length > 0 ||
-      value.abogadoIds.length > 0
-
-    if (requiresDateRange && (!value.fechaDesde || !value.fechaHasta)) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message:
-          'Debes indicar fecha desde y fecha hasta para filtrar por procurador, banco o abogado.',
-        path: ['fechaDesde'],
-      })
+    if (value.fechaEjecucionDesde && value.fechaEjecucionHasta && value.fechaEjecucionDesde > value.fechaEjecucionHasta) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'La fecha desde no puede ser mayor que la fecha hasta.', path: ['fechaEjecucionDesde'] })
     }
-
-    if (value.fechaDesde && value.fechaHasta) {
-      const desde = new Date(value.fechaDesde)
-      const hasta = new Date(value.fechaHasta)
-
-      if (desde > hasta) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: 'La fecha desde no puede ser mayor que la fecha hasta.',
-          path: ['fechaDesde'],
-        })
-      }
+    if (value.montoMin !== undefined && value.montoMax !== undefined && value.montoMin > value.montoMax) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'El monto minimo no puede ser mayor que el monto maximo.', path: ['montoMin'] })
     }
   })
+
+export const ReceiptExportSchema = z.object({
+  filters: ReceiptFilterSchema,
+  selection: z.discriminatedUnion('mode', [
+    z.object({ mode: z.literal('explicit'), reciboIds: z.array(z.string().min(1)).min(1).max(5000) }),
+    z.object({ mode: z.literal('allFiltered'), excludedIds: z.array(z.string().min(1)).max(5000).default([]) }),
+  ]),
+})
 
 export type ReceiptFiltersInput = z.infer<typeof ReceiptFilterSchema>

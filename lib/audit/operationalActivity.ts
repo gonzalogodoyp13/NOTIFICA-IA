@@ -10,6 +10,7 @@ export async function recordOperationalActivity(params: {
   reciboIds?: string[]
   count: number
   numeroBoleta?: string
+  fechaPago?: string
 }) {
   try {
     await prismaNoMiddleware.auditLog.create({
@@ -23,6 +24,7 @@ export async function recordOperationalActivity(params: {
           reciboIds: params.reciboIds?.slice(0, 100),
           count: params.count,
           numeroBoleta: params.numeroBoleta,
+          fechaPago: params.fechaPago,
         },
       },
     })

@@ -1,117 +1,25 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { z } from 'zod'
 
 import { getCurrentUserWithOffice } from '@/lib/auth-server'
-import { prisma } from '@/lib/prisma'
-import { recordOperationalActivity } from '@/lib/audit/operationalActivity'
+import { executeReceiptBulkOperation } from '@/lib/recibos/bulk'
 
 export const dynamic = 'force-dynamic'
 
-type BulkRecibosPayload = {
-  action?: 'markPaid' | 'associateBoleta'
-  reciboIds?: string[]
-  numeroBoleta?: string
-}
+const Schema = z.object({
+  action: z.enum(['markPaid', 'associateBoleta']), reciboIds: z.array(z.string().min(1)).min(1).max(25),
+  fechaPago: z.string().optional(), numeroBoleta: z.string().trim().max(100).optional(), stateHash: z.string().length(64),
+})
 
 export async function POST(req: NextRequest) {
   try {
     const user = await getCurrentUserWithOffice()
-
-    if (!user) {
-      return NextResponse.json(
-        { ok: false, error: 'No autorizado' },
-        { status: 401 }
-      )
-    }
-
-    const body = (await req.json()) as BulkRecibosPayload
-    const reciboIds = Array.from(new Set((body.reciboIds ?? []).filter(Boolean)))
-
-    if (reciboIds.length === 0) {
-      throw new Error('Debes seleccionar al menos un recibo.')
-    }
-
-    const recibos = await prisma.recibo.findMany({
-      where: {
-        id: { in: reciboIds },
-        rol: {
-          officeId: user.officeId,
-        },
-      },
-      select: {
-        id: true,
-        diligenciaId: true,
-      },
-    })
-
-    if (recibos.length !== reciboIds.length) {
-      throw new Error('Uno o mas recibos no existen o no pertenecen a tu oficina.')
-    }
-
-    if (body.action === 'markPaid') {
-      const diligenciaIds = Array.from(
-        new Set(
-          recibos
-            .map(recibo => recibo.diligenciaId)
-            .filter((value): value is string => Boolean(value))
-        )
-      )
-
-      if (diligenciaIds.length > 0) {
-        await prisma.diligencia.updateMany({
-          where: {
-            id: { in: diligenciaIds },
-            rol: {
-              officeId: user.officeId,
-            },
-          },
-          data: {
-            estadoCobro: 'PAGADO',
-          },
-        })
-      }
-
-      await recordOperationalActivity({ userId: user.id, officeId: user.officeId, eventType: 'bulk_payment', reciboIds, count: recibos.length })
-
-      return NextResponse.json({ ok: true, data: { updatedCount: recibos.length } })
-    }
-
-    if (body.action === 'associateBoleta') {
-      const numeroBoleta = body.numeroBoleta?.trim()
-
-      if (!numeroBoleta) {
-        throw new Error('Debes ingresar un numero de boleta.')
-      }
-
-      await prisma.recibo.updateMany({
-        where: {
-          id: { in: reciboIds },
-          rol: {
-            officeId: user.officeId,
-          },
-        },
-        data: {
-          numeroBoleta,
-        },
-      })
-
-      await recordOperationalActivity({ userId: user.id, officeId: user.officeId, eventType: 'bulk_boleta', reciboIds, count: recibos.length, numeroBoleta })
-
-      return NextResponse.json({
-        ok: true,
-        data: {
-          updatedCount: recibos.length,
-          numeroBoleta,
-        },
-      })
-    }
-
-    throw new Error('Accion no soportada.')
+    if (!user) return NextResponse.json({ ok: false, error: 'No autorizado' }, { status: 401 })
+    const parsed = Schema.safeParse(await req.json())
+    if (!parsed.success) throw new Error(parsed.error.issues[0]?.message ?? 'Datos invalidos.')
+    const { stateHash, ...input } = parsed.data
+    return NextResponse.json({ ok: true, data: await executeReceiptBulkOperation({ officeId: user.officeId, userId: user.id, input, stateHash }) })
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Error al actualizar recibos'
-
-    return NextResponse.json(
-      { ok: false, error: message },
-      { status: 400 }
-    )
+    return NextResponse.json({ ok: false, error: error instanceof Error ? error.message : 'Error al actualizar recibos' }, { status: 400 })
   }
 }

@@ -15,6 +15,7 @@ model User {
   createdAt  DateTime   @default(now())
   auditLogs  AuditLog[]
   demandas   Demanda[]
+  receiptBulkOperations ReceiptBulkOperation[]
   office     Office     @relation(fields: [officeId], references: [id], onDelete: Restrict, onUpdate: Cascade)
 
   @@index([officeId])
@@ -54,6 +55,7 @@ model Office {
   estampoCustoms EstampoCustom[] @relation("OfficeEstampoCustoms")
   recibos        Recibo[]
   documentNumberSequences DocumentNumberSequence[]
+  receiptBulkOperations ReceiptBulkOperation[]
 
   @@map("offices")
 }
@@ -304,6 +306,7 @@ model Diligencia {
   fecha          DateTime
   meta           Json?
   estadoCobro    EstadoCobro      @default(NO_PAGADO)
+  fechaPago      DateTime?
   createdAt      DateTime         @default(now())
   rol            RolCausa         @relation(fields: [rolId], references: [id])
   tipo           DiligenciaTipo   @relation(fields: [tipoId], references: [id])
@@ -311,6 +314,7 @@ model Diligencia {
   notificaciones Notificacion[]
 
   @@index([rolId, createdAt])
+  @@index([fechaPago])
 }
 
 model Notificacion {
@@ -429,6 +433,25 @@ model Recibo {
   @@index([notificacionId])
   @@index([documentoId])
   @@index([documentVersionId])
+}
+
+model ReceiptBulkOperation {
+  id            String   @id @default(cuid())
+  officeId      Int
+  userId        String
+  action        String
+  receiptIds    Json
+  beforeState   Json
+  afterState    Json
+  summary       Json?
+  createdAt     DateTime @default(now())
+  undoneAt      DateTime?
+  undoneByUserId String?
+  office        Office   @relation(fields: [officeId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  user          User     @relation(fields: [userId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  @@index([officeId, createdAt])
+  @@index([userId, createdAt])
 }
 
 model DocumentNumberSequence {
