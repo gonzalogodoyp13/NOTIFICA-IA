@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { Prisma } from '@prisma/client'
 
 import { getCurrentUserWithOffice } from '@/lib/auth-server'
+import { ApiError, apiFailure, parseApiInput } from '@/lib/api/server'
 import { buildDocumentGenerationMetadata } from '@/lib/documents/generationMetadata'
 import { hasStoredPdf, uploadPdfToDocumentStorage } from '@/lib/documents/storage'
 import { prisma } from '@/lib/prisma'
@@ -10,6 +12,12 @@ import { loadOfficePdfConfig } from '@/lib/pdf/officeConfig'
 import type { DiligenciaWithReciboRelations } from '@/lib/pdf/recibo'
 
 export const dynamic = 'force-dynamic'
+
+const reciboNotificationInclude = {
+  ejecutado: { include: { comunas: { select: { id: true, nombre: true } } } },
+} satisfies Prisma.NotificacionInclude
+
+type ReciboNotification = Prisma.NotificacionGetPayload<{ include: typeof reciboNotificationInclude }>
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === 'object' && !Array.isArray(value)
@@ -50,7 +58,7 @@ export async function POST(
     const user = await getCurrentUserWithOffice()
 
     if (!user) {
-      return NextResponse.json({ ok: false, error: 'No autorizado' }, { status: 401 })
+      return apiFailure(new ApiError('UNAUTHORIZED', 'No autorizado', 401))
     }
 
     const dbUser = await prisma.user.findUnique({
@@ -94,56 +102,33 @@ export async function POST(
     }) as DiligenciaWithReciboRelations | null
 
     if (!diligencia) {
-      return NextResponse.json(
-        { ok: false, error: 'Diligencia no encontrada o no pertenece a tu oficina' },
-        { status: 404 }
-      )
+      return apiFailure(new ApiError('NOT_FOUND', 'Diligencia no encontrada o no pertenece a tu oficina', 404))
     }
 
     const raw = await req.json().catch(() => ({}))
     const notificacionId = typeof raw?.notificacionId === 'string' ? raw.notificacionId : null
 
-    const parsed = ReciboGenerateSchema.safeParse(raw)
+    const data = parseApiInput(ReciboGenerateSchema, raw)
 
-    if (!parsed.success) {
-      return NextResponse.json({ ok: false, error: parsed.error.format() }, { status: 400 })
-    }
-
-    const data = parsed.data
-
-    let ejecutadoFromNotificacion: any
+    let ejecutadoFromNotificacion: ReciboNotification['ejecutado'] | undefined
     let notificacionMeta: unknown = null
 
     if (notificacionId) {
       const noti = await prisma.notificacion.findFirst({
         where: { id: notificacionId, diligenciaId: diligencia.id },
-        include: {
-          ejecutado: {
-            include: {
-              comunas: {
-                select: {
-                  id: true,
-                  nombre: true,
-                },
-              },
-            },
-          },
-        } as any,
+        include: reciboNotificationInclude,
       })
 
       if (!noti) {
-        return NextResponse.json({ ok: false, error: 'Notificacion no encontrada' }, { status: 404 })
+        return apiFailure(new ApiError('NOT_FOUND', 'Notificación no encontrada', 404))
       }
 
-      if (!(noti as any).ejecutadoId || !(noti as any).ejecutado) {
-        return NextResponse.json(
-          { ok: false, error: 'Esta notificacion requiere seleccionar un ejecutado antes de generar documentos.' },
-          { status: 400 }
-        )
+      if (!noti.ejecutadoId || !noti.ejecutado) {
+        return apiFailure(new ApiError('VALIDATION_ERROR', 'Esta notificación requiere seleccionar un ejecutado antes de generar documentos.', 400))
       }
 
-      ejecutadoFromNotificacion = (noti as any).ejecutado
-      notificacionMeta = (noti as any).meta ?? null
+      ejecutadoFromNotificacion = noti.ejecutado
+      notificacionMeta = noti.meta ?? null
     }
 
     const fechaEjecucion =
@@ -151,10 +136,7 @@ export async function POST(
       getFechaEjecucionFromMeta(diligencia.meta)
 
     if (!fechaEjecucion) {
-      return NextResponse.json(
-        { ok: false, error: 'Debes registrar la fecha de ejecucion antes de generar el recibo.' },
-        { status: 400 }
-      )
+      return apiFailure(new ApiError('VALIDATION_ERROR', 'Debes registrar la fecha de ejecución antes de generar el recibo.', 400))
     }
 
     const fechaRecibo = new Date()
@@ -166,7 +148,7 @@ export async function POST(
 
     const result = await prisma.$transaction(async tx => {
       if (notificacionId) {
-        await tx.$queryRaw`
+        await tx.$executeRaw`
           SELECT pg_advisory_xact_lock(hashtext(${`recibo-notificacion-${notificacionId}`}))
         `
 
@@ -367,15 +349,7 @@ export async function POST(
     })
 
     if (result.kind === 'conflict') {
-      return NextResponse.json(
-        {
-          ok: false,
-          code: 'RECIBO_EXISTS',
-          error: 'Ya existe un recibo para esta notificacion.',
-          existing: result.existing,
-        },
-        { status: 409 }
-      )
+      return apiFailure(new ApiError('CONFLICT', 'Ya existe un recibo para esta notificación.', 409))
     }
 
     const documento = result.documento
@@ -409,9 +383,6 @@ export async function POST(
     })
   } catch (error) {
     console.error('Error generando recibo:', error)
-    return NextResponse.json(
-      { ok: false, error: 'Error al generar el recibo' },
-      { status: 500 }
-    )
+    return apiFailure(new ApiError('INTERNAL_ERROR', 'Ocurrió un error inesperado', 500))
   }
 }

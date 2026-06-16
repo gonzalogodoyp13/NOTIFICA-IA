@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { Prisma } from '@prisma/client'
 
 import { getCurrentUserWithOffice } from '@/lib/auth-server'
+import { ApiError, apiFailure, parseApiInput } from '@/lib/api/server'
 import { buildDocumentGenerationMetadata } from '@/lib/documents/generationMetadata'
 import { hasStoredPdf, uploadPdfToDocumentStorage } from '@/lib/documents/storage'
 import { prisma } from '@/lib/prisma'
@@ -11,26 +13,36 @@ import { drawRolHeader, type HeaderData } from '@/lib/pdf/header'
 import { replaceVariables } from '@/lib/estampos/text'
 import { buildEstampoPdf } from '@/lib/estampos/pdf'
 import { loadOfficePdfConfig, loadOfficePdfImages, type OfficePdfConfig } from '@/lib/pdf/officeConfig'
+import { asJsonObject, getString } from '@/lib/utils/json'
+import type { EstampoEjecutado } from '@/lib/estampos/runtime'
 
 export const dynamic = 'force-dynamic'
 
 // Type for diligencia with all relations
-type DiligenciaWithRelations = NonNullable<
-  Awaited<ReturnType<typeof prisma.diligencia.findFirst>>
->
+const customEstampoDiligenciaInclude = {
+  rol: { include: {
+    tribunal: { select: { id: true, nombre: true } },
+    demanda: { include: {
+      abogados: { include: { bancos: { include: { banco: true } } } },
+      ejecutados: { include: { comunas: true } },
+    } },
+  } },
+} satisfies Prisma.DiligenciaInclude
+
+type DiligenciaWithRelations = Prisma.DiligenciaGetPayload<{ include: typeof customEstampoDiligenciaInclude }>
 
 function buildEstampoVariables(
   diligencia: DiligenciaWithRelations,
   dbUser: { officeName: string } | null,
   officePdfConfig: Pick<OfficePdfConfig, 'receptorNombre'> | null,
-  ejecutadoFromNotificacion?: any
+  ejecutadoFromNotificacion?: EstampoEjecutado | null
 ): Record<string, string> {
-  const meta = diligencia.meta as Record<string, unknown> | null
-  const ejecutadoId = meta?.ejecutadoId as string | undefined
+  const meta = asJsonObject(diligencia.meta)
+  const ejecutadoId = getString(meta?.ejecutadoId)
 
   // Seleccionar ejecutado
-  const ejecutados = (diligencia as any).rol?.demanda?.ejecutados ?? []
-  let ejecutado: any
+  const ejecutados = diligencia.rol.demanda?.ejecutados ?? []
+  let ejecutado: EstampoEjecutado | null | undefined
   
   if (ejecutadoFromNotificacion !== undefined) {
     // ejecutadoFromNotificacion was passed (notificacionId was provided)
@@ -39,18 +51,18 @@ function buildEstampoVariables(
   } else {
     // Legacy: notificacionId was NOT provided, use legacy behavior
     if (ejecutadoId) {
-      ejecutado = ejecutados.find((e: any) => e.id === ejecutadoId) ?? ejecutados[0]
+      ejecutado = ejecutados.find(e => e.id === ejecutadoId) ?? ejecutados[0]
     } else {
       ejecutado = ejecutados[0]
     }
   }
 
   // Datos del abogado
-  const abogado = (diligencia as any).rol?.demanda?.abogados
+  const abogado = diligencia.rol.demanda?.abogados
   const banco = abogado?.bancos?.[0]?.banco ?? null
 
   // Datos del tribunal
-  const tribunal = (diligencia as any).rol?.tribunal
+  const tribunal = diligencia.rol.tribunal
 
   // Fecha y hora
   const fechaEjecucion = meta?.fechaEjecucion
@@ -69,7 +81,7 @@ function buildEstampoVariables(
     typeof montoSeleccionadoRaw === 'number' && Number.isFinite(montoSeleccionadoRaw)
       ? montoSeleccionadoRaw
       : null
-  const cuantiaRaw = (diligencia as any).rol?.demanda?.cuantia
+  const cuantiaRaw = diligencia.rol.demanda?.cuantia
   const cuantiaFormatted = cuantiaRaw ? formatCuantiaCLP(cuantiaRaw) : ''
   const montoEjecutadoFormatted =
     montoSeleccionado !== null
@@ -94,7 +106,7 @@ function buildEstampoVariables(
       .join(', '),
 
     // ROL y Tribunal
-    rol: (diligencia as any).rol?.rol ?? '',
+    rol: diligencia.rol.rol,
     tribunal: tribunal?.nombre ?? '',
 
     // Carátula
@@ -112,7 +124,7 @@ function buildEstampoVariables(
     receptor_nombre: officePdfConfig?.receptorNombre ?? dbUser?.officeName ?? 'Receptor Judicial',
 
     // Placeholders vacíos (para futuro uso)
-    n_operacion: (meta?.n_operacion as string) ?? '',
+    n_operacion: getString(meta?.n_operacion) ?? '',
   }
 }
 
@@ -124,7 +136,7 @@ export async function POST(
     const user = await getCurrentUserWithOffice()
 
     if (!user) {
-      return NextResponse.json({ ok: false, error: 'No autorizado' }, { status: 401 })
+      return apiFailure(new ApiError('UNAUTHORIZED', 'No autorizado', 401))
     }
 
     // Get user with officeName from database
@@ -140,58 +152,20 @@ export async function POST(
           officeId: user.officeId,
         },
       },
-      include: {
-        rol: {
-          include: {
-            tribunal: {
-              select: {
-                id: true,
-                nombre: true,
-              },
-            },
-            demanda: {
-              include: {
-                abogados: {
-                  include: {
-                    bancos: {
-                      include: {
-                        banco: true,
-                      },
-                    },
-                  },
-                },
-                ejecutados: {
-                  include: {
-                    comunas: true,
-                  },
-                },
-              },
-            },
-          },
-        },
-      },
+      include: customEstampoDiligenciaInclude,
     })
 
     if (!diligencia) {
-      return NextResponse.json(
-        { ok: false, error: 'Diligencia no encontrada o no pertenece a tu oficina' },
-        { status: 404 }
-      )
+      return apiFailure(new ApiError('NOT_FOUND', 'Diligencia no encontrada o no pertenece a tu oficina', 404))
     }
 
     const raw = await req.json().catch(() => ({}))
     const notificacionId = typeof raw?.notificacionId === 'string' ? raw.notificacionId : null
 
-    const parsed = EstampoGenerateSchema.safeParse(raw)
-
-    if (!parsed.success) {
-      return NextResponse.json({ ok: false, error: parsed.error.format() }, { status: 400 })
-    }
-
-    const data = parsed.data
+    const data = parseApiInput(EstampoGenerateSchema, raw)
 
     // Store ejecutado from notificación if available
-    let ejecutadoFromNotificacion: any
+    let ejecutadoFromNotificacion: EstampoEjecutado | undefined
 
     if (notificacionId) {
       const noti = await prisma.notificacion.findFirst({
@@ -207,21 +181,18 @@ export async function POST(
               },
             },
           },
-        } as any,
+        },
       })
 
       if (!noti) {
-        return NextResponse.json({ ok: false, error: 'Notificación no encontrada' }, { status: 404 })
+        return apiFailure(new ApiError('NOT_FOUND', 'Notificación no encontrada', 404))
       }
 
-      if (!(noti as any).ejecutadoId || !(noti as any).ejecutado) {
-        return NextResponse.json(
-          { ok: false, error: 'Esta notificación requiere seleccionar un ejecutado antes de generar documentos.' },
-          { status: 400 }
-        )
+      if (!noti.ejecutadoId || !noti.ejecutado) {
+        return apiFailure(new ApiError('VALIDATION_ERROR', 'Esta notificación requiere seleccionar un ejecutado antes de generar documentos.', 400))
       }
 
-      ejecutadoFromNotificacion = (noti as any).ejecutado
+      ejecutadoFromNotificacion = noti.ejecutado
     }
 
     const estampo = await prisma.estampo.findFirst({
@@ -232,10 +203,7 @@ export async function POST(
     })
 
     if (!estampo) {
-      return NextResponse.json(
-        { ok: false, error: 'Estampo no encontrado en tu oficina' },
-        { status: 404 }
-      )
+      return apiFailure(new ApiError('NOT_FOUND', 'Estampo no encontrado en tu oficina', 404))
     }
 
     const template = data.contenidoPersonalizado
@@ -267,7 +235,7 @@ export async function POST(
     const generationMetadata = buildDocumentGenerationMetadata({
       userId: user.id,
       sourceTemplate: {
-        type: 'legacy-estampo',
+        type: 'custom-estampo',
         estampoId: estampo.id,
         name: estampo.nombre,
         version: 1,
@@ -343,11 +311,7 @@ export async function POST(
       },
     })
   } catch (error) {
-    console.error('Error generando estampo:', error)
-    return NextResponse.json(
-      { ok: false, error: 'Error al generar el estampo' },
-      { status: 500 }
-    )
+    return apiFailure(new ApiError('INTERNAL_ERROR', 'Ocurrió un error inesperado', 500))
   }
 }
 

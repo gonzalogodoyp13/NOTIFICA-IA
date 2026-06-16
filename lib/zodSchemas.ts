@@ -32,6 +32,8 @@ export const AbogadoSchema = z.object({
 
 export const TribunalSchema = z.object({
   nombre: z.string().min(2, "Nombre requerido"),
+  direccion: z.string().optional().nullable(),
+  comuna: z.string().optional().nullable(),
 });
 
 export const DiligenciaTipoSchema = z.object({
@@ -64,7 +66,7 @@ export const ArancelSchema = z.object({
     const hasCategoria = !!data.estampoBaseCategoria
     return hasEstampoId !== hasCategoria
   },
-  { message: "Debe proporcionar exactamente uno de: estampoId (legacy) o estampoBaseCategoria (wizard)" }
+  { message: "Debe proporcionar exactamente uno de: estampoId (personalizado) o estampoBaseCategoria (wizard)" }
 );
 
 export function parseArancelMonto(input: string | number): number {

@@ -1,130 +1,31 @@
-// API route: /api/tribunales/[id]
-// PUT: Update a tribunal
-// DELETE: Delete a tribunal
-import { NextRequest, NextResponse } from 'next/server'
-import { getCurrentUserWithOffice } from '@/lib/auth-server'
+import { NextRequest } from 'next/server'
+
+import { ApiError, apiSuccess, parseApiInput, withApiUser } from '@/lib/api/server'
 import { prisma } from '@/lib/prisma'
 import { TribunalSchema } from '@/lib/zodSchemas'
 
 export const dynamic = 'force-dynamic'
 
-export async function PUT(
-  req: NextRequest,
-  { params }: { params: { id: string } }
-) {
-  try {
-    const user = await getCurrentUserWithOffice()
-
-    if (!user) {
-      return NextResponse.json(
-        { ok: false, message: 'No autorizado', error: 'No autorizado' },
-        { status: 401 }
-      )
-    }
-
-    // Convert params.id to number for Phase 3 tribunales (Int ID)
-    const id = Number(params.id)
-    
-    if (isNaN(id) || !Number.isInteger(id)) {
-      return NextResponse.json(
-        { ok: false, message: 'ID inválido', error: 'ID debe ser un número entero válido' },
-        { status: 400 }
-      )
-    }
-
-    // Verify tribunal exists and belongs to user's office (Phase 3: tribunales table with Int ID)
-    const existingTribunal = await prisma.tribunales.findFirst({
-      where: {
-        id,
-        officeId: user.officeId,
-      },
-    })
-
-    if (!existingTribunal) {
-      return NextResponse.json(
-        { ok: false, message: 'Tribunal no encontrado o no pertenece a tu oficina', error: 'Tribunal no encontrado o no pertenece a tu oficina' },
-        { status: 404 }
-      )
-    }
-
-    const body = await req.json()
-    const parsed = TribunalSchema.safeParse(body)
-
-    if (!parsed.success) {
-      const errorMessage = parsed.error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')
-      return NextResponse.json(
-        { ok: false, message: errorMessage, error: errorMessage },
-        { status: 400 }
-      )
-    }
-
-    const tribunal = await prisma.tribunales.update({
-      where: { id },
-      data: parsed.data,
-    })
-
-    return NextResponse.json({ ok: true, data: tribunal })
-  } catch (error) {
-    console.error('Error updating tribunal:', error)
-    const errorMessage = error instanceof Error ? error.message : 'Error al actualizar el tribunal'
-    return NextResponse.json(
-      { ok: false, message: errorMessage, error: errorMessage },
-      { status: 500 }
-    )
-  }
+export async function PUT(req: NextRequest, { params }: { params: { id: string } }) {
+  return withApiUser(req, 'update tribunal', async user => {
+    const existing = await prisma.tribunal.findFirst({ where: { id: params.id, officeId: user.officeId } })
+    if (!existing) throw new ApiError('NOT_FOUND', 'Tribunal no encontrado', 404)
+    const data = parseApiInput(TribunalSchema, await req.json())
+    return apiSuccess(await prisma.tribunal.update({ where: { id: existing.id }, data }))
+  })
 }
 
-export async function DELETE(
-  req: NextRequest,
-  { params }: { params: { id: string } }
-) {
-  try {
-    const user = await getCurrentUserWithOffice()
-
-    if (!user) {
-      return NextResponse.json(
-        { ok: false, message: 'No autorizado', error: 'No autorizado' },
-        { status: 401 }
-      )
-    }
-
-    // Convert params.id to number for Phase 3 tribunales (Int ID)
-    const id = Number(params.id)
-    
-    if (isNaN(id) || !Number.isInteger(id)) {
-      return NextResponse.json(
-        { ok: false, message: 'ID inválido', error: 'ID debe ser un número entero válido' },
-        { status: 400 }
-      )
-    }
-
-    // Verify tribunal exists and belongs to user's office (Phase 3: tribunales table with Int ID)
-    const existingTribunal = await prisma.tribunales.findFirst({
-      where: {
-        id,
-        officeId: user.officeId,
-      },
+export async function DELETE(req: NextRequest, { params }: { params: { id: string } }) {
+  return withApiUser(req, 'delete tribunal', async user => {
+    const existing = await prisma.tribunal.findFirst({
+      where: { id: params.id, officeId: user.officeId },
+      select: { id: true, _count: { select: { roles: true } } },
     })
-
-    if (!existingTribunal) {
-      return NextResponse.json(
-        { ok: false, message: 'Tribunal no encontrado o no pertenece a tu oficina', error: 'Tribunal no encontrado o no pertenece a tu oficina' },
-        { status: 404 }
-      )
+    if (!existing) throw new ApiError('NOT_FOUND', 'Tribunal no encontrado', 404)
+    if (existing._count.roles > 0) {
+      throw new ApiError('CONFLICT', 'No se puede eliminar un tribunal asociado a causas', 409)
     }
-
-    await prisma.tribunales.delete({
-      where: { id },
-    })
-
-    return NextResponse.json({ ok: true, message: 'Tribunal eliminado correctamente' })
-  } catch (error) {
-    console.error('Error deleting tribunal:', error)
-    const errorMessage = error instanceof Error ? error.message : 'Error al eliminar el tribunal'
-    return NextResponse.json(
-      { ok: false, message: errorMessage, error: errorMessage },
-      { status: 500 }
-    )
-  }
+    await prisma.tribunal.delete({ where: { id: existing.id } })
+    return apiSuccess({ deleted: true })
+  })
 }
-

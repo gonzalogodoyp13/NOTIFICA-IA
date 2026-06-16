@@ -9,6 +9,12 @@
     "lint": "next lint",
     "check:utf8": "node scripts/check-utf8.mjs",
     "test:phase6": "ts-node --project scripts/tsconfig.json scripts/verify-phase6-recibos.ts",
+    "test:integration": "vitest run",
+    "test:e2e": "playwright test --config=playwright.config.ts",
+    "test:qa": "ts-node --project scripts/tsconfig.json scripts/run-qa-tests.ts",
+    "qa:auth": "playwright test --config=playwright.auth.config.ts --headed --project=chromium",
+    "db:seed:qa": "ts-node --project scripts/tsconfig.json scripts/qa-seed.ts seed",
+    "db:seed:qa:reset": "ts-node --project scripts/tsconfig.json scripts/qa-seed.ts reset",
     "db:generate": "prisma generate",
     "db:status": "prisma migrate status",
     "db:migrate": "prisma migrate deploy",
@@ -35,6 +41,7 @@
     "zod": "^3.25.76"
   },
   "devDependencies": {
+    "@playwright/test": "^1.61.0",
     "@types/node": "^20.14.12",
     "@types/react": "^18.3.3",
     "@types/react-dom": "^18.3.0",
@@ -45,6 +52,7 @@
     "prisma": "^5.19.1",
     "tailwindcss": "^3.4.6",
     "ts-node": "^10.9.2",
-    "typescript": "^5.5.3"
+    "typescript": "^5.5.3",
+    "vitest": "^4.1.9"
   }
 }

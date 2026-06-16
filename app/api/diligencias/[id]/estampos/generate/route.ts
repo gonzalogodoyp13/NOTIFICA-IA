@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 
 import { getCurrentUserWithOffice } from '@/lib/auth-server'
+import { ApiError, apiFailure, parseApiInput } from '@/lib/api/server'
 import { buildDocumentGenerationMetadata } from '@/lib/documents/generationMetadata'
 import { hasStoredPdf, uploadPdfToDocumentStorage } from '@/lib/documents/storage'
 import { prisma } from '@/lib/prisma'
@@ -29,20 +30,11 @@ export async function POST(
     const user = await getCurrentUserWithOffice()
 
     if (!user) {
-      return NextResponse.json({ ok: false, error: 'No autorizado' }, { status: 401 })
+      return apiFailure(new ApiError('UNAUTHORIZED', 'No autorizado', 401))
     }
 
     const body = await req.json()
-    const parsed = GenerateEstampoSchema.safeParse(body)
-
-    if (!parsed.success) {
-      return NextResponse.json(
-        { ok: false, error: 'Datos inválidos', details: parsed.error.format() },
-        { status: 400 }
-      )
-    }
-
-    const { estampoBaseId, wizardAnswers, textoEditado, notificacionId } = parsed.data
+    const { estampoBaseId, wizardAnswers, textoEditado, notificacionId } = parseApiInput(GenerateEstampoSchema, body)
 
     const [context, templateBundle] = await Promise.all([
       loadWizardDiligenciaContext({
@@ -58,22 +50,17 @@ export async function POST(
     ])
 
     if (!context) {
-      return NextResponse.json(
-        { ok: false, error: 'Diligencia no encontrada o no pertenece a tu oficina' },
-        { status: 404 }
-      )
+      return apiFailure(new ApiError('NOT_FOUND', 'Diligencia no encontrada o no pertenece a tu oficina', 404))
     }
 
     if ('error' in context) {
-      const status = context.error === 'Notificación no encontrada' ? 404 : 400
-      return NextResponse.json({ ok: false, error: context.error }, { status })
+      const message = context.error ?? 'No se pudo cargar el contexto de la diligencia'
+      const status = message === 'Notificación no encontrada' ? 404 : 400
+      return apiFailure(new ApiError(status === 404 ? 'NOT_FOUND' : 'VALIDATION_ERROR', message, status))
     }
 
     if (!templateBundle) {
-      return NextResponse.json(
-        { ok: false, error: 'Estampo no encontrado o inactivo' },
-        { status: 404 }
-      )
+      return apiFailure(new ApiError('NOT_FOUND', 'Estampo no encontrado o inactivo', 404))
     }
 
     const { dbUser, diligencia, ejecutadoFromNotificacion, notificacionMeta } = context
@@ -117,14 +104,12 @@ export async function POST(
       }
 
       if (missing.length > 0) {
-        return NextResponse.json(
-          {
-            ok: false,
-            error: 'Faltan variables requeridas',
-            missing,
-          },
-          { status: 400 }
-        )
+        return apiFailure(new ApiError(
+          'VALIDATION_ERROR',
+          'Faltan variables requeridas',
+          400,
+          { variables: missing }
+        ))
       }
 
       finalText = renderEstampoTemplate(textoTemplate, finalVariables)
@@ -229,10 +214,6 @@ export async function POST(
       },
     })
   } catch (error) {
-    console.error('Error generando estampo:', error)
-    return NextResponse.json(
-      { ok: false, error: 'Error al generar el estampo' },
-      { status: 500 }
-    )
+    return apiFailure(new ApiError('INTERNAL_ERROR', 'Ocurrió un error inesperado', 500))
   }
 }

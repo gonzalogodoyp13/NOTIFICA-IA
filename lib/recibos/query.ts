@@ -2,6 +2,7 @@ import { Prisma } from '@prisma/client'
 
 import { prisma } from '@/lib/prisma'
 import { ReceiptFilterSchema, type ReceiptFiltersInput } from '@/lib/validations/recibos'
+import { asJsonObject, getString } from '@/lib/utils/json'
 
 export interface ReceiptListRow {
   reciboId: string
@@ -34,13 +35,42 @@ export interface ReceiptListResult {
   pagination: { page: number; pageSize: number; totalRows: number; totalPages: number }
 }
 
-export interface ReceiptTemplateOption { key: string; label: string; kind: 'wizard' | 'legacy' }
+export interface ReceiptTemplateOption { key: string; label: string; kind: 'wizard' | 'custom' }
 
 const EMPTY = '-'
 const validDocumentWhere = {
   voidedAt: null,
   OR: [{ pdfId: { not: null } }, { currentVersion: { is: { deletedAt: null } } }],
 } satisfies Prisma.DocumentoWhereInput
+
+const receiptListInclude = {
+  rol: { select: { rol: true, tribunal: { select: { nombre: true } }, demanda: { select: {
+    caratula: true,
+    abogados: { select: { nombre: true, bancos: { select: { banco: { select: { nombre: true } } } } } },
+    procurador: { select: { nombre: true, abogados: { select: { abogado: { select: { bancos: { select: { banco: { select: { nombre: true } } } } } } } } } },
+  } } } },
+} satisfies Prisma.ReciboInclude
+
+const receiptDiligenceSelect = {
+  id: true, meta: true, estadoCobro: true, fechaPago: true, tipo: { select: { nombre: true } },
+} satisfies Prisma.DiligenciaSelect
+
+const receiptNotificationSelect = { id: true, meta: true } satisfies Prisma.NotificacionSelect
+
+const templateDocumentSelect = {
+  id: true, createdAt: true, notificacionId: true, diligenciaId: true,
+  estampoBaseId: true, estampoId: true,
+  estampoBase: { select: { nombreVisible: true } },
+  estampo: { select: { nombre: true } },
+} satisfies Prisma.DocumentoSelect
+
+type ReceiptWithRelations = Prisma.ReciboGetPayload<{ include: typeof receiptListInclude }>
+type ReceiptDiligence = Prisma.DiligenciaGetPayload<{ select: typeof receiptDiligenceSelect }>
+type ReceiptNotification = Prisma.NotificacionGetPayload<{ select: typeof receiptNotificationSelect }>
+type TemplateDocument = Pick<
+  Prisma.DocumentoGetPayload<{ select: typeof templateDocumentSelect }>,
+  'estampoBaseId' | 'estampoId' | 'estampoBase' | 'estampo'
+>
 
 function dateRange(from?: string, to?: string) {
   if (!from && !to) return undefined
@@ -53,32 +83,32 @@ function dateRange(from?: string, to?: string) {
 function label(value?: string | null) { return value?.trim() || EMPTY }
 function unique(values: Array<string | null | undefined>) { return Array.from(new Set(values.map(v => v?.trim()).filter((v): v is string => !!v))) }
 
-function bankLabel(recibo: any) {
+function bankLabel(recibo: ReceiptWithRelations) {
   const abogado = recibo.rol?.demanda?.abogados
   const procurador = recibo.rol?.demanda?.procurador
   const values = unique([
-    ...(abogado?.bancos ?? []).map((item: any) => item.banco?.nombre),
-    ...(procurador?.abogados ?? []).flatMap((item: any) => (item.abogado?.bancos ?? []).map((link: any) => link.banco?.nombre)),
+    ...(abogado?.bancos ?? []).map(item => item.banco?.nombre),
+    ...(procurador?.abogados ?? []).flatMap(item => (item.abogado?.bancos ?? []).map(link => link.banco?.nombre)),
   ])
   return values.length ? values.join(', ') : EMPTY
 }
 
-function resultLabel(notification: any, diligence: any) {
-  const notificationMeta = notification?.meta && typeof notification.meta === 'object' && !Array.isArray(notification.meta) ? notification.meta : null
-  const diligenceMeta = diligence?.meta && typeof diligence.meta === 'object' && !Array.isArray(diligence.meta) ? diligence.meta : null
+function resultLabel(notification: ReceiptNotification | null | undefined, diligence: ReceiptDiligence | null | undefined) {
+  const notificationMeta = asJsonObject(notification?.meta)
+  const diligenceMeta = asJsonObject(diligence?.meta)
   return label(
-    typeof diligenceMeta?.resultado === 'string' && diligenceMeta.resultado.trim()
-      ? diligenceMeta.resultado
-      : typeof notificationMeta?.resultado === 'string' ? notificationMeta.resultado : null
+    getString(diligenceMeta?.resultado)?.trim()
+      ? getString(diligenceMeta?.resultado)
+      : getString(notificationMeta?.resultado)
   )
 }
 
-function templateIdentity(document: any): ReceiptTemplateOption | null {
+function templateIdentity(document: TemplateDocument | null | undefined): ReceiptTemplateOption | null {
   if (document?.estampoBaseId && document.estampoBase) {
     return { key: `wizard:${document.estampoBaseId}`, label: document.estampoBase.nombreVisible, kind: 'wizard' }
   }
   if (document?.estampoId && document.estampo) {
-    return { key: `legacy:${document.estampoId}`, label: document.estampo.nombre, kind: 'legacy' }
+    return { key: `custom:${document.estampoId}`, label: document.estampo.nombre, kind: 'custom' }
   }
   return null
 }
@@ -122,7 +152,10 @@ async function scopedFilterIds(officeId: number, filters: ReceiptFiltersInput) {
   let templateLinks: { notificationIds: string[]; diligenceIds: string[] } | undefined
   if (filters.estampoTemplates.length) {
     const wizardIds = filters.estampoTemplates.filter(v => v.startsWith('wizard:')).map(v => Number(v.slice(7))).filter(Number.isInteger)
-    const legacyIds = filters.estampoTemplates.filter(v => v.startsWith('legacy:')).map(v => v.slice(7)).filter(Boolean)
+    const customIds = filters.estampoTemplates
+      .filter(v => v.startsWith('custom:') || v.startsWith('legacy:'))
+      .map(v => v.slice(v.indexOf(':') + 1))
+      .filter(Boolean)
     const documents = await prisma.documento.findMany({
       where: {
         tipo: 'Estampo',
@@ -131,7 +164,7 @@ async function scopedFilterIds(officeId: number, filters: ReceiptFiltersInput) {
           validDocumentWhere,
           { OR: [
             ...(wizardIds.length ? [{ estampoBaseId: { in: wizardIds } }] : []),
-            ...(legacyIds.length ? [{ estampoId: { in: legacyIds } }] : []),
+            ...(customIds.length ? [{ estampoId: { in: customIds } }] : []),
           ] },
         ],
       },
@@ -197,21 +230,17 @@ export async function getReceiptList(
   const receipts = await prisma.recibo.findMany({
     where, orderBy: [{ fechaEjecucion: 'desc' }, { fechaRecibo: 'desc' }, { createdAt: 'desc' }],
     skip: exportAll ? 0 : (page - 1) * pageSize, take: pageSize,
-    include: { rol: { select: { rol: true, tribunal: { select: { nombre: true } }, demanda: { select: {
-      caratula: true,
-      abogados: { select: { nombre: true, bancos: { select: { banco: { select: { nombre: true } } } } } },
-      procurador: { select: { nombre: true, abogados: { select: { abogado: { select: { bancos: { select: { banco: { select: { nombre: true } } } } } } } } } },
-    } } } } },
+    include: receiptListInclude,
   })
 
   const diligenceIdList = unique(receipts.map(item => item.diligenciaId))
   const notificationIds = unique(receipts.map(item => item.notificacionId))
   const [diligences, notifications, stampDocuments] = await Promise.all([
-    diligenceIdList.length ? prisma.diligencia.findMany({ where: { id: { in: diligenceIdList }, rol: { officeId } }, select: { id: true, meta: true, estadoCobro: true, fechaPago: true, tipo: { select: { nombre: true } } } }) : [],
-    notificationIds.length ? prisma.notificacion.findMany({ where: { id: { in: notificationIds }, diligencia: { rol: { officeId } } }, select: { id: true, meta: true } }) : [],
+    diligenceIdList.length ? prisma.diligencia.findMany({ where: { id: { in: diligenceIdList }, rol: { officeId } }, select: receiptDiligenceSelect }) : [],
+    notificationIds.length ? prisma.notificacion.findMany({ where: { id: { in: notificationIds }, diligencia: { rol: { officeId } } }, select: receiptNotificationSelect }) : [],
     (diligenceIdList.length || notificationIds.length) ? prisma.documento.findMany({
       where: { tipo: 'Estampo', rol: { officeId }, AND: [validDocumentWhere, { OR: [{ notificacionId: { in: notificationIds } }, { diligenciaId: { in: diligenceIdList } }] }] },
-      select: { id: true, createdAt: true, notificacionId: true, diligenciaId: true, estampoBaseId: true, estampoId: true, estampoBase: { select: { nombreVisible: true } }, estampo: { select: { nombre: true } } },
+      select: templateDocumentSelect,
       orderBy: { createdAt: 'desc' },
     }) : [],
   ])

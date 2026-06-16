@@ -7,6 +7,7 @@ import { useRouter } from 'next/navigation'
 import Topbar from '@/components/Topbar'
 import Link from 'next/link'
 import { cleanCuantiaInput } from '@/lib/utils/cuantia'
+import { readApiError } from '@/lib/api/client'
 import { ProcuradorSelector } from '@/components/ProcuradorSelector'
 
 interface Banco {
@@ -204,7 +205,7 @@ export default function NuevaDemandaPage() {
       
       const payload = {
         rol: formData.rol,
-        tribunalId: Number(formData.tribunalId), // Ensure numeric ID (Phase 3)
+        tribunalId: formData.tribunalId,
         caratula: finalCaratula,
         cuantia: formData.cuantia ? cleanCuantiaInput(formData.cuantia) : null,
         abogadoId: formData.abogadoId ? Number(formData.abogadoId) : null,
@@ -225,13 +226,14 @@ export default function NuevaDemandaPage() {
         credentials: 'include',
       })
 
+      if (!response.ok) {
+        throw new Error(await readApiError(response, 'Error al crear la demanda'))
+      }
+
       const data = await response.json().catch(() => ({}))
 
-      if (!response.ok || !data.ok) {
-        const errorMessage = Array.isArray(data.error)
-          ? data.error.map((e: any) => e.message || JSON.stringify(e)).join(', ')
-          : (data.error || 'Error al crear la demanda')
-        throw new Error(errorMessage)
+      if (!data.ok) {
+        throw new Error(data?.error?.message || data?.error || 'Error al crear la demanda')
       }
 
       router.push('/roles')

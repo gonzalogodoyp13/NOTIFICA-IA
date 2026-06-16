@@ -9,7 +9,7 @@ export type DocumentSourceTemplate =
       version: number
     }
   | {
-      type: 'legacy-estampo'
+      type: 'custom-estampo'
       estampoId: string
       name: string
       version: number

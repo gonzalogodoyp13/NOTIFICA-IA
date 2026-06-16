@@ -28,7 +28,7 @@ interface ArancelRow {
   estampoId?: string
   estampoBaseCategoria?: string
   estampoNombre?: string
-  tipo?: 'legacy' | 'wizard'
+  tipo?: 'custom' | 'wizard'
   monto: string
   activo: boolean
   isNew?: boolean
@@ -43,7 +43,7 @@ interface ArancelResponse {
   estampoBaseCategoria: string | null
   monto: number
   activo: boolean
-  tipo: 'legacy' | 'wizard'
+  tipo: 'custom' | 'wizard'
   estampo: {
     id: string
     nombre: string
@@ -135,7 +135,7 @@ export function ArancelesModal({ bancoId, bancoNombre, isOpen, onClose }: Arance
           id: a.id,
           estampoId: a.estampoId ?? undefined,
           estampoBaseCategoria: a.estampoBaseCategoria ?? undefined,
-          estampoNombre: a.tipo === 'legacy' ? a.estampo?.nombre : undefined,
+          estampoNombre: a.tipo === 'custom' ? a.estampo?.nombre : undefined,
           tipo: a.tipo,
           monto: formatCuantiaCLP(a.monto),
           activo: a.activo,
@@ -169,7 +169,7 @@ export function ArancelesModal({ bancoId, bancoNombre, isOpen, onClose }: Arance
           id: a.id,
           estampoId: a.estampoId ?? undefined,
           estampoBaseCategoria: a.estampoBaseCategoria ?? undefined,
-          estampoNombre: a.tipo === 'legacy' ? a.estampo?.nombre : undefined,
+          estampoNombre: a.tipo === 'custom' ? a.estampo?.nombre : undefined,
           tipo: a.tipo,
           monto: formatCuantiaCLP(a.monto),
           activo: a.activo,
@@ -231,7 +231,7 @@ export function ArancelesModal({ bancoId, bancoNombre, isOpen, onClose }: Arance
     // Abogado tab → abogadoKey = selectedAbogadoId (abogado-específico)
     const abogadoKey = activeTab === 'abogado' && selectedAbogadoId ? String(selectedAbogadoId) : 'null'
     
-    if (row.tipo === 'legacy' || (row.estampoId && !row.estampoBaseCategoria)) {
+    if (row.tipo === 'custom' || (row.estampoId && !row.estampoBaseCategoria)) {
       if (!row.estampoId) return null
       return `L|${bancoId}|${abogadoKey}|${row.estampoId}`
     } else if (row.tipo === 'wizard' || (row.estampoBaseCategoria && !row.estampoId)) {
@@ -241,9 +241,9 @@ export function ArancelesModal({ bancoId, bancoNombre, isOpen, onClose }: Arance
     return null
   }
 
-  const handleAddRow = (tipo?: 'legacy' | 'wizard') => {
+  const handleAddRow = (tipo?: 'custom' | 'wizard') => {
     const newRow: ArancelRow = {
-      estampoId: tipo === 'legacy' ? '' : undefined,
+      estampoId: tipo === 'custom' ? '' : undefined,
       estampoBaseCategoria: tipo === 'wizard' ? '' : undefined,
       monto: '',
       activo: true,
@@ -274,11 +274,11 @@ export function ArancelesModal({ bancoId, bancoNombre, isOpen, onClose }: Arance
     }
 
     // Validaciones
-    const isLegacy = row.tipo === 'legacy' || (row.estampoId && !row.estampoBaseCategoria)
+    const isCustom = row.tipo === 'custom' || (row.estampoId && !row.estampoBaseCategoria)
     const isWizard = row.tipo === 'wizard' || (row.estampoBaseCategoria && !row.estampoId)
 
-    if (isLegacy && !row.estampoId) {
-      setError('Selecciona un estampo legacy')
+    if (isCustom && !row.estampoId) {
+      setError('Selecciona un estampo personalizado')
       return
     }
 
@@ -321,7 +321,7 @@ export function ArancelesModal({ bancoId, bancoNombre, isOpen, onClose }: Arance
         activo: row.activo,
       }
 
-      if (isLegacy) {
+      if (isCustom) {
         payload.estampoId = row.estampoId
       } else if (isWizard) {
         payload.estampoBaseCategoria = row.estampoBaseCategoria
@@ -367,7 +367,7 @@ export function ArancelesModal({ bancoId, bancoNombre, isOpen, onClose }: Arance
         id: responseData.id,
         estampoId: responseData.estampoId ?? undefined,
         estampoBaseCategoria: responseData.estampoBaseCategoria ?? undefined,
-        estampoNombre: responseData.tipo === 'legacy' ? responseData.estampo?.nombre : undefined,
+        estampoNombre: responseData.tipo === 'custom' ? responseData.estampo?.nombre : undefined,
         tipo: responseData.tipo,
         monto: formatCuantiaCLP(responseData.monto),
         activo: responseData.activo,
@@ -632,7 +632,7 @@ export function ArancelesModal({ bancoId, bancoNombre, isOpen, onClose }: Arance
 
               <div className="mt-4 flex gap-2">
                 <button
-                  onClick={() => handleAddRow('legacy')}
+                  onClick={() => handleAddRow('custom')}
                   disabled={estampos.length === 0}
                   className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
                 >

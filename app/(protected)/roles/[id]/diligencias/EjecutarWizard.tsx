@@ -175,15 +175,15 @@ export default function EjecutarWizard({
 
   // Get selected estampo (legacy only, for Step 3)
   const selectedEstampo = useMemo<EstampoCatalogItem | undefined>(() => {
-    if (selectedEstampoTipo?.kind === 'LEGACY' && estamposGrouped?.legacy) {
-      return estamposGrouped.legacy.find(
+    if (selectedEstampoTipo?.kind === 'CUSTOM' && estamposGrouped?.custom) {
+      return estamposGrouped.custom.find(
         item => String(item.id) === selectedEstampoTipo.estampoId
       )
     }
     return undefined
   }, [selectedEstampoTipo, estamposGrouped])
 
-  // Auto-fill monto when estampo is selected (Step II) - LEGACY y WIZARD
+  // Auto-fill monto when estampo is selected (Step II) - CUSTOM y WIZARD
   useEffect(() => {
     // Solo auto-fill si estamos en Step 2 y hay selección válida
     if (step !== 2 || !selectedEstampoTipo || !rolData) {
@@ -203,8 +203,8 @@ export default function EjecutarWizard({
       return
     }
 
-    // LEGACY path (sin cambios)
-    if (selectedEstampoTipo.kind === 'LEGACY' && selectedEstampoTipo.estampoId) {
+    // Custom estampo path
+    if (selectedEstampoTipo.kind === 'CUSTOM' && selectedEstampoTipo.estampoId) {
       const params = new URLSearchParams({
         bancoId: String(bancoId),
         estampoId: selectedEstampoTipo.estampoId,
@@ -334,7 +334,7 @@ export default function EjecutarWizard({
 
     // Obtener nombre del estampo para el recibo
     let tipoEstampoNombre: string | undefined
-    if (selectedEstampoTipo.kind === 'LEGACY') {
+    if (selectedEstampoTipo.kind === 'CUSTOM') {
       tipoEstampoNombre = selectedEstampo?.nombre
     } else if (selectedEstampoTipo.kind === 'WIZARD') {
       // Para wizard, usar el label de la categoría
@@ -411,7 +411,7 @@ export default function EjecutarWizard({
         }
 
         // Mantener compatibilidad: escribir estampoId si es legacy
-        if (selectedEstampoTipo.kind === 'LEGACY') {
+        if (selectedEstampoTipo.kind === 'CUSTOM') {
           metaUpdates.estampoId = selectedEstampoTipo.estampoId
         }
 
@@ -422,7 +422,7 @@ export default function EjecutarWizard({
             if (selectedEstampoTipo.kind === 'WIZARD' && selectedEstampoTipo.categoria) {
                 onOpenWizard?.(diligencia.id, selectedEstampoTipo.categoria, notificacionId)
               onClose()
-            } else if (selectedEstampoTipo.kind === 'LEGACY') {
+            } else if (selectedEstampoTipo.kind === 'CUSTOM') {
               // Si es legacy, avanzar a Step 3 como antes
               setStep(3)
             }
@@ -440,7 +440,7 @@ export default function EjecutarWizard({
             if (selectedEstampoTipo.kind === 'WIZARD' && selectedEstampoTipo.categoria) {
                 onOpenWizard?.(diligencia.id, selectedEstampoTipo.categoria, notificacionId)
               onClose()
-            } else if (selectedEstampoTipo.kind === 'LEGACY') {
+            } else if (selectedEstampoTipo.kind === 'CUSTOM') {
               setStep(3)
             }
           } else {
@@ -496,8 +496,8 @@ export default function EjecutarWizard({
     }
 
     // Step 3 solo aplica para legacy
-    if (!selectedEstampoTipo || selectedEstampoTipo.kind !== 'LEGACY') {
-      setErrorMsg('No hay un estampo legacy seleccionado.')
+    if (!selectedEstampoTipo || selectedEstampoTipo.kind !== 'CUSTOM') {
+      setErrorMsg('No hay un estampo personalizado seleccionado.')
       return
     }
 
@@ -681,8 +681,8 @@ export default function EjecutarWizard({
                     value={
                       selectedEstampoTipo?.kind === 'WIZARD'
                         ? `wizard:${selectedEstampoTipo.categoria}`
-                        : selectedEstampoTipo?.kind === 'LEGACY'
-                          ? `legacy:${selectedEstampoTipo.estampoId}`
+                        : selectedEstampoTipo?.kind === 'CUSTOM'
+                          ? `custom:${selectedEstampoTipo.estampoId}`
                           : ''
                     }
                     onChange={e => {
@@ -690,9 +690,9 @@ export default function EjecutarWizard({
                       if (value.startsWith('wizard:')) {
                         const categoria = value.replace('wizard:', '')
                         setSelectedEstampoTipo({ kind: 'WIZARD', categoria })
-                      } else if (value.startsWith('legacy:')) {
-                        const estampoId = value.replace('legacy:', '')
-                        setSelectedEstampoTipo({ kind: 'LEGACY', estampoId })
+                      } else if (value.startsWith('custom:')) {
+                        const estampoId = value.replace('custom:', '')
+                        setSelectedEstampoTipo({ kind: 'CUSTOM', estampoId })
                       } else {
                         setSelectedEstampoTipo(null)
                       }
@@ -710,10 +710,10 @@ export default function EjecutarWizard({
                       </optgroup>
                     )}
                     {/* Grupo Legacy */}
-                    {estamposGrouped?.legacy && estamposGrouped.legacy.length > 0 && (
+                    {estamposGrouped?.custom && estamposGrouped.custom.length > 0 && (
                       <optgroup label="Mis Estampos (Manuales)">
-                        {estamposGrouped.legacy.map(item => (
-                          <option key={`legacy:${item.id}`} value={`legacy:${item.id}`}>
+                        {estamposGrouped.custom.map(item => (
+                          <option key={`custom:${item.id}`} value={`custom:${item.id}`}>
                             {item.nombre}
                             {item.tipo ? ` (${item.tipo})` : ''}
                           </option>
@@ -736,7 +736,7 @@ export default function EjecutarWizard({
                   onChange={e => setMonto(e.target.value)}
                 />
                 <p className="mt-1 text-xs text-slate-500">
-                  {selectedEstampoTipo?.kind === 'LEGACY'
+                  {selectedEstampoTipo?.kind === 'CUSTOM'
                     ? 'El monto se auto-completará si existe un arancel configurado.'
                     : 'Ingresa el monto manualmente.'}
                 </p>
@@ -745,7 +745,7 @@ export default function EjecutarWizard({
           )}
 
           {/* Step III: Contenido Estampo (solo para legacy) */}
-          {step === 3 && selectedEstampoTipo?.kind === 'LEGACY' && (
+          {step === 3 && selectedEstampoTipo?.kind === 'CUSTOM' && (
             <div>
               <label className="block font-medium text-slate-700" htmlFor="contenido-estampo">
                 Contenido del estampo *
@@ -830,7 +830,7 @@ export default function EjecutarWizard({
           )}
 
           {/* Step III buttons (solo para legacy) */}
-          {step === 3 && selectedEstampoTipo?.kind === 'LEGACY' && (
+          {step === 3 && selectedEstampoTipo?.kind === 'CUSTOM' && (
             <>
               <button
                 type="button"

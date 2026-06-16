@@ -44,8 +44,6 @@ model Office {
   aranceles      Arancel[]
   comunas        Comuna[]
   materias       Materia[]
-  diligenciaTiposLegacy diligencia_tipos[]
-  tribunalesLegacy tribunales[]
   roles          RolCausa[]
   tribunalesNuevos Tribunal[]
   diligenciaTiposNuevos DiligenciaTipo[]
@@ -217,7 +215,6 @@ model Materia {
 model Demanda {
   id         String      @id @default(cuid())
   rol        String
-  tribunalId Int
   caratula   String
   cuantia    Float
   abogadoId  Int
@@ -231,7 +228,6 @@ model Demanda {
   materia    Materia?    @relation(fields: [materiaId], references: [id])
   procurador Procurador? @relation(fields: [procuradorId], references: [id], onDelete: SetNull)
   offices    Office      @relation(fields: [officeId], references: [id])
-  tribunales tribunales  @relation(fields: [tribunalId], references: [id])
   users      User        @relation(fields: [userId], references: [id])
   ejecutados Ejecutado[]
 
@@ -252,30 +248,6 @@ model Ejecutado {
   notificaciones Notificacion[]
 
   @@map("ejecutados")
-}
-
-model diligencia_tipos {
-  id          Int      @id @default(autoincrement())
-  nombre      String
-  descripcion String?
-  officeId    Int
-  createdAt   DateTime @default(now())
-  office      Office   @relation(fields: [officeId], references: [id], onDelete: Restrict, onUpdate: Cascade)
-
-  @@index([officeId])
-}
-
-model tribunales {
-  id        Int       @id @default(autoincrement())
-  officeId  Int
-  nombre    String
-  direccion String?
-  comuna    String?
-  createdAt DateTime  @default(now())
-  demandas  Demanda[]
-  office    Office    @relation(fields: [officeId], references: [id], onDelete: Restrict, onUpdate: Cascade)
-
-  @@index([officeId])
 }
 
 model RolCausa {

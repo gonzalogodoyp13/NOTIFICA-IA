@@ -3,8 +3,10 @@ import { NextRequest, NextResponse } from 'next/server'
 import { Prisma } from '@prisma/client'
 
 import { getCurrentUserWithOffice } from '@/lib/auth-server'
+import { ApiError, apiFailure } from '@/lib/api/server'
 import { deletePdfFromDocumentStorage } from '@/lib/documents/storage'
 import { prisma } from '@/lib/prisma'
+import { asJsonObject } from '@/lib/utils/json'
 
 export const dynamic = 'force-dynamic'
 
@@ -18,7 +20,7 @@ export async function PATCH(
     const user = await getCurrentUserWithOffice()
 
     if (!user) {
-      return NextResponse.json({ ok: false, error: 'No autorizado' }, { status: 401 })
+      return apiFailure(new ApiError('UNAUTHORIZED', 'No autorizado', 401))
     }
 
     const rol = await prisma.rolCausa.findFirst({
@@ -30,10 +32,7 @@ export async function PATCH(
     })
 
     if (!rol) {
-      return NextResponse.json(
-        { ok: false, error: 'Rol no encontrado o no pertenece a tu oficina' },
-        { status: 404 }
-      )
+      return apiFailure(new ApiError('NOT_FOUND', 'Rol no encontrado o no pertenece a tu oficina', 404))
     }
 
     const diligencia = await prisma.diligencia.findFirst({
@@ -45,10 +44,7 @@ export async function PATCH(
     })
 
     if (!diligencia) {
-      return NextResponse.json(
-        { ok: false, error: 'Diligencia no encontrada o no pertenece a este ROL' },
-        { status: 404 }
-      )
+      return apiFailure(new ApiError('NOT_FOUND', 'Diligencia no encontrada o no pertenece a este ROL', 404))
     }
 
     const existing = await prisma.notificacion.findFirst({
@@ -66,18 +62,14 @@ export async function PATCH(
     })
 
     if (!existing) {
-      return NextResponse.json(
-        { ok: false, error: 'Notificacion no encontrada o no pertenece a esta diligencia' },
-        { status: 404 }
-      )
+      return apiFailure(new ApiError('NOT_FOUND', 'Notificacion no encontrada o no pertenece a esta diligencia', 404))
     }
 
     const body = await req.json().catch(() => null)
-    const incomingMeta =
-      body && typeof body === 'object' && !Array.isArray(body) ? (body as any).meta : null
+    const incomingMeta = asJsonObject(body)?.meta ?? null
 
     if (!incomingMeta || typeof incomingMeta !== 'object' || Array.isArray(incomingMeta)) {
-      return NextResponse.json({ ok: false, error: 'meta debe ser un objeto' }, { status: 400 })
+      return apiFailure(new ApiError('VALIDATION_ERROR', 'meta debe ser un objeto', 400))
     }
 
     const currentMeta = existing.meta
@@ -128,11 +120,7 @@ export async function PATCH(
       },
     })
   } catch (error) {
-    console.error('Error actualizando meta de notificacion:', error)
-    return NextResponse.json(
-      { ok: false, error: 'Error al actualizar la notificacion' },
-      { status: 500 }
-    )
+    return apiFailure(new ApiError('INTERNAL_ERROR', 'Ocurrió un error inesperado', 500))
   }
 }
 
@@ -146,7 +134,7 @@ export async function DELETE(
     const user = await getCurrentUserWithOffice()
 
     if (!user) {
-      return NextResponse.json({ ok: false, error: 'No autorizado' }, { status: 401 })
+      return apiFailure(new ApiError('UNAUTHORIZED', 'No autorizado', 401))
     }
 
     const rol = await prisma.rolCausa.findFirst({
@@ -158,10 +146,7 @@ export async function DELETE(
     })
 
     if (!rol) {
-      return NextResponse.json(
-        { ok: false, error: 'Rol no encontrado o no pertenece a tu oficina' },
-        { status: 404 }
-      )
+      return apiFailure(new ApiError('NOT_FOUND', 'Rol no encontrado o no pertenece a tu oficina', 404))
     }
 
     const diligencia = await prisma.diligencia.findFirst({
@@ -173,10 +158,7 @@ export async function DELETE(
     })
 
     if (!diligencia) {
-      return NextResponse.json(
-        { ok: false, error: 'Diligencia no encontrada o no pertenece a este ROL' },
-        { status: 404 }
-      )
+      return apiFailure(new ApiError('NOT_FOUND', 'Diligencia no encontrada o no pertenece a este ROL', 404))
     }
 
     const existing = await prisma.notificacion.findFirst({
@@ -188,16 +170,13 @@ export async function DELETE(
     })
 
     if (!existing) {
-      return NextResponse.json(
-        { ok: false, error: 'Notificacion no encontrada o no pertenece a esta diligencia' },
-        { status: 404 }
-      )
+      return apiFailure(new ApiError('NOT_FOUND', 'Notificacion no encontrada o no pertenece a esta diligencia', 404))
     }
 
     await req.json().catch(() => null)
 
     const documentos = await prisma.documento.findMany({
-      where: { notificacionId: params.notificacionId } as any,
+      where: { notificacionId: params.notificacionId },
       include: {
         versions: {
           where: { deletedAt: null },
@@ -221,7 +200,7 @@ export async function DELETE(
       })
 
       await tx.documento.deleteMany({
-        where: { notificacionId: params.notificacionId } as any,
+        where: { notificacionId: params.notificacionId },
       })
 
       await tx.notificacion.delete({
@@ -231,10 +210,6 @@ export async function DELETE(
 
     return NextResponse.json({ ok: true, mode: 'DELETED' })
   } catch (error) {
-    console.error('Error eliminando notificacion:', error)
-    return NextResponse.json(
-      { ok: false, error: 'Error al eliminar la notificacion' },
-      { status: 500 }
-    )
+    return apiFailure(new ApiError('INTERNAL_ERROR', 'Ocurrió un error inesperado', 500))
   }
 }

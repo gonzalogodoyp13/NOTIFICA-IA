@@ -123,7 +123,7 @@ export async function GET(req: NextRequest) {
     // Mapear respuesta con tipo (sin generar labels aquí - UI los obtiene del endpoint)
     const mapped = aranceles.map(a => ({
       ...a,
-      tipo: a.estampoId ? 'legacy' : 'wizard',
+      tipo: a.estampoId ? 'custom' : 'wizard',
     }))
 
     return NextResponse.json({ ok: true, data: mapped })
@@ -186,7 +186,7 @@ export async function POST(req: NextRequest) {
 
     // Validación condicional según tipo
     if (parsed.data.estampoId) {
-      // LEGACY: validar estampo existe
+      // Custom estampo: validar que existe
       const estampo = await prisma.estampo.findFirst({
         where: {
           id: parsed.data.estampoId,
@@ -312,4 +312,3 @@ export async function POST(req: NextRequest) {
     )
   }
 }
-

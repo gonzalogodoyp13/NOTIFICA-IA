@@ -54,7 +54,7 @@ export async function GET(req: NextRequest) {
 
     let arancel = null
 
-    // LEGACY path (sin cambios en lógica)
+    // Custom estampo path
     if (estampoId) {
       arancel = await lookupArancel(user.officeId, bancoId, abogadoId, estampoId)
     }

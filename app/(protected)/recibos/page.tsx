@@ -7,6 +7,7 @@ import Link from 'next/link'
 
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { readApiError } from '@/lib/api/client'
 
 const PAGE_SIZE = 25
 
@@ -220,7 +221,7 @@ export default function RecibosPage() {
     setExporting(true); setError(null)
     try {
       const response = await fetch('/api/recibos/export', { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ filters: filtersForBody(appliedFilters), selection: selection.mode === 'explicit' ? { mode: 'explicit', reciboIds: selection.ids } : { mode: 'allFiltered', excludedIds: selection.excludedIds } }) })
-      if (!response.ok) { const payload = await response.json().catch(() => null); throw new Error(payload?.error || 'Error al exportar los recibos.') }
+      if (!response.ok) { throw new Error(await readApiError(response, 'Error al exportar los recibos.')) }
       const url = URL.createObjectURL(await response.blob()); const link = document.createElement('a'); link.href = url; link.download = 'gestion-recibos.xlsx'; link.click(); URL.revokeObjectURL(url)
     } catch (e) { setError(e instanceof Error ? e.message : 'Error al exportar los recibos.') } finally { setExporting(false) }
   }

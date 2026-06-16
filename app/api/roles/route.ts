@@ -1,6 +1,7 @@
 // API route: /api/roles
 // GET: List all Demandas for the logged-in user's officeId (Phase 3)
 import { NextRequest, NextResponse } from 'next/server'
+import { Prisma } from '@prisma/client'
 import { getCurrentUserWithOffice } from '@/lib/auth-server'
 import { prisma } from '@/lib/prisma'
 
@@ -23,7 +24,7 @@ export async function GET(req: NextRequest) {
     const tribunalId = searchParams.get('tribunalId')
 
     // Build where clause
-    const where: any = {
+    const where: Prisma.DemandaWhereInput = {
       officeId: user.officeId, // Int officeId
     }
 
@@ -32,18 +33,13 @@ export async function GET(req: NextRequest) {
       where.abogadoId = parseInt(abogadoId)
     }
     if (tribunalId) {
-      where.tribunalId = parseInt(tribunalId)
+      where.roles = { is: { tribunalId } }
     }
 
     const demandas = await prisma.demanda.findMany({
       where,
       include: {
-        tribunales: {
-          select: {
-            id: true,
-            nombre: true,
-          },
-        },
+        roles: { include: { tribunal: { select: { id: true, nombre: true } } } },
         abogados: {
           select: {
             id: true,
@@ -54,7 +50,13 @@ export async function GET(req: NextRequest) {
       orderBy: { createdAt: 'desc' },
     })
 
-    return NextResponse.json({ ok: true, data: demandas })
+    return NextResponse.json({
+      ok: true,
+      data: demandas.map(demanda => ({
+        ...demanda,
+        tribunal: demanda.roles?.tribunal ?? null,
+      })),
+    })
   } catch (error) {
     console.error('[GET /api/roles] Error:', error)
     return NextResponse.json(

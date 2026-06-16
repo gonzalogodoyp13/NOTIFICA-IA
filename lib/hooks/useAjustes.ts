@@ -64,11 +64,11 @@ interface WizardCategoria {
 
 interface EstamposGrouped {
   wizard: WizardCategoria[]
-  legacy: EstampoCatalogItem[]
+  custom: EstampoCatalogItem[]
 }
 
 export function useEstamposGrouped() {
-  const { data: legacyEstampos = [], isLoading: legacyLoading } = useEstampos()
+  const { data: customEstampos = [], isLoading: customLoading } = useEstampos()
 
   const {
     data: wizardCategorias = [],
@@ -103,9 +103,9 @@ export function useEstamposGrouped() {
   return {
     data: {
       wizard: wizardCategorias,
-      legacy: legacyEstampos,
+      custom: customEstampos,
     } as EstamposGrouped,
-    isLoading: legacyLoading || wizardLoading,
+    isLoading: customLoading || wizardLoading,
     error: wizardError,
   }
 }

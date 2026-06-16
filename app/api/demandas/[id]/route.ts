@@ -71,18 +71,10 @@ export async function PUT(
       )
     }
 
-    const tribunalIdInt = typeof tribunalId === 'string' ? parseInt(tribunalId, 10) : tribunalId
-
-    if (isNaN(tribunalIdInt) || !Number.isInteger(tribunalIdInt)) {
-      return NextResponse.json(
-        { ok: false, error: 'tribunalId debe ser un numero entero valido' },
-        { status: 400 }
-      )
-    }
-
-    const tribunal = await prisma.tribunales.findFirst({
+    const tribunalIdValue = typeof tribunalId === 'string' ? tribunalId.trim() : ''
+    const tribunal = await prisma.tribunal.findFirst({
       where: {
-        id: tribunalIdInt,
+        id: tribunalIdValue,
         officeId: user.officeId,
       },
     })
@@ -262,7 +254,6 @@ export async function PUT(
         where: { id: params.id },
         data: {
           rol: normalizedRol,
-          tribunalId: tribunalIdInt,
           caratula,
           cuantia:
             cuantia !== undefined && cuantia !== null
@@ -276,12 +267,6 @@ export async function PUT(
               : demanda.procuradorId,
         },
         include: {
-          tribunales: {
-            select: {
-              id: true,
-              nombre: true,
-            },
-          },
           abogados: {
             select: {
               id: true,
@@ -380,23 +365,16 @@ export async function PUT(
         }
       }
 
-      if (rolChanged) {
-        const rolCausa = await tx.rolCausa.findFirst({
-          where: {
-            demandaId: params.id,
-            officeId: user.officeId,
-          },
-        })
-
-        if (rolCausa) {
-          await tx.rolCausa.update({
-            where: { id: rolCausa.id },
-            data: {
-              rol: normalizedRol,
-            },
-          })
-        }
+      const rolCausa = await tx.rolCausa.findFirst({
+        where: { demandaId: params.id, officeId: user.officeId },
+      })
+      if (!rolCausa) {
+        throw new DemandaUpdateValidationError('La demanda no tiene una causa asociada', 409)
       }
+      await tx.rolCausa.update({
+        where: { id: rolCausa.id },
+        data: { ...(rolChanged ? { rol: normalizedRol } : {}), tribunalId: tribunal.id },
+      })
 
       return updatedDemanda
     })
@@ -408,7 +386,7 @@ export async function PUT(
         rolId: result.id,
       },
     })
-  } catch (error: any) {
+  } catch (error: unknown) {
     debugLog('[PUT /api/demandas/[id]] Error updating demanda', {
       error: toSafeErrorMessage(error),
     })
@@ -421,7 +399,7 @@ export async function PUT(
     }
 
     return NextResponse.json(
-      { ok: false, error: error?.message || 'Error al actualizar la demanda' },
+      { ok: false, error: error instanceof Error ? error.message : 'Error al actualizar la demanda' },
       { status: 500 }
     )
   }

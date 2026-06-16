@@ -11,8 +11,8 @@ interface Demanda {
   caratula: string
   cuantia: number
   createdAt: string
-  tribunales: {
-    id: number
+  tribunal: {
+    id: string
     nombre: string
   } | null
   abogados: {
@@ -155,7 +155,7 @@ export default function RolesPage() {
                             {rol.caratula || 'Sin caratula'}
                           </td>
                           <td className="px-6 py-5 text-sm text-slate-600">
-                            {rol.tribunales?.nombre ?? 'Sin tribunal'}
+                            {rol.tribunal?.nombre ?? 'Sin tribunal'}
                           </td>
                           <td className="px-6 py-5 text-sm text-slate-600">
                             {rol.abogados?.nombre ?? 'Sin abogado'}

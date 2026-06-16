@@ -161,7 +161,7 @@ export async function loadRoleSummaryData(roleId: string, officeId: number) {
         orderBy: [{ fechaRecibo: 'desc' }, { createdAt: 'desc' }],
       },
     },
-  }) as any
+  })
 
   if (!rolCausa) {
     return null
@@ -195,7 +195,7 @@ export async function loadRoleSummaryData(roleId: string, officeId: number) {
             }
           : null,
         ejecutados: rolCausa.demanda.ejecutados
-          ? rolCausa.demanda.ejecutados.map((ej: any) => ({
+          ? rolCausa.demanda.ejecutados.map(ej => ({
               id: ej.id,
               nombre: ej.nombre,
               rut: ej.rut,
@@ -224,7 +224,7 @@ export async function loadRoleSummaryData(roleId: string, officeId: number) {
         rut: rolCausa.demanda.abogados.rut ?? null,
         email: rolCausa.demanda.abogados.email ?? null,
         telefono: rolCausa.demanda.abogados.telefono ?? null,
-        bancos: (rolCausa.demanda.abogados.bancos ?? []).map((item: any) => ({
+        bancos: (rolCausa.demanda.abogados.bancos ?? []).map(item => ({
           banco: {
             id: item.banco.id,
             nombre: item.banco.nombre,
@@ -234,26 +234,26 @@ export async function loadRoleSummaryData(roleId: string, officeId: number) {
     : null
 
   const allDates: Date[] = [
-    ...rolCausa.diligencias.map((d: any) => d.createdAt),
-    ...rolCausa.documentos.map((d: any) => d.createdAt),
-    ...rolCausa.notas.map((n: any) => n.createdAt),
-    ...rolCausa.recibos.map((r: any) => r.createdAt),
+    ...rolCausa.diligencias.map(d => d.createdAt),
+    ...rolCausa.documentos.map(d => d.createdAt),
+    ...rolCausa.notas.map(n => n.createdAt),
+    ...rolCausa.recibos.map(r => r.createdAt),
   ]
   const ultimaActividad =
     allDates.length > 0
-      ? new Date(Math.max(...allDates.map((d: any) => d.getTime()))).toISOString()
+      ? new Date(Math.max(...allDates.map(d => d.getTime()))).toISOString()
       : null
 
   const kpis = {
     diligenciasTotal: rolCausa.diligencias.length,
-    diligenciasPendientes: rolCausa.diligencias.filter((d: any) => d.estado === 'pendiente').length,
-    diligenciasCompletadas: rolCausa.diligencias.filter((d: any) => d.estado === 'completada').length,
+    diligenciasPendientes: rolCausa.diligencias.filter(d => d.estado === 'pendiente').length,
+    diligenciasCompletadas: rolCausa.diligencias.filter(d => d.estado === 'completada').length,
     documentosTotal: rolCausa.documentos.length,
     notasTotal: rolCausa.notas.length,
     recibosTotal: rolCausa.recibos.length,
   }
 
-  const resumenDiligencias = rolCausa.diligencias.map((d: any) => ({
+  const resumenDiligencias = rolCausa.diligencias.map(d => ({
     id: d.id,
     tipo: {
       id: d.tipo.id,
@@ -266,7 +266,7 @@ export async function loadRoleSummaryData(roleId: string, officeId: number) {
     createdAt: d.createdAt.toISOString(),
   }))
 
-  const resumenDocumentos = rolCausa.documentos.map((doc: any) => ({
+  const resumenDocumentos = rolCausa.documentos.map(doc => ({
     id: doc.id,
     nombre: doc.nombre,
     tipo: doc.tipo,
@@ -302,14 +302,14 @@ export async function loadRoleSummaryData(roleId: string, officeId: number) {
       : null,
   }))
 
-  const resumenNotas = rolCausa.notas.map((nota: any) => ({
+  const resumenNotas = rolCausa.notas.map(nota => ({
     id: nota.id,
     contenido: nota.contenido,
     userId: nota.userId,
     createdAt: nota.createdAt.toISOString(),
   }))
 
-  const resumenRecibos = rolCausa.recibos.map((recibo: any) => ({
+  const resumenRecibos = rolCausa.recibos.map(recibo => ({
     id: recibo.id,
     notificacionId: recibo.notificacionId ?? null,
     monto: Number(recibo.monto),

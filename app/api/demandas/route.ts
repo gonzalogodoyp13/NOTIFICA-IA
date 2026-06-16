@@ -1,277 +1,71 @@
-// API route: /api/demandas
-// POST: Create a new Demanda with ejecutados (Phase 3)
-import { NextRequest, NextResponse } from 'next/server'
-import { getCurrentUserWithOffice } from '@/lib/auth-server'
-import { debugLog, toSafeErrorMessage } from '@/lib/debugLog'
+import { NextRequest } from 'next/server'
+
+import { ApiError, apiSuccess, parseApiInput, withApiUser } from '@/lib/api/server'
 import { prisma } from '@/lib/prisma'
 import { parseCuantiaForStorage } from '@/lib/utils/cuantia'
+import { DemandaCreateSchema } from '@/lib/validations/demanda'
 
 export const dynamic = 'force-dynamic'
 
-function normalizeRol(value: unknown) {
-  return typeof value === 'string' ? value.trim().toUpperCase() : ''
-}
-
 export async function POST(req: NextRequest) {
-  try {
-    const user = await getCurrentUserWithOffice()
+  return withApiUser(req, 'create demanda', async user => {
+    const data = parseApiInput(DemandaCreateSchema, await req.json())
+    const ejecutados = data.ejecutados ?? []
 
-    if (!user) {
-      return NextResponse.json(
-        { ok: false, error: 'No autorizado' },
-        { status: 401 }
-      )
-    }
+    const [tribunal, abogado, materia, procurador, duplicate] = await Promise.all([
+      prisma.tribunal.findFirst({ where: { id: data.tribunalId, officeId: user.officeId } }),
+      prisma.abogado.findFirst({ where: { id: data.abogadoId, officeId: user.officeId } }),
+      data.materiaId ? prisma.materia.findFirst({ where: { id: data.materiaId, officeId: user.officeId } }) : null,
+      data.procuradorId ? prisma.procurador.findFirst({ where: { id: data.procuradorId, officeId: user.officeId } }) : null,
+      prisma.demanda.findFirst({ where: { officeId: user.officeId, rol: data.rol }, select: { id: true } }),
+    ])
 
-    const body = await req.json()
+    if (!tribunal) throw new ApiError('NOT_FOUND', 'Tribunal no encontrado o fuera de tu oficina', 404)
+    if (!abogado) throw new ApiError('NOT_FOUND', 'Abogado no encontrado o fuera de tu oficina', 404)
+    if (data.materiaId && !materia) throw new ApiError('NOT_FOUND', 'Materia no encontrada o fuera de tu oficina', 404)
+    if (data.procuradorId && !procurador) throw new ApiError('NOT_FOUND', 'Procurador no encontrado o fuera de tu oficina', 404)
+    if (duplicate) throw new ApiError('CONFLICT', `Ya existe una causa con el ROL ${data.rol}`, 409)
 
-    const { rol, tribunalId, caratula, cuantia, abogadoId, materiaId, ejecutados, procuradorId } = body
-    const normalizedRol = normalizeRol(rol)
-
-    if (!normalizedRol || !tribunalId || !caratula || !abogadoId) {
-      return NextResponse.json(
-        { ok: false, error: 'rol, tribunalId, caratula y abogadoId son requeridos' },
-        { status: 400 }
-      )
-    }
-
-    const officeId = user.officeId
-    const office = await prisma.office.findUnique({
-      where: { id: officeId },
-    })
-
-    if (!office) {
-      return NextResponse.json(
-        { ok: false, error: 'Oficina no valida para el usuario autenticado' },
-        { status: 403 }
-      )
-    }
-
-    const tribunalIdInt = typeof tribunalId === 'string' ? parseInt(tribunalId, 10) : tribunalId
-
-    if (isNaN(tribunalIdInt) || !Number.isInteger(tribunalIdInt)) {
-      return NextResponse.json(
-        { ok: false, error: 'tribunalId debe ser un numero entero valido' },
-        { status: 400 }
-      )
-    }
-
-    const tribunal = await prisma.tribunales.findFirst({
-      where: {
-        id: tribunalIdInt,
-        officeId: user.officeId,
-      },
-    })
-
-    if (!tribunal) {
-      return NextResponse.json(
-        { ok: false, error: 'Tribunal no encontrado o no pertenece a tu oficina' },
-        { status: 400 }
-      )
-    }
-
-    const abogado = await prisma.abogado.findFirst({
-      where: {
-        id: parseInt(abogadoId),
-        officeId: user.officeId,
-      },
-    })
-
-    if (!abogado) {
-      return NextResponse.json(
-        { ok: false, error: 'Abogado no encontrado o no pertenece a tu oficina' },
-        { status: 400 }
-      )
-    }
-
-    if (materiaId) {
-      const materia = await prisma.materia.findFirst({
-        where: {
-          id: parseInt(materiaId),
+    const result = await prisma.$transaction(async tx => {
+      const demanda = await tx.demanda.create({
+        data: {
+          rol: data.rol,
+          caratula: data.caratula,
+          cuantia: parseCuantiaForStorage(data.cuantia),
+          abogadoId: data.abogadoId,
+          materiaId: data.materiaId ?? null,
+          procuradorId: data.procuradorId ?? null,
           officeId: user.officeId,
+          userId: user.id,
+          ejecutados: ejecutados.length ? {
+            create: ejecutados.map(ejecutado => ({
+              nombre: ejecutado.nombre,
+              rut: ejecutado.rut,
+              direccion: ejecutado.direccion || null,
+              comunaId: ejecutado.comunaId ?? null,
+            })),
+          } : undefined,
+        },
+        include: {
+          abogados: { select: { id: true, nombre: true } },
+          ejecutados: { include: { comunas: { select: { id: true, nombre: true } } } },
         },
       })
-
-      if (!materia) {
-        return NextResponse.json(
-          { ok: false, error: 'Materia no encontrada o no pertenece a tu oficina' },
-          { status: 400 }
-        )
-      }
-    }
-
-    if (procuradorId !== null && procuradorId !== undefined) {
-      const procuradorIdInt = typeof procuradorId === 'string' ? parseInt(procuradorId, 10) : procuradorId
-
-      if (isNaN(procuradorIdInt) || !Number.isInteger(procuradorIdInt)) {
-        return NextResponse.json(
-          { ok: false, error: 'procuradorId debe ser un numero entero valido' },
-          { status: 400 }
-        )
-      }
-
-      const procurador = await prisma.procurador.findFirst({
-        where: {
-          id: procuradorIdInt,
-          officeId: user.officeId,
+      const rolCausa = await tx.rolCausa.create({
+        data: {
+          id: demanda.id,
+          demandaId: demanda.id,
+          rol: demanda.rol,
+          officeId: demanda.officeId,
+          tribunalId: tribunal.id,
+          estado: 'pendiente',
+          createdAt: demanda.createdAt,
         },
+        include: { tribunal: true },
       })
+      return { ...demanda, tribunal: rolCausa.tribunal, rolId: rolCausa.id }
+    }, { timeout: 15000 })
 
-      if (!procurador) {
-        return NextResponse.json(
-          { ok: false, error: 'Procurador no encontrado o no pertenece a tu oficina' },
-          { status: 400 }
-        )
-      }
-    }
-
-    const existingDemanda = await prisma.demanda.findFirst({
-      where: {
-        officeId,
-        rol: normalizedRol,
-      },
-    })
-
-    if (existingDemanda) {
-      return NextResponse.json(
-        { ok: false, error: `Ya existe una causa con el ROL ${normalizedRol} en esta oficina.` },
-        { status: 400 }
-      )
-    }
-
-    const findOrCreateTribunal = async (tribunalesId: number, currentOfficeId: number) => {
-      const tribunalesRecord = await prisma.tribunales.findUnique({
-        where: { id: tribunalesId },
-      })
-
-      if (!tribunalesRecord) {
-        throw new Error('Tribunal no encontrado')
-      }
-
-      let tribunalMatch = await prisma.tribunal.findFirst({
-        where: {
-          nombre: tribunalesRecord.nombre,
-          officeId: currentOfficeId,
-        },
-      })
-
-      if (!tribunalMatch) {
-        tribunalMatch = await prisma.tribunal.create({
-          data: {
-            nombre: tribunalesRecord.nombre,
-            direccion: tribunalesRecord.direccion,
-            comuna: tribunalesRecord.comuna,
-            officeId: currentOfficeId,
-          },
-        })
-      }
-
-      return tribunalMatch
-    }
-
-    const normalizedTribunal = await findOrCreateTribunal(tribunalIdInt, officeId)
-
-    const result = await prisma.$transaction(
-      async (tx) => {
-        const demanda = await tx.demanda.create({
-          data: {
-            rol: normalizedRol,
-            tribunalId: tribunalIdInt,
-            caratula,
-            cuantia: parseCuantiaForStorage(cuantia),
-            abogadoId: parseInt(abogadoId),
-            materiaId: materiaId ? parseInt(materiaId) : null,
-            procuradorId: procuradorId ? (typeof procuradorId === 'string' ? parseInt(procuradorId, 10) : procuradorId) : null,
-            officeId,
-            userId: user.id,
-            ejecutados: ejecutados && ejecutados.length > 0 ? {
-              create: ejecutados.map((ej: any) => ({
-                nombre: ej.nombre,
-                rut: ej.rut,
-                direccion: ej.direccion || null,
-                comunaId: ej.comunaId ? parseInt(ej.comunaId) : null,
-              })),
-            } : undefined,
-          },
-          include: {
-            tribunales: {
-              select: {
-                id: true,
-                nombre: true,
-              },
-            },
-            abogados: {
-              select: {
-                id: true,
-                nombre: true,
-              },
-            },
-            ejecutados: {
-              include: {
-                comunas: {
-                  select: {
-                    id: true,
-                    nombre: true,
-                  },
-                },
-              },
-            },
-          },
-        })
-
-        const existingRolCausa = await tx.rolCausa.findUnique({
-          where: { id: demanda.id },
-        })
-
-        if (existingRolCausa) {
-          await tx.rolCausa.update({
-            where: { id: demanda.id },
-            data: {
-              demandaId: demanda.id,
-              rol: demanda.rol,
-              officeId: demanda.officeId,
-              tribunalId: normalizedTribunal.id,
-              estado: 'pendiente',
-            },
-          })
-        } else {
-          await tx.rolCausa.create({
-            data: {
-              id: demanda.id,
-              demandaId: demanda.id,
-              rol: demanda.rol,
-              officeId: demanda.officeId,
-              tribunalId: normalizedTribunal.id,
-              estado: 'pendiente',
-              createdAt: demanda.createdAt,
-            },
-          })
-        }
-
-        return demanda
-      },
-      {
-        timeout: 15000,
-      }
-    )
-
-    const demanda = result
-
-    return NextResponse.json({
-      ok: true,
-      data: {
-        ...demanda,
-        rolId: demanda.id,
-      },
-    })
-  } catch (error: any) {
-    debugLog('[POST /api/demandas] Error creating demanda', {
-      error: toSafeErrorMessage(error),
-    })
-
-    return NextResponse.json(
-      { ok: false, error: error?.message || 'Error al crear la demanda' },
-      { status: 500 }
-    )
-  }
+    return apiSuccess(result, 201)
+  })
 }

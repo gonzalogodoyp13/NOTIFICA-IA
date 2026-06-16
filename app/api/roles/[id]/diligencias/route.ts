@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { Prisma } from '@prisma/client'
 
 import { getCurrentUserWithOffice } from '@/lib/auth-server'
+import { ApiError, apiFailure, parseApiInput } from '@/lib/api/server'
 import { prisma } from '@/lib/prisma'
 import { DiligenciaCreateSchema } from '@/lib/validations/rol-workspace'
 import { deriveNotificationCompleteness } from '@/lib/workflow/completeness'
@@ -129,7 +130,7 @@ export async function GET(
     const user = await getCurrentUserWithOffice()
 
     if (!user) {
-      return NextResponse.json({ ok: false, error: 'No autorizado' }, { status: 401 })
+      return apiFailure(new ApiError('UNAUTHORIZED', 'No autorizado', 401))
     }
 
     const rol = await prisma.rolCausa.findFirst({
@@ -141,10 +142,7 @@ export async function GET(
     })
 
     if (!rol) {
-      return NextResponse.json(
-        { ok: false, error: 'Rol no encontrado o no pertenece a tu oficina' },
-        { status: 404 }
-      )
+      return apiFailure(new ApiError('NOT_FOUND', 'Rol no encontrado o no pertenece a tu oficina', 404))
     }
 
     const diligencias = await prisma.diligencia.findMany({
@@ -258,7 +256,7 @@ export async function POST(
     const user = await getCurrentUserWithOffice()
 
     if (!user) {
-      return NextResponse.json({ ok: false, error: 'No autorizado' }, { status: 401 })
+      return apiFailure(new ApiError('UNAUTHORIZED', 'No autorizado', 401))
     }
 
     const rol = await prisma.rolCausa.findFirst({
@@ -285,20 +283,10 @@ export async function POST(
     })
 
     if (!rol) {
-      return NextResponse.json(
-        { ok: false, error: 'Rol no encontrado o no pertenece a tu oficina' },
-        { status: 404 }
-      )
+      return apiFailure(new ApiError('NOT_FOUND', 'Rol no encontrado o no pertenece a tu oficina', 404))
     }
 
-    const body = await req.json()
-    const parsed = DiligenciaCreateSchema.safeParse(body)
-
-    if (!parsed.success) {
-      return NextResponse.json({ ok: false, error: parsed.error.format() }, { status: 400 })
-    }
-
-    const payload = parsed.data
+    const payload = parseApiInput(DiligenciaCreateSchema, await req.json())
 
     const tipo = await prisma.diligenciaTipo.findFirst({
       where: {
@@ -308,10 +296,7 @@ export async function POST(
     })
 
     if (!tipo) {
-      return NextResponse.json(
-        { ok: false, error: 'Tipo de diligencia no encontrado en tu oficina' },
-        { status: 404 }
-      )
+      return apiFailure(new ApiError('NOT_FOUND', 'Tipo de diligencia no encontrado en tu oficina', 404))
     }
 
     const ejecutadoIds: string[] = []
@@ -333,10 +318,7 @@ export async function POST(
       })
 
       if (validCount !== unique.length) {
-        return NextResponse.json(
-          { ok: false, error: 'Ejecutado o dirección no pertenecen al ROL' },
-          { status: 400 }
-        )
+        return apiFailure(new ApiError('VALIDATION_ERROR', 'Ejecutado o dirección no pertenecen al ROL', 400))
       }
     }
 
@@ -384,10 +366,6 @@ export async function POST(
       }),
     })
   } catch (error) {
-    console.error('Error creando diligencia:', error)
-    return NextResponse.json(
-      { ok: false, error: 'Error al crear la diligencia' },
-      { status: 500 }
-    )
+    return apiFailure(new ApiError('INTERNAL_ERROR', 'Ocurrió un error inesperado', 500))
   }
 }

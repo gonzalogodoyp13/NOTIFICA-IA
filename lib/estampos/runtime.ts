@@ -1,9 +1,9 @@
-import { prisma } from '@/lib/prisma'
 import { formatDateToSpanishWords } from '@/lib/utils/dateFormat'
 import { formatCuantiaCLP } from '@/lib/utils/cuantia'
 import { replaceVariables } from './text'
 import type { VariableDef } from './types'
-import type { EstampoBase, EstampoCustom } from '@prisma/client'
+import type { EstampoBase, EstampoCustom, Prisma } from '@prisma/client'
+import { asJsonObject, getString } from '@/lib/utils/json'
 
 // Type for diligencia with all relations used by estampos runtime.
 // This is a pragmatic type, not a full Prisma-generated type.
@@ -11,8 +11,31 @@ import type { EstampoBase, EstampoCustom } from '@prisma/client'
 export type DiligenciaWithRelations = {
   id: string
   fecha: Date
-  meta: any
-  rol: any
+  meta: Prisma.JsonValue | null
+  rol: EstampoRol
+}
+
+export type EstampoEjecutado = {
+  id: string
+  nombre: string
+  rut: string
+  direccion: string | null
+  comunas: { nombre: string } | null
+}
+
+export type EstampoRol = {
+  rol: string
+  tribunal?: { nombre: string } | null
+  demanda?: {
+    cuantia: number
+    ejecutados: EstampoEjecutado[]
+    abogados?: {
+      nombre?: string | null
+      direccion?: string | null
+      comuna?: string | null
+      bancos: Array<{ banco: { nombre: string } }>
+    } | null
+  } | null
 }
 
 /**
@@ -33,17 +56,17 @@ export function buildInitialVariables({
   estampoBase: EstampoBase
   estampoCustom?: EstampoCustom | null
   dbUser: { officeName: string } | null
-  ejecutadoFromNotificacion?: any
+  ejecutadoFromNotificacion?: EstampoEjecutado | null
 }): Record<string, string> {
   const variablesSchema = estampoBase.variablesSchema as unknown as VariableDef[]
   const result: Record<string, string> = {}
 
-  const meta = diligencia.meta as Record<string, unknown> | null
-  const ejecutadoId = meta?.ejecutadoId as string | undefined
+  const meta = asJsonObject(diligencia.meta)
+  const ejecutadoId = getString(meta?.ejecutadoId)
 
   // Seleccionar ejecutado
   const ejecutados = rol?.demanda?.ejecutados ?? []
-  let ejecutado: any
+  let ejecutado: EstampoEjecutado | null | undefined
   
   if (ejecutadoFromNotificacion !== undefined) {
     // ejecutadoFromNotificacion was passed (notificacionId was provided)
@@ -52,7 +75,7 @@ export function buildInitialVariables({
   } else {
     // Legacy: notificacionId was NOT provided, use legacy behavior
     if (ejecutadoId) {
-      ejecutado = ejecutados.find((e: any) => e.id === ejecutadoId) ?? ejecutados[0]
+      ejecutado = ejecutados.find(e => e.id === ejecutadoId) ?? ejecutados[0]
     } else {
       ejecutado = ejecutados[0]
     }
@@ -63,10 +86,11 @@ export function buildInitialVariables({
   const banco = abogado?.bancos?.[0]?.banco ?? null
 
   // Fecha y hora de ejecución
-  const fechaEjecucion = meta?.fechaEjecucion
-    ? new Date(meta.fechaEjecucion as string)
+  const fechaEjecucionValue = getString(meta?.fechaEjecucion)
+  const fechaEjecucion = fechaEjecucionValue
+    ? new Date(fechaEjecucionValue)
     : diligencia.fecha
-  const horaEjecucion = (meta?.horaEjecucion as string) ?? ''
+  const horaEjecucion = getString(meta?.horaEjecucion) ?? ''
 
   // Cuantía formateada
   const montoSeleccionadoRaw =

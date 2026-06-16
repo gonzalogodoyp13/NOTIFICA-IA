@@ -8,6 +8,7 @@ import { useEffect, useState, useMemo, useCallback, useRef } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import Link from 'next/link'
 import { cleanCuantiaInput } from '@/lib/utils/cuantia'
+import { readApiError } from '@/lib/api/client'
 import { ProcuradorSelector } from '@/components/ProcuradorSelector'
 
 interface Banco {
@@ -27,7 +28,7 @@ interface Abogado {
 }
 
 interface Tribunal {
-  id: number
+  id: string
   nombre: string
 }
 
@@ -214,8 +215,8 @@ export default function EditarDemandaPage() {
     if (!rolData || hasPrefilledRef.current || !optionsLoaded) return
     if (bancos.length === 0 || tribunales.length === 0) return
 
-    const matchingTribunal = rolData.tribunal?.nombre
-      ? tribunales.find((t) => t.nombre === rolData.tribunal?.nombre)
+    const matchingTribunal = rolData.tribunal
+      ? tribunales.find((t) => t.id === rolData.tribunal?.id)
       : null
 
     const bancoFromCaratula = rolData.demanda?.caratula
@@ -362,7 +363,7 @@ export default function EditarDemandaPage() {
 
       const payload = {
         rol: formData.rol,
-        tribunalId: Number(formData.tribunalId),
+        tribunalId: formData.tribunalId,
         caratula: finalCaratula,
         cuantia: formData.cuantia ? cleanCuantiaInput(formData.cuantia) : null,
         abogadoId: formData.abogadoId ? Number(formData.abogadoId) : null,
@@ -378,13 +379,14 @@ export default function EditarDemandaPage() {
         credentials: 'include',
       })
 
+      if (!response.ok) {
+        throw new Error(await readApiError(response, 'Error al actualizar la demanda'))
+      }
+
       const data = await response.json().catch(() => ({}))
 
-      if (!response.ok || !data.ok) {
-        const errorMessage = Array.isArray(data.error)
-          ? data.error.map((e: any) => e.message || JSON.stringify(e)).join(', ')
-          : (data.error || 'Error al actualizar la demanda')
-        throw new Error(errorMessage)
+      if (!data.ok) {
+        throw new Error(data?.error?.message || data?.error || 'Error al actualizar la demanda')
       }
 
       // Redirect to ROL workspace
