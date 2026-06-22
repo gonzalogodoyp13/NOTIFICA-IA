@@ -16,6 +16,7 @@ model User {
   auditLogs  AuditLog[]
   demandas   Demanda[]
   receiptBulkOperations ReceiptBulkOperation[]
+  recibosDispatchBatches RecibosDispatchBatch[]
   office     Office     @relation(fields: [officeId], references: [id], onDelete: Restrict, onUpdate: Cascade)
 
   @@index([officeId])
@@ -54,6 +55,11 @@ model Office {
   recibos        Recibo[]
   documentNumberSequences DocumentNumberSequence[]
   receiptBulkOperations ReceiptBulkOperation[]
+  emailTemplates EmailTemplate[]
+  recibosDispatchBatches RecibosDispatchBatch[]
+  recibosDispatchReplies RecibosDispatchReply[]
+  recibosReplySyncCheckpoints RecibosReplySyncCheckpoint[]
+  recibosProviderHealth RecibosProviderHealth[]
 
   @@map("offices")
 }
@@ -438,6 +444,223 @@ model DocumentNumberSequence {
 
   @@unique([officeId, year, documentType])
   @@index([officeId, year])
+}
+
+model EmailTemplate {
+  id              String   @id @default(cuid())
+  officeId        Int
+  key             String
+  subject         String
+  body            String
+  updatedByUserId String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  office          Office   @relation(fields: [officeId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@unique([officeId, key])
+  @@index([officeId])
+  @@map("email_templates")
+}
+
+model RecibosDispatchBatch {
+  id                 String   @id @default(cuid())
+  officeId           Int
+  userId             String
+  recipientMode      String
+  provider           String
+  fromAccount        String?
+  status             String
+  selectedCount      Int      @default(0)
+  excludedCount      Int      @default(0)
+  groupCount         Int      @default(0)
+  sentCount          Int      @default(0)
+  failedCount        Int      @default(0)
+  skippedCount       Int      @default(0)
+  templateMode       String
+  dispatchKind       String   @default("standard")
+  errorMessage       String?
+  replyCount         Int      @default(0)
+  lastReplyAt        DateTime?
+  hasReplies         Boolean  @default(false)
+  createdAt          DateTime @default(now())
+  sentAt             DateTime?
+  completedAt        DateTime?
+  office             Office   @relation(fields: [officeId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  user               User     @relation(fields: [userId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  recipients         RecibosDispatchRecipient[]
+
+  @@index([officeId, createdAt])
+  @@index([userId, createdAt])
+  @@index([status])
+  @@map("recibos_dispatch_batches")
+}
+
+model RecibosDispatchRecipient {
+  id                    String   @id @default(cuid())
+  batchId               String
+  groupKey              String
+  recipientType         String
+  recipientName         String
+  recipientEmails       Json
+  subject               String
+  body                  String
+  status                String
+  attemptCount          Int      @default(0)
+  trackingToken         String?  @unique
+  providerMessageId     String?
+  providerThreadId      String?
+  providerInternetMessageId String?
+  resolvedAt            DateTime?
+  resolvedByUserId      String?
+  resolutionNote        String?
+  duplicateOverrideReason String?
+  duplicateConfirmedByUserId String?
+  duplicateConfirmedAt  DateTime?
+  overlappingDispatchIds Json?
+  resendOfRecipientId   String?
+  resendReason          String?
+  partialResendConfirmed Boolean @default(false)
+  attachmentFilename    String?
+  attachmentMimeType    String?
+  attachmentByteSize    Int?
+  attachmentSha256      String?
+  reciboCount           Int      @default(0)
+  totalAmount           Float    @default(0)
+  warningSummary        Json?
+  errorMessage          String?
+  replyCount            Int      @default(0)
+  lastReplyAt           DateTime?
+  hasReplies            Boolean  @default(false)
+  createdAt             DateTime @default(now())
+  sentAt                DateTime?
+  completedAt           DateTime?
+  batch                 RecibosDispatchBatch @relation(fields: [batchId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  items                 RecibosDispatchItem[]
+  replies               RecibosDispatchReply[]
+  resendOfRecipient     RecibosDispatchRecipient? @relation("RecipientResends", fields: [resendOfRecipientId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  resends               RecibosDispatchRecipient[] @relation("RecipientResends")
+
+  @@index([batchId])
+  @@index([status])
+  @@index([providerMessageId])
+  @@index([providerInternetMessageId])
+  @@index([resolvedAt])
+  @@index([resendOfRecipientId])
+  @@map("recibos_dispatch_recipients")
+}
+
+model RecibosDispatchReply {
+  id                       String   @id @default(cuid())
+  officeId                 Int
+  recipientId              String?
+  provider                 String
+  mailboxAddress           String
+  providerMessageId        String
+  providerThreadId         String?
+  internetMessageId        String?
+  inReplyTo                String?
+  references               Json?
+  trackingToken            String?
+  senderName               String?
+  senderEmail              String
+  subject                  String
+  textPreview              String
+  bodyText                 String
+  receivedAt               DateTime
+  matchStatus              String
+  matchMethod              String?
+  candidateRecipientIds    Json?
+  suggestedClassification  String?
+  classificationRuleVersion String?
+  confirmedClassification  String?
+  classifiedByUserId       String?
+  classifiedAt             DateTime?
+  createdAt                DateTime @default(now())
+  office                   Office   @relation(fields: [officeId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  recipient                RecibosDispatchRecipient? @relation(fields: [recipientId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  attachments              RecibosDispatchReplyAttachment[]
+
+  @@unique([provider, mailboxAddress, providerMessageId])
+  @@index([officeId, receivedAt])
+  @@index([recipientId, receivedAt])
+  @@index([matchStatus, receivedAt])
+  @@index([providerThreadId])
+  @@index([internetMessageId])
+  @@map("recibos_dispatch_replies")
+}
+
+model RecibosDispatchReplyAttachment {
+  id                   String   @id @default(cuid())
+  replyId              String
+  providerAttachmentId String?
+  filename             String
+  mimeType             String?
+  byteSize             Int?
+  contentId            String?
+  isInline             Boolean  @default(false)
+  createdAt            DateTime @default(now())
+  reply                RecibosDispatchReply @relation(fields: [replyId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@index([replyId])
+  @@map("recibos_dispatch_reply_attachments")
+}
+
+model RecibosReplySyncCheckpoint {
+  id                String   @id @default(cuid())
+  officeId          Int
+  provider          String
+  mailboxAddress    String
+  cursor            Json?
+  graphDeltaLink    String?
+  gmailUidValidity  String?
+  gmailLastUid      Int?
+  lastAttemptedAt   DateTime?
+  lastSuccessfulAt  DateTime?
+  lockedAt          DateTime?
+  lastError         String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  office            Office   @relation(fields: [officeId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@unique([officeId, provider, mailboxAddress])
+  @@index([officeId, updatedAt])
+  @@map("recibos_reply_sync_checkpoints")
+}
+
+model RecibosProviderHealth {
+  id                   String   @id @default(cuid())
+  officeId             Int
+  provider             String
+  mailboxAddress       String
+  status               String
+  lastCheckedAt        DateTime?
+  lastHealthyAt        DateTime?
+  lastSuccessfulSendAt DateTime?
+  lastSuccessfulSyncAt DateTime?
+  lastError            String?
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+  office               Office   @relation(fields: [officeId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@unique([officeId, provider, mailboxAddress])
+  @@index([officeId, updatedAt])
+  @@map("recibos_provider_health")
+}
+
+model RecibosDispatchItem {
+  id             String   @id @default(cuid())
+  recipientId    String
+  reciboId       String
+  numeroRecibo   String
+  rol            String
+  monto          Float
+  fechaEjecucion DateTime?
+  createdAt      DateTime @default(now())
+  recipient      RecibosDispatchRecipient @relation(fields: [recipientId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@index([recipientId])
+  @@index([reciboId])
+  @@map("recibos_dispatch_items")
 }
 
 model Tribunal {

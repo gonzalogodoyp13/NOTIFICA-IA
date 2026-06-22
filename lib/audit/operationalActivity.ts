@@ -5,12 +5,15 @@ import { prismaNoMiddleware } from '@/lib/prismaNoMiddleware'
 export async function recordOperationalActivity(params: {
   userId: string
   officeId: number
-  eventType: 'bulk_payment' | 'bulk_boleta' | 'receipt_export'
+  eventType: 'bulk_payment' | 'bulk_boleta' | 'receipt_export' | 'receipt_send' | 'receipt_reply_sync' |
+    'receipt_duplicate_override' | 'receipt_test_send' | 'receipt_resend' | 'receipt_reply_classify' |
+    'receipt_resolution' | 'receipt_health_check'
   rolId?: string
   reciboIds?: string[]
   count: number
   numeroBoleta?: string
   fechaPago?: string
+  details?: Record<string, unknown>
 }) {
   try {
     await prismaNoMiddleware.auditLog.create({
@@ -25,6 +28,7 @@ export async function recordOperationalActivity(params: {
           count: params.count,
           numeroBoleta: params.numeroBoleta,
           fechaPago: params.fechaPago,
+          ...params.details,
         },
       },
     })

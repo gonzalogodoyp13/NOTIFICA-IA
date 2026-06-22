@@ -2,7 +2,8 @@
 // Full CRUD functionality for abogados
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { useSearchParams } from 'next/navigation'
 import Topbar from '@/components/Topbar'
 import Link from 'next/link'
 
@@ -58,6 +59,8 @@ const initialFormData = {
 }
 
 export default function AbogadosPage() {
+  const searchParams = useSearchParams()
+  const handledEditId = useRef<number | null>(null)
   const [abogados, setAbogados] = useState<Abogado[]>([])
   const [bancos, setBancos] = useState<Banco[]>([])
   const [procuradores, setProcuradores] = useState<Procurador[]>([])
@@ -111,6 +114,13 @@ export default function AbogadosPage() {
     setError(null)
     setShowModal(true)
   }
+
+  useEffect(() => {
+    const editId = Number(searchParams.get('editar'))
+    if (!Number.isInteger(editId) || showModal || handledEditId.current === editId) return
+    const abogado = abogados.find(item => item.id === editId)
+    if (abogado) { handledEditId.current = editId; openEditModal(abogado) }
+  }, [abogados, searchParams, showModal])
 
   const fetchAbogados = async () => {
     try {

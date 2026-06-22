@@ -2,6 +2,7 @@
 'use client'
 
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { useSearchParams } from 'next/navigation'
 import Topbar from '@/components/Topbar'
 import Link from 'next/link'
 import { ProcuradorModal } from './ProcuradorModal'
@@ -39,6 +40,8 @@ interface ProcuradorListItem {
 }
 
 export default function ProcuradoresPage() {
+  const searchParams = useSearchParams()
+  const handledEditId = useRef<number | null>(null)
   const [bancos, setBancos] = useState<Banco[]>([])
   const [abogados, setAbogados] = useState<Abogado[]>([])
   const [selectedBancoId, setSelectedBancoId] = useState<number | null>(null)
@@ -56,6 +59,13 @@ export default function ProcuradoresPage() {
   const [showBancoDropdown, setShowBancoDropdown] = useState(false)
   const [sortBy, setSortBy] = useState<'recent' | 'name'>('recent')
   const bancoFilterRef = useRef<HTMLDivElement | null>(null)
+
+  useEffect(() => {
+    const editId = Number(searchParams.get('editar'))
+    if (!Number.isInteger(editId) || showCreateModal || handledEditId.current === editId) return
+    const procurador = procuradores.find(item => item.id === editId)
+    if (procurador) { handledEditId.current = editId; setEditingProcurador(procurador); setShowCreateModal(true) }
+  }, [procuradores, searchParams, showCreateModal])
 
   const normalizedSearchTerm = searchTerm.trim().toLowerCase()
   const normalizedBankFilterSearchTerm = bankFilterSearchTerm.trim().toLowerCase()

@@ -29,12 +29,24 @@ interface AuditLog {
   } | null
 }
 
+interface UnmatchedReply {
+  id: string
+  provider: string
+  senderEmail: string
+  subject: string
+  textPreview: string
+  receivedAt: string
+  matchStatus: 'unmatched' | 'needs_review'
+}
+
 export default function LogsPage() {
   const [logs, setLogs] = useState<AuditLog[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [selectedLog, setSelectedLog] = useState<AuditLog | null>(null)
   const [showModal, setShowModal] = useState(false)
+  const [unmatchedReplies, setUnmatchedReplies] = useState<UnmatchedReply[]>([])
+  const [unmatchedLoading, setUnmatchedLoading] = useState(true)
   const [filters, setFilters] = useState<{
     userId?: string
     tabla?: string
@@ -87,6 +99,14 @@ export default function LogsPage() {
     fetchLogs()
   }, [fetchLogs])
 
+  useEffect(() => {
+    fetch('/api/recibos/send/replies/unmatched?limit=10', { credentials: 'include' })
+      .then(response => response.json())
+      .then(payload => { if (payload.ok) setUnmatchedReplies(payload.data ?? []) })
+      .catch(() => undefined)
+      .finally(() => setUnmatchedLoading(false))
+  }, [])
+
   const handleFilter = (newFilters: typeof filters) => {
     setFilters(newFilters)
     fetchLogs(newFilters)
@@ -124,6 +144,14 @@ export default function LogsPage() {
           )}
 
           <LogsSummary />
+
+          <section className="mb-6 border-y border-gray-200 py-5">
+            <div className="flex items-center justify-between gap-3">
+              <div><h2 className="text-lg font-semibold text-gray-900">Respuestas sin asociar</h2><p className="mt-1 text-sm text-gray-600">Mensajes que requieren revision manual y no alteran el historial de envios.</p></div>
+              <span className="text-sm font-semibold text-gray-700">{unmatchedReplies.length}</span>
+            </div>
+            {unmatchedLoading ? <div className="mt-4 text-sm text-gray-500">Cargando respuestas...</div> : !unmatchedReplies.length ? <div className="mt-4 text-sm text-gray-500">No hay respuestas pendientes de asociacion.</div> : <div className="mt-4 overflow-x-auto"><table className="w-full min-w-[720px] text-sm"><thead><tr className="bg-gray-50 text-left text-xs uppercase text-gray-500"><th className="px-3 py-2">Estado</th><th className="px-3 py-2">Fecha</th><th className="px-3 py-2">Remitente</th><th className="px-3 py-2">Asunto</th><th className="px-3 py-2">Vista previa</th></tr></thead><tbody className="divide-y divide-gray-100">{unmatchedReplies.map(reply => <tr key={reply.id}><td className="px-3 py-3"><span className={`rounded-full px-2 py-1 text-xs font-semibold ${reply.matchStatus === 'needs_review' ? 'bg-amber-100 text-amber-800' : 'bg-slate-100 text-slate-700'}`}>{reply.matchStatus === 'needs_review' ? 'Revisar' : 'Sin asociar'}</span></td><td className="px-3 py-3 whitespace-nowrap">{new Intl.DateTimeFormat('es-CL', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(reply.receivedAt))}</td><td className="px-3 py-3">{reply.senderEmail}</td><td className="px-3 py-3">{reply.subject || 'Sin asunto'}</td><td className="px-3 py-3 text-gray-600">{reply.textPreview}</td></tr>)}</tbody></table></div>}
+          </section>
 
           <LogFilterBar onFilter={handleFilter} loading={loading} />
 

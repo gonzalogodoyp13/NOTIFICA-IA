@@ -18,8 +18,12 @@ export interface ReceiptListRow {
   estampoTemplate: string
   estampoTemplateKey: string | null
   resultado: string
+  abogadoId?: number | null
   abogado: string
+  abogadoEmail?: string | null
+  procuradorId?: number | null
   procurador: string
+  procuradorEmail?: string | null
   banco: string
   valor: number
   fechaRecibo: string
@@ -46,8 +50,8 @@ const validDocumentWhere = {
 const receiptListInclude = {
   rol: { select: { rol: true, tribunal: { select: { nombre: true } }, demanda: { select: {
     caratula: true,
-    abogados: { select: { nombre: true, bancos: { select: { banco: { select: { nombre: true } } } } } },
-    procurador: { select: { nombre: true, abogados: { select: { abogado: { select: { bancos: { select: { banco: { select: { nombre: true } } } } } } } } } },
+    abogados: { select: { id: true, nombre: true, email: true, bancos: { select: { banco: { select: { nombre: true } } } } } },
+    procurador: { select: { id: true, nombre: true, email: true, abogados: { select: { abogado: { select: { bancos: { select: { banco: { select: { nombre: true } } } } } } } } } },
   } } } },
 } satisfies Prisma.ReciboInclude
 
@@ -258,7 +262,12 @@ export async function getReceiptList(
       numeroRecibo: label(receipt.numeroRecibo), rol: label(receipt.rol.rol), tribunal: label(receipt.rol.tribunal?.nombre),
       caratula: label(receipt.rol.demanda?.caratula), gestion: label(diligence?.tipo.nombre), estampoTemplate: template?.label ?? EMPTY,
       estampoTemplateKey: template?.key ?? null, resultado: resultLabel(notification, diligence),
-      abogado: label(receipt.rol.demanda?.abogados?.nombre), procurador: label(receipt.rol.demanda?.procurador?.nombre),
+      abogadoId: receipt.rol.demanda?.abogados?.id ?? null,
+      abogado: label(receipt.rol.demanda?.abogados?.nombre),
+      abogadoEmail: receipt.rol.demanda?.abogados?.email?.trim() || null,
+      procuradorId: receipt.rol.demanda?.procurador?.id ?? null,
+      procurador: label(receipt.rol.demanda?.procurador?.nombre),
+      procuradorEmail: receipt.rol.demanda?.procurador?.email?.trim() || null,
       banco: bankLabel(receipt), valor: Number(receipt.monto), fechaRecibo: (receipt.fechaRecibo ?? receipt.createdAt).toISOString(),
       fechaEjecucion: receipt.fechaEjecucion?.toISOString() ?? null, fechaPago: diligence?.fechaPago?.toISOString() ?? null,
       estado: diligence?.estadoCobro === 'PAGADO' ? 'Pagado' as const : 'Sin pagar' as const,
