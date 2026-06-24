@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 
 import { getCurrentUserWithOffice } from '@/lib/auth-server'
+import { recordActivityEvent } from '@/lib/audit/activityEvent'
 import { downloadPdfFromDocumentStorage, hasStoredPdf, pdfBase64ToBuffer } from '@/lib/documents/storage'
 import { prisma } from '@/lib/prisma'
 
@@ -30,6 +31,8 @@ export async function GET(
         rol: {
           select: {
             officeId: true,
+            id: true,
+            rol: true,
           },
         },
         currentVersion: true,
@@ -45,6 +48,20 @@ export async function GET(
 
     // Validar que el documento pertenece a la oficina del usuario
     if (documento.rol.officeId !== user.officeId) {
+      await recordActivityEvent({
+        userId: user.id,
+        officeId: user.officeId,
+        eventType: 'document.access_denied',
+        module: 'security',
+        result: 'denied',
+        recordType: 'Documento',
+        recordId: params.id,
+        description: 'Acceso denegado a documento de otra oficina.',
+        metadata: {
+          requestedDocumentId: params.id,
+          reason: 'cross_office',
+        },
+      })
       return NextResponse.json(
         { ok: false, error: 'No tienes permiso para acceder a este documento' },
         { status: 403 }
@@ -74,6 +91,27 @@ export async function GET(
     const disposition = mode === 'inline' || mode === 'view'
       ? `inline; filename="${fileName}"`
       : `attachment; filename="${fileName}"`
+    const isInline = mode === 'inline' || mode === 'view'
+
+    await recordActivityEvent({
+      userId: user.id,
+      officeId: user.officeId,
+      eventType: isInline ? 'document.view' : 'document.download',
+      module: 'documents',
+      result: 'success',
+      recordType: 'Documento',
+      recordId: documento.id,
+      rolId: documento.rol.id,
+      rol: documento.rol.rol,
+      shortName: documento.nombre,
+      description: isInline ? 'Documento visualizado.' : 'Documento descargado.',
+      metadata: {
+        documentType: documento.tipo,
+        mode: isInline ? 'view' : 'download',
+        fileName,
+        byteSize: pdfBuffer.length,
+      },
+    })
 
     // Retornar PDF como binary response
     return new NextResponse(pdfBuffer, {

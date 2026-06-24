@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 
 import { getCurrentUserWithOffice } from '@/lib/auth-server'
+import { recordActivityEvent } from '@/lib/audit/activityEvent'
 import { hasStoredPdf, uploadPdfToDocumentStorage } from '@/lib/documents/storage'
 import { prisma } from '@/lib/prisma'
 import { buildMembretePdf } from '@/lib/pdf/membrete'
@@ -123,6 +124,27 @@ export async function POST(
       where: { id: documento.id },
       data: { currentVersionId: documentVersion.id },
       include: { currentVersion: true },
+    })
+
+    await recordActivityEvent({
+      userId: user.id,
+      officeId: user.officeId,
+      eventType: 'document.generate',
+      module: 'documents',
+      result: 'success',
+      recordType: 'Documento',
+      recordId: documentoWithVersion.id,
+      rolId: rol.id,
+      rol: rol.rol,
+      shortName: documentoWithVersion.nombre,
+      description: 'Membrete generado.',
+      metadata: {
+        documentType: documentoWithVersion.tipo,
+        templateType: 'membrete',
+        pageSize: data.pageSize,
+        placement: data.placement,
+        version: documentoWithVersion.version,
+      },
     })
 
     return NextResponse.json({

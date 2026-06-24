@@ -107,6 +107,7 @@ export async function getCurrentUserWithOffice(): Promise<{
   id: string
   email: string
   officeId: number
+  isOfficeAdmin: boolean
 } | null> {
   try {
     const cookieStore = cookies()
@@ -144,6 +145,7 @@ export async function getCurrentUserWithOffice(): Promise<{
         id: true,
         email: true,
         officeId: true,
+        isOfficeAdmin: true,
       },
     })
 
@@ -168,6 +170,7 @@ export async function getCurrentUserWithOffice(): Promise<{
       id: dbUser.id,
       email: dbUser.email,
       officeId: dbUser.officeId,
+      isOfficeAdmin: dbUser.isOfficeAdmin,
     }
   } catch (error) {
     debugLog('[getCurrentUserWithOffice] Exception', {

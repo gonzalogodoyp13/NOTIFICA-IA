@@ -3,6 +3,7 @@ import {
   BookOpenText,
   Building2,
   FileStack,
+  FileSpreadsheet,
   Landmark,
   MapPinned,
   Printer,
@@ -71,6 +72,12 @@ const configAreas = [
     title: 'Registros de Auditoria',
     description: 'Ver historial de cambios del sistema.',
     icon: ScrollText,
+  },
+  {
+    id: 'reportes',
+    title: 'Reportes de Auditoria',
+    description: 'Generar y descargar auditorias diarias.',
+    icon: FileSpreadsheet,
   },
 ]
 

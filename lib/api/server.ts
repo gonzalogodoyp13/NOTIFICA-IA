@@ -5,6 +5,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 
 import { getCurrentUserWithOffice } from '@/lib/auth-server'
+import { recordActivityEvent } from '@/lib/audit/activityEvent'
 import { debugLog, toSafeErrorMessage } from '@/lib/debugLog'
 
 export type ApiErrorCode =
@@ -94,12 +95,38 @@ function translatePrismaError(error: unknown): ApiError | null {
   return new ApiError('DATABASE_ERROR', 'No se pudo completar la operación', 500)
 }
 
-export function handleApiError(
+function moduleForOperation(operation: string) {
+  if (/send|mail|email|dispatch|reply/i.test(operation)) return 'emails'
+  if (/receipt|recibo/i.test(operation)) return 'recibos'
+  if (/search/i.test(operation)) return 'search'
+  if (/document|pdf/i.test(operation)) return 'documents'
+  return 'security'
+}
+
+export async function handleApiError(
   error: unknown,
   context: { operation: string; request?: NextRequest; user?: ApiUser | null }
 ) {
   const known = error instanceof ApiError ? error : translatePrismaError(error)
-  if (known) return apiFailure(known)
+  if (known) {
+    if (context.user && known.code !== 'UNAUTHORIZED') {
+      await recordActivityEvent({
+        userId: context.user.id,
+        officeId: context.user.officeId,
+        eventType: 'api.failure',
+        module: moduleForOperation(context.operation),
+        result: known.status === 403 ? 'denied' : 'failure',
+        description: 'Operacion fallida.',
+        metadata: {
+          operation: context.operation,
+          errorCode: known.code,
+          status: known.status,
+          path: context.request?.nextUrl.pathname,
+        },
+      })
+    }
+    return apiFailure(known)
+  }
 
   debugLog(`[API] ${context.operation} failed`, {
     error: toSafeErrorMessage(error),
@@ -128,6 +155,6 @@ export async function withApiUser(
     user = await requireApiUser()
     return await handler(user)
   } catch (error) {
-    return handleApiError(error, { operation, request, user })
+    return await handleApiError(error, { operation, request, user })
   }
 }

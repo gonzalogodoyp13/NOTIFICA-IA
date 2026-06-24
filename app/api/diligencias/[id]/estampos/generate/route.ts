@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 
 import { getCurrentUserWithOffice } from '@/lib/auth-server'
+import { recordActivityEvent } from '@/lib/audit/activityEvent'
 import { ApiError, apiFailure, parseApiInput } from '@/lib/api/server'
 import { buildDocumentGenerationMetadata } from '@/lib/documents/generationMetadata'
 import { hasStoredPdf, uploadPdfToDocumentStorage } from '@/lib/documents/storage'
@@ -177,6 +178,29 @@ export async function POST(
       where: { id: documento.id },
       data: { currentVersionId: documentVersion.id },
       include: { currentVersion: true },
+    })
+
+    await recordActivityEvent({
+      userId: user.id,
+      officeId: user.officeId,
+      eventType: 'document.generate',
+      module: 'documents',
+      result: 'success',
+      recordType: 'Documento',
+      recordId: documentoWithVersion.id,
+      rolId: diligencia.rolId,
+      rol: diligencia.rol.rol,
+      shortName: documentoWithVersion.nombre,
+      description: 'Estampo generado.',
+      metadata: {
+        documentType: documentoWithVersion.tipo,
+        templateType: 'wizard-estampo',
+        templateId: estampoBase.id,
+        templateSlug: estampoBase.slug,
+        templateCategory: estampoBase.categoria,
+        hasNotification: !!notificacionId,
+        version: documentoWithVersion.version,
+      },
     })
 
     return NextResponse.json({

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { Prisma } from '@prisma/client'
 
 import { getCurrentUserWithOffice } from '@/lib/auth-server'
+import { recordActivityEvent } from '@/lib/audit/activityEvent'
 import { ApiError, apiFailure, parseApiInput } from '@/lib/api/server'
 import { buildDocumentGenerationMetadata } from '@/lib/documents/generationMetadata'
 import { hasStoredPdf, uploadPdfToDocumentStorage } from '@/lib/documents/storage'
@@ -353,6 +354,26 @@ export async function POST(
     }
 
     const documento = result.documento
+
+    await recordActivityEvent({
+      userId: user.id,
+      officeId: user.officeId,
+      eventType: 'document.generate',
+      module: 'documents',
+      result: 'success',
+      recordType: 'Documento',
+      recordId: documento.id,
+      rolId: diligencia.rolId,
+      rol: diligencia.rol.rol,
+      shortName: documento.nombre,
+      description: 'Recibo generado.',
+      metadata: {
+        documentType: documento.tipo,
+        templateType: 'recibo',
+        hasNotification: !!notificacionId,
+        version: documento.version,
+      },
+    })
 
     return NextResponse.json({
       ok: true,

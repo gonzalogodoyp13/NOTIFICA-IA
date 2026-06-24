@@ -4,6 +4,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { Prisma } from '@prisma/client'
 import { getCurrentUserWithOffice } from '@/lib/auth-server'
+import { recordActivityEvent } from '@/lib/audit/activityEvent'
 import { sanitizeAuditDiff } from '@/lib/auditSanitizer'
 import { prisma } from '@/lib/prisma'
 
@@ -44,6 +45,20 @@ export async function GET(req: NextRequest) {
       ...log,
       diff: sanitizeAuditDiff(log.diff),
     }))
+
+    await recordActivityEvent({
+      userId: user.id,
+      officeId: user.officeId,
+      eventType: 'audit.export',
+      module: 'audit',
+      result: 'success',
+      recordType: 'AuditLog',
+      description: 'Exportacion de auditoria generada.',
+      metadata: {
+        format,
+        count: sanitizedLogs.length,
+      },
+    })
 
     if (format === 'csv') {
       const headers = [

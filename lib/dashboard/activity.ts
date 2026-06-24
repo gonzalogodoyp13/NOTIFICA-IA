@@ -24,6 +24,23 @@ function categoryFor(table: string, action: string): Exclude<ActivityType, 'all'
   return null
 }
 
+function categoryForActivityEvent(module: string, eventType: string): Exclude<ActivityType, 'all'> | null {
+  if (module === 'payments') return 'payments'
+  if (module === 'emails' || eventType.includes('export')) return 'exports'
+  if (module === 'documents') return 'documents'
+  if (module === 'roles') return 'cases'
+  if (module === 'diligencias') return 'diligencias'
+  if (module === 'notificaciones') return 'notifications'
+  return null
+}
+
+function hrefForActivityEvent(event: { module: string; rolId: string | null }) {
+  if (!event.rolId) return event.module === 'recibos' || event.module === 'payments' || event.module === 'emails' ? '/recibos' : '/dashboard'
+  if (event.module === 'documents') return `/roles/${event.rolId}?tab=documentos`
+  if (event.module === 'diligencias' || event.module === 'notificaciones') return `/roles/${event.rolId}?tab=diligencias`
+  return `/roles/${event.rolId}?tab=resumen`
+}
+
 function eventText(log: RawLog, rol: string | null) {
   const verb = log.accion === 'CREATE' ? 'Se creo' : log.accion === 'DELETE' ? 'Se elimino' : 'Se actualizo'
   if (log.tabla === 'OperationalActivity') {
@@ -46,6 +63,39 @@ function eventText(log: RawLog, rol: string | null) {
 
 export async function loadDashboardActivity(params: { officeId: number; type: ActivityType; cursor?: number; limit: number }): Promise<DashboardActivityPayload> {
   const cutoff = getActivityBoundary()
+  const activityEvents = await prisma.activityEvent.findMany({
+    where: {
+      officeId: params.officeId,
+      occurredAt: { gte: cutoff },
+      ...(params.cursor ? { id: { lt: params.cursor } } : {}),
+    },
+    orderBy: { id: 'desc' },
+    take: params.limit,
+  })
+  const mappedActivityEvents = activityEvents
+    .map(event => {
+      const type = categoryForActivityEvent(event.module, event.eventType)
+      if (!type || (params.type !== 'all' && params.type !== type)) return null
+      return {
+        id: String(event.id),
+        type,
+        occurredAt: event.occurredAt.toISOString(),
+        title: event.description,
+        detail: event.shortName,
+        href: hrefForActivityEvent(event),
+        rol: event.rol,
+      }
+    })
+    .filter((event): event is DashboardActivityEvent => !!event)
+
+  if (mappedActivityEvents.length > 0) {
+    const last = activityEvents[activityEvents.length - 1]
+    return {
+      events: mappedActivityEvents,
+      nextCursor: activityEvents.length === params.limit && last ? String(last.id) : null,
+    }
+  }
+
   const typeFilter = (() => {
     switch (params.type) {
       case 'cases': return Prisma.sql`AND tabla IN ('RolCausa','Demanda')`

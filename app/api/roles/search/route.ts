@@ -4,6 +4,7 @@
 //          { ok: false, error: "NOT_FOUND", message: "..." } if not found
 import { NextRequest, NextResponse } from 'next/server'
 import { getCurrentUserWithOffice } from '@/lib/auth-server'
+import { recordActivityEvent } from '@/lib/audit/activityEvent'
 import { prisma } from '@/lib/prisma'
 
 export const dynamic = 'force-dynamic'
@@ -45,6 +46,22 @@ export async function GET(req: NextRequest) {
     })
 
     if (!rolCausa) {
+      await recordActivityEvent({
+        userId: user.id,
+        officeId: user.officeId,
+        eventType: 'search.roles',
+        module: 'search',
+        result: 'success',
+        recordType: 'RolCausa',
+        description: 'Busqueda exacta de ROL realizada.',
+        metadata: {
+          resultCount: 0,
+          page: 1,
+          pageSize: 1,
+          hasResults: false,
+          searchMode: 'exact',
+        },
+      })
       return NextResponse.json({
         ok: false,
         error: 'NOT_FOUND',
@@ -52,6 +69,23 @@ export async function GET(req: NextRequest) {
       })
     }
 
+    await recordActivityEvent({
+      userId: user.id,
+      officeId: user.officeId,
+      eventType: 'search.roles',
+      module: 'search',
+      result: 'success',
+      recordType: 'RolCausa',
+      recordId: rolCausa.id,
+      description: 'Busqueda exacta de ROL realizada.',
+      metadata: {
+        resultCount: 1,
+        page: 1,
+        pageSize: 1,
+        hasResults: true,
+        searchMode: 'exact',
+      },
+    })
     return NextResponse.json({
       ok: true,
       data: {

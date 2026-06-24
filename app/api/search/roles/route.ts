@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client'
 import { z } from 'zod'
 
 import { getCurrentUserWithOffice } from '@/lib/auth-server'
+import { recordActivityEvent } from '@/lib/audit/activityEvent'
 import { prisma } from '@/lib/prisma'
 import type { RoleSearchPayload, RoleSearchResult } from '@/lib/dashboard/types'
 
@@ -127,6 +128,22 @@ export async function GET(req: NextRequest) {
       totalPages: Math.max(1, Math.ceil(total / 50)),
       results,
     }
+    await recordActivityEvent({
+      userId: user.id,
+      officeId: user.officeId,
+      eventType: 'search.roles',
+      module: 'search',
+      result: 'success',
+      recordType: 'RolCausa',
+      description: 'Busqueda de roles realizada.',
+      metadata: {
+        resultCount: results.length,
+        total,
+        page: query.page,
+        pageSize: query.pageSize,
+        hasResults: results.length > 0,
+      },
+    })
     return NextResponse.json({ ok: true, data: payload })
   } catch (error) {
     if (error instanceof z.ZodError) return NextResponse.json({ ok: false, error: 'Parametros invalidos.' }, { status: 400 })

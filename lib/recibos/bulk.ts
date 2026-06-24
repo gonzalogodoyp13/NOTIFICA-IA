@@ -2,6 +2,7 @@ import 'server-only'
 
 import { Prisma } from '@prisma/client'
 
+import { recordActivityEvent } from '@/lib/audit/activityEvent'
 import { prisma } from '@/lib/prisma'
 import { classifyBulkItem, receiptBulkStateHash } from '@/lib/recibos/bulk-core'
 
@@ -178,6 +179,25 @@ export async function executeReceiptBulkOperation(params: { officeId: number; us
     await tx.auditLog.create({
       data: { userId: params.userId, officeId: params.officeId, tabla: 'OperationalActivity', accion: params.input.action === 'markPaid' ? 'bulk_payment' : 'bulk_boleta', diff: { operationId: operation.id, count: preview.counts.eligible, receiptIds: preview.items.filter(item => item.disposition === 'eligible').map(item => item.receiptId).slice(0, 100) } },
     })
+    await recordActivityEvent({
+      userId: params.userId,
+      officeId: params.officeId,
+      eventType: params.input.action === 'markPaid' ? 'receipt.payment' : 'receipt.boleta',
+      module: 'payments',
+      result: 'success',
+      recordType: 'ReceiptBulkOperation',
+      recordId: operation.id,
+      description: params.input.action === 'markPaid' ? 'Pago masivo de recibos registrado.' : 'Boleta asociada a recibos.',
+      metadata: {
+        operationId: operation.id,
+        action: params.input.action,
+        count: preview.counts.eligible,
+        totalAmount: preview.totalEligibleAmount,
+        receiptIds: preview.items.filter(item => item.disposition === 'eligible').map(item => item.receiptId).slice(0, 100),
+        numeroBoleta: params.input.action === 'associateBoleta' ? params.input.numeroBoleta : undefined,
+        fechaPago: params.input.action === 'markPaid' ? params.input.fechaPago : undefined,
+      },
+    }, tx)
     return { operationId: operation.id, preview }
   })
 }
@@ -215,6 +235,21 @@ export async function undoReceiptBulkOperation(params: { officeId: number; userI
     }
     await tx.receiptBulkOperation.update({ where: { id: operation.id }, data: { undoneAt: new Date(), undoneByUserId: params.userId } })
     await tx.auditLog.create({ data: { userId: params.userId, officeId: params.officeId, tabla: 'OperationalActivity', accion: 'bulk_undo', diff: { operationId: operation.id, action: operation.action, receiptIds: operation.receiptIds } } })
+    await recordActivityEvent({
+      userId: params.userId,
+      officeId: params.officeId,
+      eventType: 'receipt.undo',
+      module: 'payments',
+      result: 'success',
+      recordType: 'ReceiptBulkOperation',
+      recordId: operation.id,
+      description: 'Operacion masiva de recibos deshecha.',
+      metadata: {
+        operationId: operation.id,
+        action: operation.action,
+        receiptIds: operation.receiptIds,
+      },
+    }, tx)
     return { operationId: operation.id }
   })
 }

@@ -12,8 +12,11 @@ model User {
   email      String     @unique
   officeName String
   officeId   Int
+  isOfficeAdmin Boolean  @default(false)
   createdAt  DateTime   @default(now())
   auditLogs  AuditLog[]
+  activityEvents ActivityEvent[]
+  generatedReports GeneratedReport[]
   demandas   Demanda[]
   receiptBulkOperations ReceiptBulkOperation[]
   recibosDispatchBatches RecibosDispatchBatch[]
@@ -50,6 +53,8 @@ model Office {
   diligenciaTiposNuevos DiligenciaTipo[]
   estampos       Estampo[]       @relation("OfficeEstampos")
   auditLogs      AuditLog[]
+  activityEvents ActivityEvent[]
+  generatedReports GeneratedReport[]
   demandas       Demanda[]
   estampoCustoms EstampoCustom[] @relation("OfficeEstampoCustoms")
   recibos        Recibo[]
@@ -76,6 +81,68 @@ model AuditLog {
   user      User     @relation(fields: [userId], references: [id])
 
   @@map("audit_logs")
+}
+
+model ActivityEvent {
+  id          Int      @id @default(autoincrement())
+  officeId    Int
+  userId      String
+  eventType   String
+  module      String
+  result      String
+  recordType  String?
+  recordId    String?
+  rolId       String?
+  rol         String?
+  shortName   String?
+  description String
+  metadata    Json?
+  occurredAt  DateTime @default(now())
+  createdAt   DateTime @default(now())
+  office      Office   @relation(fields: [officeId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  user        User     @relation(fields: [userId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  @@index([officeId, occurredAt])
+  @@index([userId, occurredAt])
+  @@index([eventType])
+  @@index([module])
+  @@index([result])
+  @@map("activity_events")
+}
+
+model GeneratedReport {
+  id              String   @id @default(cuid())
+  officeId        Int
+  reportType      String
+  periodStart     DateTime
+  periodEnd       DateTime
+  periodDate      String
+  timezone        String
+  status          String
+  storageBucket   String
+  storageKey      String
+  fileName        String
+  mimeType        String
+  sizeBytes       Int
+  checksumSha256  String
+  activityCount   Int
+  generatedAt     DateTime
+  expiresAt       DateTime?
+  createdByUserId String?
+  generationMode  String
+  metadata        Json?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  office          Office   @relation(fields: [officeId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  createdBy       User?    @relation(fields: [createdByUserId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+
+  @@unique([officeId, reportType, periodStart, periodEnd])
+  @@index([officeId, reportType, periodDate])
+  @@index([officeId, generatedAt])
+  @@index([status])
+  @@index([expiresAt])
+  @@index([storageBucket, storageKey])
+  @@map("generated_reports")
 }
 
 model Abogado {

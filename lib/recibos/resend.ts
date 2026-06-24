@@ -53,7 +53,7 @@ export async function resendDispatch(params: { officeId: number; userId: string;
       prisma.recibosDispatchBatch.update({ where: { id: batch.id }, data: { status: 'sent', sentCount: 1, sentAt: now, completedAt: now } }),
     ])
     await recordProviderSuccess({ officeId: params.officeId, provider: adapter.provider, mailboxAddress: adapter.fromAccount, kind: 'send' })
-    await recordOperationalActivity({ userId: params.userId, officeId: params.officeId, eventType: 'receipt_resend', count: current.rows.length, details: { sourceRecipientId: source.id, recipientId: recipient.id, batchId: batch.id, reason: params.input.reason, unavailableCount } })
+    await recordOperationalActivity({ userId: params.userId, officeId: params.officeId, eventType: 'receipt_resend', count: current.rows.length, details: { sourceRecipientId: source.id, recipientId: recipient.id, batchId: batch.id, hasReason: !!params.input.reason.trim(), unavailableCount } })
     return { batchId: batch.id, recipientId: recipient.id, unavailableCount, provider: adapter.provider }
   } catch (error) {
     const message = sanitizeDispatchError(error)

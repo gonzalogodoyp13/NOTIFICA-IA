@@ -26,12 +26,12 @@ export default function LoginPage() {
 
       if (result.success) {
         try {
-          await fetch('/api/log', {
+          await fetch('/api/activity/auth/login', {
             method: 'POST',
+            credentials: 'include',
             headers: {
               'Content-Type': 'application/json',
             },
-            body: JSON.stringify({ action: 'login' }),
           })
         } catch (logError) {
           console.error('Error logging login event:', logError)
