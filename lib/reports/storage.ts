@@ -24,6 +24,10 @@ export function dailyReportFileName(periodDate: string) {
   return `auditoria-diaria-${periodDate}.xlsx`
 }
 
+export function monthlyReportFileName(periodDate: string) {
+  return `reporte-mensual-${periodDate}.xlsx`
+}
+
 export function dailyReportStorageKey(input: { officeId: number; periodDate: string; reportId: string }) {
   const [year, month, day] = input.periodDate.split('-')
   return [
@@ -32,6 +36,17 @@ export function dailyReportStorageKey(input: { officeId: number; periodDate: str
     year,
     month,
     day,
+    `${input.reportId}.xlsx`,
+  ].join('/')
+}
+
+export function monthlyReportStorageKey(input: { officeId: number; periodDate: string; reportId: string }) {
+  const [year, month] = input.periodDate.split('-')
+  return [
+    `offices/${input.officeId}`,
+    'monthly',
+    year,
+    month,
     `${input.reportId}.xlsx`,
   ].join('/')
 }
@@ -51,6 +66,33 @@ export async function uploadReportWorkbook(input: {
   })
 
   if (error) throw new Error(`No se pudo subir el reporte a storage: ${error.message}`)
+
+  return {
+    storageBucket: REPORT_STORAGE_BUCKET,
+    storageKey,
+    fileName,
+    mimeType: XLSX_MIME_TYPE,
+    sizeBytes: input.buffer.length,
+    checksumSha256: reportChecksum(input.buffer),
+  }
+}
+
+export async function uploadMonthlyReportWorkbook(input: {
+  buffer: Buffer
+  officeId: number
+  periodDate: string
+  reportId: string
+  upsert?: boolean
+}): Promise<StoredReportFile> {
+  const storageKey = monthlyReportStorageKey(input)
+  const fileName = monthlyReportFileName(input.periodDate)
+  const supabase = createServerSupabaseStorageClient()
+  const { error } = await supabase.storage.from(REPORT_STORAGE_BUCKET).upload(storageKey, input.buffer, {
+    contentType: XLSX_MIME_TYPE,
+    upsert: input.upsert ?? false,
+  })
+
+  if (error) throw new Error(`No se pudo subir el reporte mensual a storage: ${error.message}`)
 
   return {
     storageBucket: REPORT_STORAGE_BUCKET,

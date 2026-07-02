@@ -165,6 +165,9 @@ public/                 Static assets
 - Configure `DATABASE_URL`, `NEXT_PUBLIC_SUPABASE_URL`, and `NEXT_PUBLIC_SUPABASE_ANON_KEY` in the deployment environment.
 - Apply committed Prisma migrations with `prisma migrate deploy`.
 - Generate Prisma Client during install/build as required by the deployment platform.
+- For daily audit emails, configure `AUDIT_REPORT_SYNC_SECRET`, `AUDIT_FAILURE_EMAIL`, and the normal mail provider variables. Schedule an external cron/Vercel Cron call to `POST /api/internal/reports/daily/send` at 7:00 AM America/Santiago with `Authorization: Bearer <AUDIT_REPORT_SYNC_SECRET>`.
+- For monthly billing report emails, schedule an external cron/Vercel Cron call to `POST /api/internal/reports/monthly/send` at 7:00 AM America/Santiago on the first day of each month with the same bearer secret. Daily and monthly endpoints are separate and may both run on the first day; idempotency prevents duplicate successful sends.
+- Monthly billing reports use `reportType = "monthly"`, `periodDate = YYYY-MM`, are stored permanently with `expiresAt = null`, and can also be generated or sent manually by office admins from `Ajustes > Reportes`.
 
 ## License
 

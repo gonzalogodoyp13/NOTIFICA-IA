@@ -7,8 +7,9 @@ import { prismaNoMiddleware } from '@/lib/prismaNoMiddleware'
 import { chileDayBounds } from './chileTime'
 import { buildDailyAuditWorkbook } from './dailyWorkbook'
 import { deleteReportFile, downloadReportFile, uploadReportWorkbook } from './storage'
+import { aggregateDeliveryStatus, DAILY_REPORT_TYPE } from './dailyDeliveryCore'
+import { MONTHLY_REPORT_TYPE } from './monthlyCore'
 
-const DAILY_REPORT_TYPE = 'daily'
 const REPORT_STATUS_READY = 'ready'
 const REPORT_STATUS_EXPIRED = 'expired'
 
@@ -26,8 +27,8 @@ function isUniqueConstraint(error: unknown) {
 }
 
 export async function listReportsForOffice(officeId: number) {
-  return prismaNoMiddleware.generatedReport.findMany({
-    where: { officeId, reportType: DAILY_REPORT_TYPE },
+  const reports = await prismaNoMiddleware.generatedReport.findMany({
+    where: { officeId, reportType: { in: [DAILY_REPORT_TYPE, MONTHLY_REPORT_TYPE] } },
     orderBy: [{ periodStart: 'desc' }, { generatedAt: 'desc' }],
     take: 120,
     select: {
@@ -43,8 +44,24 @@ export async function listReportsForOffice(officeId: number) {
       generatedAt: true,
       expiresAt: true,
       createdBy: { select: { email: true } },
+      deliveryBatches: {
+        orderBy: { createdAt: 'desc' },
+        take: 1,
+        select: {
+          intendedRecipientCount: true,
+          sentCount: true,
+          failedCount: true,
+          recipients: { select: { status: true } },
+        },
+      },
     },
   })
+
+  return reports.map(report => ({
+    ...report,
+    deliveryStatus: aggregateDeliveryStatus(report.deliveryBatches),
+    deliveryBatches: undefined,
+  }))
 }
 
 export async function getReportForDownload(officeId: number, reportId: string) {
@@ -58,9 +75,10 @@ export async function getReportForDownload(officeId: number, reportId: string) {
 
 export async function generateDailyReport(input: {
   officeId: number
-  userId: string
+  userId?: string | null
   date: string
   force?: boolean
+  generationMode?: string
 }): Promise<DailyReportResult> {
   const bounds = chileDayBounds(input.date)
   const existing = await prismaNoMiddleware.generatedReport.findUnique({
@@ -122,8 +140,8 @@ export async function generateDailyReport(input: {
     activityCount: events.length,
     generatedAt: now,
     expiresAt: addDays(now, 120),
-    createdByUserId: input.userId,
-    generationMode: input.force ? 'manual_force' : 'manual',
+    createdByUserId: input.userId ?? null,
+    generationMode: input.generationMode ?? (input.force ? 'manual_force' : 'manual'),
     metadata: {
       eventCount: events.length,
       generatedFrom: 'ActivityEvent',

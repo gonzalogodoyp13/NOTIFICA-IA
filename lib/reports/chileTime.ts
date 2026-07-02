@@ -1,6 +1,7 @@
 export const CHILE_TIMEZONE = 'America/Santiago'
 
 const DateSchema = /^(\d{4})-(\d{2})-(\d{2})$/
+const MonthSchema = /^(\d{4})-(\d{2})$/
 
 function partsInChile(date: Date) {
   const parts = new Intl.DateTimeFormat('en-CA', {
@@ -73,6 +74,54 @@ export function chileDayBounds(dateValue: string) {
   )
   const end = new Date(endExclusive.getTime() - 1)
   return { ...parsed, start, end, endExclusive, timezone: CHILE_TIMEZONE }
+}
+
+export function parseChileReportMonth(value: string) {
+  const match = MonthSchema.exec(value)
+  if (!match) throw new Error('El mes debe usar formato YYYY-MM.')
+  const year = Number(match[1])
+  const month = Number(match[2])
+  if (month < 1 || month > 12) throw new Error('El mes ingresado no es valido.')
+  return { year, month, isoMonth: value }
+}
+
+export function chileMonthBounds(monthValue: string) {
+  const parsed = parseChileReportMonth(monthValue)
+  const start = localChileDateTimeToUtc(parsed.year, parsed.month, 1)
+  const nextMonth = new Date(Date.UTC(parsed.year, parsed.month, 1))
+  const endExclusive = localChileDateTimeToUtc(nextMonth.getUTCFullYear(), nextMonth.getUTCMonth() + 1, 1)
+  const end = new Date(endExclusive.getTime() - 1)
+  return { ...parsed, start, end, endExclusive, timezone: CHILE_TIMEZONE }
+}
+
+export function chileDateString(value = new Date()) {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: CHILE_TIMEZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(value)
+  const lookup = Object.fromEntries(parts.map(part => [part.type, part.value]))
+  return `${lookup.year}-${lookup.month}-${lookup.day}`
+}
+
+export function previousChileDateString(now = new Date()) {
+  const current = parseChileReportDate(chileDateString(now))
+  const previous = new Date(Date.UTC(current.year, current.month - 1, current.day - 1))
+  return [
+    previous.getUTCFullYear(),
+    String(previous.getUTCMonth() + 1).padStart(2, '0'),
+    String(previous.getUTCDate()).padStart(2, '0'),
+  ].join('-')
+}
+
+export function previousChileMonthString(now = new Date()) {
+  const current = parseChileReportDate(chileDateString(now))
+  const previousMonth = new Date(Date.UTC(current.year, current.month - 2, 1))
+  return [
+    previousMonth.getUTCFullYear(),
+    String(previousMonth.getUTCMonth() + 1).padStart(2, '0'),
+  ].join('-')
 }
 
 export function formatChileDateTime(value: Date | string | null | undefined) {

@@ -13,10 +13,12 @@ model User {
   officeName String
   officeId   Int
   isOfficeAdmin Boolean  @default(false)
+  isActive   Boolean    @default(true)
   createdAt  DateTime   @default(now())
   auditLogs  AuditLog[]
   activityEvents ActivityEvent[]
   generatedReports GeneratedReport[]
+  reportDeliveryRecipients ReportDeliveryRecipient[]
   demandas   Demanda[]
   receiptBulkOperations ReceiptBulkOperation[]
   recibosDispatchBatches RecibosDispatchBatch[]
@@ -55,6 +57,7 @@ model Office {
   auditLogs      AuditLog[]
   activityEvents ActivityEvent[]
   generatedReports GeneratedReport[]
+  reportDeliveryBatches ReportDeliveryBatch[]
   demandas       Demanda[]
   estampoCustoms EstampoCustom[] @relation("OfficeEstampoCustoms")
   recibos        Recibo[]
@@ -135,6 +138,7 @@ model GeneratedReport {
   updatedAt       DateTime @updatedAt
   office          Office   @relation(fields: [officeId], references: [id], onDelete: Restrict, onUpdate: Cascade)
   createdBy       User?    @relation(fields: [createdByUserId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  deliveryBatches ReportDeliveryBatch[]
 
   @@unique([officeId, reportType, periodStart, periodEnd])
   @@index([officeId, reportType, periodDate])
@@ -143,6 +147,70 @@ model GeneratedReport {
   @@index([expiresAt])
   @@index([storageBucket, storageKey])
   @@map("generated_reports")
+}
+
+model ReportDeliveryBatch {
+  id                     String   @id @default(cuid())
+  officeId               Int
+  reportId               String?
+  reportType             String
+  periodStart            DateTime
+  periodEnd              DateTime
+  periodDate             String
+  timezone               String
+  status                 String
+  provider               String
+  fromAccount            String
+  intendedRecipientCount Int      @default(0)
+  sentCount              Int      @default(0)
+  failedCount            Int      @default(0)
+  skippedCount           Int      @default(0)
+  errorMessage           String?
+  mode                   String
+  startedAt              DateTime?
+  completedAt            DateTime?
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+  office                 Office   @relation(fields: [officeId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  report                 GeneratedReport? @relation(fields: [reportId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  recipients             ReportDeliveryRecipient[]
+
+  @@unique([officeId, reportType, periodStart, periodEnd])
+  @@index([officeId, reportType, periodDate])
+  @@index([reportId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("report_delivery_batches")
+}
+
+model ReportDeliveryRecipient {
+  id                        String   @id @default(cuid())
+  batchId                   String
+  userId                    String
+  email                     String
+  status                    String
+  attemptCount              Int      @default(0)
+  providerMessageId         String?
+  providerThreadId          String?
+  providerInternetMessageId String?
+  attachmentFilename        String?
+  attachmentMimeType        String?
+  attachmentByteSize        Int?
+  attachmentSha256          String?
+  errorMessage              String?
+  sentAt                    DateTime?
+  completedAt               DateTime?
+  createdAt                 DateTime @default(now())
+  updatedAt                 DateTime @updatedAt
+  batch                     ReportDeliveryBatch @relation(fields: [batchId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  user                      User     @relation(fields: [userId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  @@unique([batchId, userId])
+  @@index([batchId])
+  @@index([userId])
+  @@index([status])
+  @@index([email])
+  @@map("report_delivery_recipients")
 }
 
 model Abogado {
