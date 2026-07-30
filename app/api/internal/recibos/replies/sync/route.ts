@@ -13,7 +13,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: { code: 'UNAUTHORIZED', message: 'No autorizado' } }, { status: 401 })
   }
   try {
-    return NextResponse.json({ ok: true, data: await syncAllConfiguredOfficeReplies() })
+    return NextResponse.json({ ok: true, data: await syncAllConfiguredOfficeReplies(req.headers.get('x-request-id') ?? undefined) })
   } catch {
     return NextResponse.json({ ok: false, error: { code: 'INTERNAL_ERROR', message: 'No se pudo sincronizar las respuestas' } }, { status: 500 })
   }

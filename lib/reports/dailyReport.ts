@@ -3,12 +3,13 @@ import 'server-only'
 import { randomUUID } from 'crypto'
 import { Prisma, type GeneratedReport } from '@prisma/client'
 
-import { prismaNoMiddleware } from '@/lib/prismaNoMiddleware'
+import { prisma } from '@/lib/prisma'
 import { chileDayBounds } from './chileTime'
 import { buildDailyAuditWorkbook } from './dailyWorkbook'
 import { deleteReportFile, downloadReportFile, uploadReportWorkbook } from './storage'
 import { aggregateDeliveryStatus, DAILY_REPORT_TYPE } from './dailyDeliveryCore'
 import { MONTHLY_REPORT_TYPE } from './monthlyCore'
+import { enqueueExternalEvent, processActivityOutbox } from '@/lib/audit/outbox'
 
 const REPORT_STATUS_READY = 'ready'
 const REPORT_STATUS_EXPIRED = 'expired'
@@ -21,13 +22,12 @@ export type DailyReportResult =
 function addDays(date: Date, days: number) {
   return new Date(date.getTime() + days * 24 * 60 * 60 * 1000)
 }
-
 function isUniqueConstraint(error: unknown) {
   return error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002'
 }
 
 export async function listReportsForOffice(officeId: number) {
-  const reports = await prismaNoMiddleware.generatedReport.findMany({
+  const reports = await prisma.generatedReport.findMany({
     where: { officeId, reportType: { in: [DAILY_REPORT_TYPE, MONTHLY_REPORT_TYPE] } },
     orderBy: [{ periodStart: 'desc' }, { generatedAt: 'desc' }],
     take: 120,
@@ -65,7 +65,7 @@ export async function listReportsForOffice(officeId: number) {
 }
 
 export async function getReportForDownload(officeId: number, reportId: string) {
-  const report = await prismaNoMiddleware.generatedReport.findFirst({
+  const report = await prisma.generatedReport.findFirst({
     where: { id: reportId, officeId, status: REPORT_STATUS_READY },
   })
   if (!report) return null
@@ -79,9 +79,10 @@ export async function generateDailyReport(input: {
   date: string
   force?: boolean
   generationMode?: string
+  requestId?: string
 }): Promise<DailyReportResult> {
   const bounds = chileDayBounds(input.date)
-  const existing = await prismaNoMiddleware.generatedReport.findUnique({
+  const existing = await prisma.generatedReport.findUnique({
     where: {
       officeId_reportType_periodStart_periodEnd: {
         officeId: input.officeId,
@@ -94,8 +95,8 @@ export async function generateDailyReport(input: {
   if (existing && !input.force) return { status: 'existing', report: existing }
 
   const [office, events] = await Promise.all([
-    prismaNoMiddleware.office.findUnique({ where: { id: input.officeId }, select: { nombre: true } }),
-    prismaNoMiddleware.activityEvent.findMany({
+    prisma.office.findUnique({ where: { id: input.officeId }, select: { nombre: true } }),
+    prisma.activityEvent.findMany({
       where: {
         officeId: input.officeId,
         occurredAt: { gte: bounds.start, lte: bounds.end },
@@ -151,27 +152,44 @@ export async function generateDailyReport(input: {
 
   if (existing) {
     const previous = { bucket: existing.storageBucket, key: existing.storageKey }
-    const report = await prismaNoMiddleware.generatedReport.update({
-      where: { id: existing.id },
-      data,
+    const report = await prisma.$transaction(async tx => {
+      const updated = await tx.generatedReport.update({ where: { id: existing.id }, data })
+      await enqueueExternalEvent(tx, {
+        id: input.userId ?? undefined, officeId: input.officeId, requestId: input.requestId,
+        actorType: input.userId ? 'USER' : 'SYSTEM', source: input.userId ? 'WEB' : 'SYSTEM',
+      }, {
+        eventType: 'report.daily.generated', module: 'reports', result: 'success',
+        recordType: 'GeneratedReport', recordId: updated.id, description: 'Reporte diario generado.',
+        deduplicationKey: `report:${updated.id}:${stored.checksumSha256}`,
+        metadata: { reportId: updated.id, reportType: updated.reportType, periodDate: updated.periodDate, activityCount: updated.activityCount },
+      })
+      return updated
     })
+    await processActivityOutbox(50).catch(() => undefined)
     deleteReportFile(previous.bucket, previous.key).catch(() => undefined)
     return { status: 'generated', report }
   }
 
   try {
-    const report = await prismaNoMiddleware.generatedReport.create({
-      data: {
-        id: reportId,
-        officeId: input.officeId,
-        ...data,
-      },
+    const report = await prisma.$transaction(async tx => {
+      const created = await tx.generatedReport.create({ data: { id: reportId, officeId: input.officeId, ...data } })
+      await enqueueExternalEvent(tx, {
+        id: input.userId ?? undefined, officeId: input.officeId, requestId: input.requestId,
+        actorType: input.userId ? 'USER' : 'SYSTEM', source: input.userId ? 'WEB' : 'SYSTEM',
+      }, {
+        eventType: 'report.daily.generated', module: 'reports', result: 'success',
+        recordType: 'GeneratedReport', recordId: created.id, description: 'Reporte diario generado.',
+        deduplicationKey: `report:${created.id}:${stored.checksumSha256}`,
+        metadata: { reportId: created.id, reportType: created.reportType, periodDate: created.periodDate, activityCount: created.activityCount },
+      })
+      return created
     })
+    await processActivityOutbox(50).catch(() => undefined)
     return { status: 'generated', report }
   } catch (error) {
     if (isUniqueConstraint(error)) {
       await deleteReportFile(stored.storageBucket, stored.storageKey).catch(() => undefined)
-      const report = await prismaNoMiddleware.generatedReport.findUniqueOrThrow({
+      const report = await prisma.generatedReport.findUniqueOrThrow({
         where: {
           officeId_reportType_periodStart_periodEnd: {
             officeId: input.officeId,
@@ -189,7 +207,7 @@ export async function generateDailyReport(input: {
 }
 
 export async function cleanupExpiredDailyReports(officeId: number, now = new Date()) {
-  const reports = await prismaNoMiddleware.generatedReport.findMany({
+  const reports = await prisma.generatedReport.findMany({
     where: {
       officeId,
       reportType: DAILY_REPORT_TYPE,
@@ -201,7 +219,7 @@ export async function cleanupExpiredDailyReports(officeId: number, now = new Dat
   let expired = 0
   for (const report of reports) {
     await deleteReportFile(report.storageBucket, report.storageKey).catch(() => undefined)
-    await prismaNoMiddleware.generatedReport.update({
+    await prisma.generatedReport.update({
       where: { id: report.id },
       data: { status: REPORT_STATUS_EXPIRED, metadata: { expiredAt: now.toISOString(), previousStatus: report.status } },
     })

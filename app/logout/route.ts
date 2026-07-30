@@ -2,25 +2,23 @@
 // Handles user sign-out and redirects to login page
 import { createServerSupabaseClient } from '@/lib/supabaseServer'
 import { redirect } from 'next/navigation'
-import { getCurrentUserWithOffice } from '@/lib/auth-server'
-import { recordActivityEvent } from '@/lib/audit/activityEvent'
+import { NextRequest } from 'next/server'
+import { requireApiUser } from '@/lib/api/server'
+import { recordBestEffortEvent } from '@/lib/audit/activityEvent'
 
 // Force dynamic rendering since we use cookies for authentication
 export const dynamic = 'force-dynamic'
 
-export async function POST() {
+export async function POST(req: NextRequest) {
   try {
-    const user = await getCurrentUserWithOffice()
+    const user = await requireApiUser(req)
     if (user) {
-      await recordActivityEvent({
-        userId: user.id,
-        officeId: user.officeId,
+      await recordBestEffortEvent(user, {
         eventType: 'auth.logout',
         module: 'auth',
         result: 'success',
         recordType: 'user',
         recordId: user.id,
-        shortName: user.email,
         description: 'Cierre de sesion.',
       })
     }

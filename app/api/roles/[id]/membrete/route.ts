@@ -1,7 +1,7 @@
+import { withApiUser } from '@/lib/api/server'
 import { NextRequest, NextResponse } from 'next/server'
 
-import { getCurrentUserWithOffice } from '@/lib/auth-server'
-import { recordActivityEvent } from '@/lib/audit/activityEvent'
+import { enqueueExternalEvent, processActivityOutbox } from '@/lib/audit/outbox'
 import { hasStoredPdf, uploadPdfToDocumentStorage } from '@/lib/documents/storage'
 import { prisma } from '@/lib/prisma'
 import { buildMembretePdf } from '@/lib/pdf/membrete'
@@ -13,12 +13,8 @@ export async function POST(
   req: NextRequest,
   { params }: { params: { id: string } }
 ) {
+  return withApiUser(req, 'post.roles.id.membrete', async user => {
   try {
-    const user = await getCurrentUserWithOffice()
-
-    if (!user) {
-      return NextResponse.json({ ok: false, error: 'No autorizado' }, { status: 401 })
-    }
 
     const raw = await req.json().catch(() => ({}))
     const parsed = MembreteGenerateSchema.safeParse(raw)
@@ -112,40 +108,23 @@ export async function POST(
       fileName: documento.nombre,
       createdAt: documento.createdAt,
     })
-    const documentVersion = await prisma.documentoVersion.create({
-      data: {
-        documentoId: documento.id,
-        versionNumber: 1,
-        ...storedPdf,
-        createdByUserId: user.id,
-      },
+    const documentoWithVersion = await prisma.$transaction(async tx => {
+      const documentVersion = await tx.documentoVersion.create({
+        data: { documentoId: documento.id, versionNumber: 1, ...storedPdf, createdByUserId: user.id },
+      })
+      const updated = await tx.documento.update({
+        where: { id: documento.id }, data: { currentVersionId: documentVersion.id }, include: { currentVersion: true },
+      })
+      await enqueueExternalEvent(tx, user, {
+        eventType: 'document.letterhead_generated', module: 'documents', result: 'success',
+        recordType: 'Documento', recordId: updated.id, rolId: rol.id, rol: rol.rol,
+        description: 'Membrete generado.',
+        deduplicationKey: `letterhead:${documentVersion.id}:generated`,
+        metadata: { documentId: updated.id, documentVersionId: documentVersion.id, documentType: updated.tipo, pageSize: data.pageSize, placement: data.placement, version: updated.version },
+      })
+      return updated
     })
-    const documentoWithVersion = await prisma.documento.update({
-      where: { id: documento.id },
-      data: { currentVersionId: documentVersion.id },
-      include: { currentVersion: true },
-    })
-
-    await recordActivityEvent({
-      userId: user.id,
-      officeId: user.officeId,
-      eventType: 'document.generate',
-      module: 'documents',
-      result: 'success',
-      recordType: 'Documento',
-      recordId: documentoWithVersion.id,
-      rolId: rol.id,
-      rol: rol.rol,
-      shortName: documentoWithVersion.nombre,
-      description: 'Membrete generado.',
-      metadata: {
-        documentType: documentoWithVersion.tipo,
-        templateType: 'membrete',
-        pageSize: data.pageSize,
-        placement: data.placement,
-        version: documentoWithVersion.version,
-      },
-    })
+    await processActivityOutbox(50).catch(() => undefined)
 
     return NextResponse.json({
       ok: true,
@@ -165,4 +144,6 @@ export async function POST(
       { status: 500 }
     )
   }
+
+  })
 }

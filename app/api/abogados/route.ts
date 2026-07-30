@@ -1,9 +1,10 @@
+import { withApiUser } from '@/lib/api/server'
 // API route: /api/abogados
 // GET: List all abogados for the current office
 // POST: Create a new abogado with many bancos and many procuradores
 import { NextRequest, NextResponse } from 'next/server'
-import { getCurrentUserWithOffice } from '@/lib/auth-server'
 import { prisma } from '@/lib/prisma'
+import { recordSettingsEvent } from '@/lib/audit/businessEvents'
 import { AbogadoSchema } from '@/lib/zodSchemas'
 
 export const dynamic = 'force-dynamic'
@@ -93,15 +94,8 @@ async function getValidatedProcuradorIds(officeId: number, procuradorIds?: numbe
 }
 
 export async function GET(req: NextRequest) {
+  return withApiUser(req, 'get.abogados', async user => {
   try {
-    const user = await getCurrentUserWithOffice()
-
-    if (!user) {
-      return NextResponse.json(
-        { ok: false, message: 'No autorizado', error: 'No autorizado' },
-        { status: 401 }
-      )
-    }
 
     const bancoIdParam = req.nextUrl.searchParams.get('bancoId')
     const bancoId = bancoIdParam ? parseInt(bancoIdParam, 10) : null
@@ -141,18 +135,13 @@ export async function GET(req: NextRequest) {
       { status: 500 }
     )
   }
+
+  })
 }
 
 export async function POST(req: NextRequest) {
+  return withApiUser(req, 'post.abogados', async user => {
   try {
-    const user = await getCurrentUserWithOffice()
-
-    if (!user) {
-      return NextResponse.json(
-        { ok: false, message: 'No autorizado', error: 'No autorizado' },
-        { status: 401 }
-      )
-    }
 
     const body = await req.json()
     const parsed = AbogadoSchema.safeParse(body)
@@ -226,6 +215,7 @@ export async function POST(req: NextRequest) {
         })
       }
 
+      await recordSettingsEvent(tx, user, { resource: 'Abogado', action: 'created', recordId: createdAbogado.id })
       return createdAbogado
     })
 
@@ -244,4 +234,6 @@ export async function POST(req: NextRequest) {
       { status }
     )
   }
+
+  })
 }

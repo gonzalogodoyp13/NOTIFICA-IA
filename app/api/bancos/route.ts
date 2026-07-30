@@ -1,23 +1,17 @@
+import { withApiUser } from '@/lib/api/server'
 // API route: /api/bancos
 // GET: List all bancos for the current office
 // POST: Create a new banco
 import { NextRequest, NextResponse } from 'next/server'
-import { getCurrentUserWithOffice } from '@/lib/auth-server'
 import { prisma } from '@/lib/prisma'
 import { BancoSchema } from '@/lib/zodSchemas'
+import { recordSettingsEvent } from '@/lib/audit/businessEvents'
 
 export const dynamic = 'force-dynamic'
 
-export async function GET() {
+export async function GET(req: NextRequest) {
+  return withApiUser(req, 'get.bancos', async user => {
   try {
-    const user = await getCurrentUserWithOffice()
-
-    if (!user) {
-      return NextResponse.json(
-        { ok: false, message: 'No autorizado', error: 'No autorizado' },
-        { status: 401 }
-      )
-    }
 
     const bancos = await prisma.banco.findMany({
       where: { officeId: user.officeId },
@@ -34,18 +28,13 @@ export async function GET() {
       { status: 500 }
     )
   }
+
+  })
 }
 
 export async function POST(req: NextRequest) {
+  return withApiUser(req, 'post.bancos', async user => {
   try {
-    const user = await getCurrentUserWithOffice()
-
-    if (!user) {
-      return NextResponse.json(
-        { ok: false, message: 'No autorizado', error: 'No autorizado' },
-        { status: 401 }
-      )
-    }
 
     const body = await req.json()
     const parsed = BancoSchema.safeParse(body)
@@ -58,11 +47,10 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    const banco = await prisma.banco.create({
-      data: {
-        ...parsed.data,
-        officeId: user.officeId,
-      },
+    const banco = await prisma.$transaction(async tx => {
+      const created = await tx.banco.create({ data: { ...parsed.data, officeId: user.officeId } })
+      await recordSettingsEvent(tx, user, { resource: 'Banco', action: 'created', recordId: created.id })
+      return created
     })
 
     return NextResponse.json({ ok: true, data: banco })
@@ -74,5 +62,7 @@ export async function POST(req: NextRequest) {
       { status: 500 }
     )
   }
+
+  })
 }
 

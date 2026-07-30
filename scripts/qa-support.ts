@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import path from 'node:path'
 import type { Prisma, PrismaClient } from '@prisma/client'
+import { createClient } from '@supabase/supabase-js'
 import ExcelJS from 'exceljs'
 
 import { busquedasNegativasSeeds } from '../lib/estampos/busquedasNegativasSeeds'
@@ -117,7 +118,22 @@ export async function resolveQaUser(prisma: PrismaClient) {
 
   if (email) {
     const existing = await prisma.user.findUnique({ where: { email } })
-    if (existing?.officeId) return existing
+    if (existing?.officeId && existing.authUserId) return existing
+
+    const supabaseUrl = process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL
+    const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+    if (!supabaseUrl || !serviceRoleKey) {
+      throw new Error('Supabase service configuration is required to provision a QA user.')
+    }
+    const supabase = createClient(supabaseUrl, serviceRoleKey, {
+      auth: { autoRefreshToken: false, persistSession: false },
+    })
+    const { data, error } = await supabase.auth.admin.listUsers({ page: 1, perPage: 1000 })
+    if (error) throw error
+    const matches = data.users.filter(user => user.email?.trim().toLowerCase() === email.toLowerCase())
+    if (matches.length !== 1) {
+      throw new Error(`QA_USER_EMAIL must match exactly one Supabase Auth user; found ${matches.length}.`)
+    }
 
     const office = await prisma.office.create({ data: { nombre: qaName('Office') } })
     return prisma.user.upsert({
@@ -125,8 +141,10 @@ export async function resolveQaUser(prisma: PrismaClient) {
       update: {
         officeId: office.id,
         officeName: office.nombre,
+        authUserId: matches[0].id,
       },
       create: {
+        authUserId: matches[0].id,
         email,
         officeId: office.id,
         officeName: office.nombre,
@@ -142,15 +160,7 @@ export async function resolveQaUser(prisma: PrismaClient) {
   if (users.length > 1) {
     throw new Error('Set QA_USER_EMAIL in .env.local when more than one DB user exists.')
   }
-
-  const office = await prisma.office.create({ data: { nombre: qaName('Office') } })
-  return prisma.user.create({
-    data: {
-      email: 'qa-p9@example.local',
-      officeId: office.id,
-      officeName: office.nombre,
-    },
-  })
+  throw new Error('No database user exists. Set QA_USER_EMAIL to an existing Supabase Auth user before seeding QA data.')
 }
 
 export async function seedEstampoBasesForQa(prisma: PrismaClient) {

@@ -1,6 +1,5 @@
 import 'server-only'
 
-import { prismaNoMiddleware } from '@/lib/prismaNoMiddleware'
 import { recordActivityEvent } from '@/lib/audit/activityEvent'
 
 type OperationalEventType =
@@ -31,10 +30,10 @@ const EVENT_MAP: Record<OperationalEventType, { eventType: string; module: 'reci
   receipt_resolution: { eventType: 'receipt.resolution', module: 'emails', description: 'Resolucion de envio de recibos actualizada.' },
   receipt_health_check: { eventType: 'receipt.health_check', module: 'emails', description: 'Revision de proveedor de correo realizada.' },
 }
-
 export async function recordOperationalActivity(params: {
   userId: string
   officeId: number
+  requestId?: string
   eventType: OperationalEventType
   rolId?: string
   reciboIds?: string[]
@@ -47,6 +46,7 @@ export async function recordOperationalActivity(params: {
   await recordActivityEvent({
     userId: params.userId,
     officeId: params.officeId,
+    requestId: params.requestId,
     eventType: mapped.eventType,
     module: mapped.module,
     result: params.details?.status === 'failed' ? 'failure' : 'success',
@@ -62,24 +62,4 @@ export async function recordOperationalActivity(params: {
     },
   })
 
-  try {
-    await prismaNoMiddleware.auditLog.create({
-      data: {
-        userId: params.userId,
-        officeId: params.officeId,
-        tabla: 'OperationalActivity',
-        accion: params.eventType,
-        diff: {
-          rolId: params.rolId,
-          reciboIds: params.reciboIds?.slice(0, 100),
-          count: params.count,
-          numeroBoleta: params.numeroBoleta,
-          fechaPago: params.fechaPago,
-          ...params.details,
-        },
-      },
-    })
-  } catch (error) {
-    console.error('[operational activity] Could not record event:', error)
-  }
 }

@@ -1,20 +1,13 @@
+import { withApiUser } from '@/lib/api/server'
 import { NextRequest, NextResponse } from 'next/server'
 
-import { getCurrentUserWithOffice } from '@/lib/auth-server'
 import { lookupArancel, lookupArancelByCategoria } from '@/lib/utils/aranceles'
 
 export const dynamic = 'force-dynamic'
 
 export async function GET(req: NextRequest) {
+  return withApiUser(req, 'get.aranceles.lookup', async user => {
   try {
-    const user = await getCurrentUserWithOffice()
-
-    if (!user) {
-      return NextResponse.json(
-        { ok: false, message: 'No autorizado', error: 'No autorizado' },
-        { status: 401 }
-      )
-    }
 
     const searchParams = req.nextUrl.searchParams
     const bancoIdParam = searchParams.get('bancoId')
@@ -72,5 +65,7 @@ export async function GET(req: NextRequest) {
       { status: 500 }
     )
   }
+
+  })
 }
 

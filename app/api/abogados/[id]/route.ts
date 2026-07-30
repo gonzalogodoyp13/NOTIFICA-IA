@@ -1,9 +1,10 @@
+import { withApiUser } from '@/lib/api/server'
 // API route: /api/abogados/[id]
 // PUT: Update an abogado
 // DELETE: Delete an abogado
 import { NextRequest, NextResponse } from 'next/server'
-import { getCurrentUserWithOffice } from '@/lib/auth-server'
 import { prisma } from '@/lib/prisma'
+import { recordSettingsEvent } from '@/lib/audit/businessEvents'
 import { AbogadoSchema } from '@/lib/zodSchemas'
 
 export const dynamic = 'force-dynamic'
@@ -56,15 +57,8 @@ export async function PUT(
   req: NextRequest,
   { params }: { params: { id: string } }
 ) {
+  return withApiUser(req, 'put.abogados.id', async user => {
   try {
-    const user = await getCurrentUserWithOffice()
-
-    if (!user) {
-      return NextResponse.json(
-        { ok: false, message: 'No autorizado', error: 'No autorizado' },
-        { status: 401 }
-      )
-    }
 
     const id = parseInt(params.id)
     if (isNaN(id)) {
@@ -213,10 +207,12 @@ export async function PUT(
         }
       }
 
-      return tx.abogado.findUniqueOrThrow({
+      const updated = await tx.abogado.findUniqueOrThrow({
         where: { id },
         include: abogadoInclude,
       })
+      await recordSettingsEvent(tx, user, { resource: 'Abogado', action: 'updated', recordId: id, changedFields: ['nombre', 'telefono', 'email', 'bancoIds', 'procuradorIds'] })
+      return updated
     })
 
     return NextResponse.json({ ok: true, data: mapAbogado(abogado) })
@@ -228,21 +224,16 @@ export async function PUT(
       { status: 500 }
     )
   }
+
+  })
 }
 
 export async function DELETE(
   req: NextRequest,
   { params }: { params: { id: string } }
 ) {
+  return withApiUser(req, 'delete.abogados.id', async user => {
   try {
-    const user = await getCurrentUserWithOffice()
-
-    if (!user) {
-      return NextResponse.json(
-        { ok: false, message: 'No autorizado', error: 'No autorizado' },
-        { status: 401 }
-      )
-    }
 
     const id = parseInt(params.id)
     if (isNaN(id)) {
@@ -266,8 +257,9 @@ export async function DELETE(
       )
     }
 
-    await prisma.abogado.delete({
-      where: { id },
+    await prisma.$transaction(async tx => {
+      await tx.abogado.delete({ where: { id } })
+      await recordSettingsEvent(tx, user, { resource: 'Abogado', action: 'deleted', recordId: id })
     })
 
     return NextResponse.json({ ok: true, message: 'Abogado eliminado correctamente' })
@@ -279,4 +271,6 @@ export async function DELETE(
       { status: 500 }
     )
   }
+
+  })
 }

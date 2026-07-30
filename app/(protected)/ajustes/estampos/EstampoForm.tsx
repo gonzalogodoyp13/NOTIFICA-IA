@@ -1,6 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+
+import { VariableToolbar } from "./VariableToolbar";
 
 type EstampoFormProps = {
   open: boolean;
@@ -10,18 +12,33 @@ type EstampoFormProps = {
 
 export function EstampoForm({ open, setOpen, onSaved }: EstampoFormProps) {
   const [nombre, setNombre] = useState("");
-  const [fileUrl, setFileUrl] = useState("");
   const [contenido, setContenido] = useState("");
   const [saving, setSaving] = useState(false);
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
   useEffect(() => {
     if (!open) {
       setNombre("");
-      setFileUrl("");
       setContenido("");
       setSaving(false);
     }
   }, [open]);
+
+  function insertVariable(token: string) {
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    const nextText = contenido.substring(0, start) + token + contenido.substring(end);
+
+    setContenido(nextText);
+
+    requestAnimationFrame(() => {
+      textarea.focus();
+      textarea.selectionStart = textarea.selectionEnd = start + token.length;
+    });
+  }
 
   async function handleSave() {
     try {
@@ -38,7 +55,6 @@ export function EstampoForm({ open, setOpen, onSaved }: EstampoFormProps) {
         body: JSON.stringify({
           nombre,
           tipo: "modelo",
-          fileUrl,
           contenido,
         }),
       });
@@ -51,7 +67,6 @@ export function EstampoForm({ open, setOpen, onSaved }: EstampoFormProps) {
       setOpen(false);
       onSaved();
       setNombre("");
-      setFileUrl("");
       setContenido("");
       setSaving(false);
     } catch (error) {
@@ -64,64 +79,75 @@ export function EstampoForm({ open, setOpen, onSaved }: EstampoFormProps) {
 
   return (
     <div
-      className={`fixed inset-0 z-50 flex items-center justify-center bg-black/50 transition ${
+      className={`fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4 py-6 transition ${
         open ? "visible opacity-100" : "invisible opacity-0"
       }`}
       aria-hidden={!open}
     >
-      <div className="bg-white rounded-lg shadow-lg p-6 w-full max-w-md">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-xl font-semibold">Nuevo Estampo</h2>
+      <div className="flex max-h-[90vh] w-full max-w-4xl flex-col rounded-lg bg-white p-6 shadow-xl">
+        <div className="mb-5 flex items-center justify-between gap-4">
+          <h2 className="text-xl font-semibold text-slate-900">Nuevo Estampo</h2>
           <button
             onClick={() => setOpen(false)}
-            className="text-gray-500 hover:text-gray-700"
+            className="rounded px-2 py-1 text-xl leading-none text-slate-500 hover:bg-slate-100 hover:text-slate-700"
             aria-label="Cerrar"
+            type="button"
+            disabled={saving}
           >
-            ×
+            x
           </button>
         </div>
-        <div className="space-y-4">
-          <input
-            placeholder="Nombre"
-            value={nombre}
-            onChange={(e) => setNombre(e.target.value)}
-            className="border rounded p-2 w-full"
-          />
-          <input
-            placeholder="URL del archivo (opcional)"
-            value={fileUrl}
-            onChange={(e) => setFileUrl(e.target.value)}
-            className="border rounded p-2 w-full"
-          />
-          <textarea
-            placeholder="Contenido del estampo (opcional)"
-            value={contenido}
-            onChange={(e) => setContenido(e.target.value)}
-            className="border rounded p-2 w-full h-32"
-          />
-          <div className="text-xs text-gray-500">
-            Sugerencia: usa variables como <code>$nombre_ejecutado</code>,{" "}
-            <code>$rut_ejecutado</code> o <code>$fecha_palabras_diligencia</code>.
+        <div className="min-h-0 flex-1 space-y-5 overflow-y-auto pr-1">
+          <div>
+            <label className="mb-1 block text-sm font-medium text-slate-700" htmlFor="estampo-nombre">
+              Nombre
+            </label>
+            <input
+              id="estampo-nombre"
+              placeholder="Ej: Busqueda negativa"
+              value={nombre}
+              onChange={(e) => setNombre(e.target.value)}
+              className="w-full rounded border border-slate-300 p-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+            />
           </div>
-          <div className="flex justify-end gap-2">
-            <button
-              onClick={() => setOpen(false)}
-              className="px-4 py-2 rounded border border-gray-300 text-gray-700 hover:bg-gray-100 transition"
-              disabled={saving}
-            >
-              Cancelar
-            </button>
-            <button
-              onClick={handleSave}
-              className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition disabled:opacity-60"
-              disabled={saving}
-            >
-              {saving ? "Guardando..." : "Guardar"}
-            </button>
+
+          <div>
+            <label className="mb-2 block text-sm font-medium text-slate-700" htmlFor="estampo-contenido">
+              Contenido del estampo
+            </label>
+            <div className="mb-3 rounded border border-slate-200 bg-slate-50 p-3">
+              <VariableToolbar onInsert={insertVariable} />
+            </div>
+            <textarea
+              id="estampo-contenido"
+              ref={textareaRef}
+              placeholder="Escribe el contenido del estampo..."
+              value={contenido}
+              onChange={(e) => setContenido(e.target.value)}
+              className="h-80 w-full resize-y rounded border border-slate-300 p-3 font-mono text-sm leading-6 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+            />
           </div>
+        </div>
+
+        <div className="mt-6 flex justify-end gap-2 border-t border-slate-200 pt-4">
+          <button
+            onClick={() => setOpen(false)}
+            className="rounded border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-100 disabled:opacity-60"
+            disabled={saving}
+            type="button"
+          >
+            Cancelar
+          </button>
+          <button
+            onClick={handleSave}
+            className="rounded bg-blue-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-blue-700 disabled:opacity-60"
+            disabled={saving}
+            type="button"
+          >
+            {saving ? "Guardando..." : "Guardar"}
+          </button>
         </div>
       </div>
     </div>
   );
 }
-

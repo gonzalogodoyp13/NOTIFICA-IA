@@ -1,10 +1,11 @@
+import { withApiUser } from '@/lib/api/server'
 // API route: /api/comunas/[id]
 // PUT: Update a comuna
 // DELETE: Delete a comuna
 import { NextRequest, NextResponse } from 'next/server'
-import { getCurrentUserWithOffice } from '@/lib/auth-server'
 import { prisma } from '@/lib/prisma'
 import { ComunaSchema } from '@/lib/zodSchemas'
+import { recordSettingsEvent } from '@/lib/audit/businessEvents'
 
 export const dynamic = 'force-dynamic'
 
@@ -12,15 +13,8 @@ export async function PUT(
   req: NextRequest,
   { params }: { params: { id: string } }
 ) {
+  return withApiUser(req, 'put.comunas.id', async user => {
   try {
-    const user = await getCurrentUserWithOffice()
-
-    if (!user) {
-      return NextResponse.json(
-        { ok: false, message: 'No autorizado', error: 'No autorizado' },
-        { status: 401 }
-      )
-    }
 
     const id = parseInt(params.id)
     if (isNaN(id)) {
@@ -58,9 +52,10 @@ export async function PUT(
       )
     }
 
-    const comuna = await prisma.comuna.update({
-      where: { id },
-      data: parsed.data,
+    const comuna = await prisma.$transaction(async tx => {
+      const updated = await tx.comuna.update({ where: { id }, data: parsed.data })
+      await recordSettingsEvent(tx, user, { resource: 'Comuna', action: 'updated', recordId: id, changedFields: Object.keys(parsed.data) })
+      return updated
     })
 
     return NextResponse.json({ ok: true, data: comuna })
@@ -72,21 +67,16 @@ export async function PUT(
       { status: 500 }
     )
   }
+
+  })
 }
 
 export async function DELETE(
   req: NextRequest,
   { params }: { params: { id: string } }
 ) {
+  return withApiUser(req, 'delete.comunas.id', async user => {
   try {
-    const user = await getCurrentUserWithOffice()
-
-    if (!user) {
-      return NextResponse.json(
-        { ok: false, message: 'No autorizado', error: 'No autorizado' },
-        { status: 401 }
-      )
-    }
 
     const id = parseInt(params.id)
     if (isNaN(id)) {
@@ -111,8 +101,9 @@ export async function DELETE(
       )
     }
 
-    await prisma.comuna.delete({
-      where: { id },
+    await prisma.$transaction(async tx => {
+      await tx.comuna.delete({ where: { id } })
+      await recordSettingsEvent(tx, user, { resource: 'Comuna', action: 'deleted', recordId: id })
     })
 
     return NextResponse.json({ ok: true, message: 'Comuna eliminada correctamente' })
@@ -124,5 +115,7 @@ export async function DELETE(
       { status: 500 }
     )
   }
+
+  })
 }
 

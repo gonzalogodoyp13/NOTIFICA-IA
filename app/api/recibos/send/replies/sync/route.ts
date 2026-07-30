@@ -7,6 +7,6 @@ export const dynamic = 'force-dynamic'
 
 export async function POST(req: NextRequest) {
   return withApiUser(req, 'sync receipt replies', async user => {
-    return apiSuccess(await syncOfficeReplies({ officeId: user.officeId, userId: user.id }))
+    return apiSuccess(await syncOfficeReplies({ officeId: user.officeId, userId: user.id, requestId: user.requestId }))
   })
 }

@@ -33,8 +33,8 @@ describe('activity event core', () => {
     expect(sanitized).not.toHaveProperty('pdfBase64')
     expect(sanitized).not.toHaveProperty('generationVariables')
     expect(sanitized.recipientEmail).toBe('pe*****@example.com')
-    expect(sanitized.rut).toBe('[RUT oculto]')
-    expect(sanitized.phone).toBe('[Telefono oculto]')
+    expect(sanitized).not.toHaveProperty('rut')
+    expect(sanitized).not.toHaveProperty('phone')
     expect(sanitized.safeCount).toBe(3)
   })
 

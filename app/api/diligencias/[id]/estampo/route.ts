@@ -1,7 +1,7 @@
+import { withApiUser } from '@/lib/api/server'
 import { NextRequest, NextResponse } from 'next/server'
 import { Prisma } from '@prisma/client'
 
-import { getCurrentUserWithOffice } from '@/lib/auth-server'
 import { ApiError, apiFailure, parseApiInput } from '@/lib/api/server'
 import { buildDocumentGenerationMetadata } from '@/lib/documents/generationMetadata'
 import { hasStoredPdf, uploadPdfToDocumentStorage } from '@/lib/documents/storage'
@@ -15,6 +15,7 @@ import { buildEstampoPdf } from '@/lib/estampos/pdf'
 import { loadOfficePdfConfig, loadOfficePdfImages, type OfficePdfConfig } from '@/lib/pdf/officeConfig'
 import { asJsonObject, getString } from '@/lib/utils/json'
 import type { EstampoEjecutado } from '@/lib/estampos/runtime'
+import { enqueueExternalEvent, processActivityOutbox } from '@/lib/audit/outbox'
 
 export const dynamic = 'force-dynamic'
 
@@ -132,18 +133,8 @@ export async function POST(
   req: NextRequest,
   { params }: { params: { id: string } }
 ) {
+  return withApiUser(req, 'post.diligencias.id.estampo', async user => {
   try {
-    const user = await getCurrentUserWithOffice()
-
-    if (!user) {
-      return apiFailure(new ApiError('UNAUTHORIZED', 'No autorizado', 401))
-    }
-
-    // Get user with officeName from database
-    const dbUser = await prisma.user.findUnique({
-      where: { id: user.id },
-      select: { officeName: true },
-    })
 
     const diligencia = await prisma.diligencia.findFirst({
       where: {
@@ -212,11 +203,11 @@ export async function POST(
 
     const [officeImages, officePdfConfig] = await Promise.all([
       loadOfficePdfImages(user.officeId),
-      loadOfficePdfConfig(user.officeId, dbUser?.officeName ?? null),
+      loadOfficePdfConfig(user.officeId, user.officeName),
     ])
 
     // Build complete variable map from diligencia data
-    const variableMap = buildEstampoVariables(diligencia, dbUser, officePdfConfig, ejecutadoFromNotificacion)
+    const variableMap = buildEstampoVariables(diligencia, user, officePdfConfig, ejecutadoFromNotificacion)
     const filled = replaceVariables(template, variableMap)
 
     // Get ejecutadoNombre for header (from variableMap)
@@ -265,39 +256,43 @@ export async function POST(
       fileName: documento.nombre,
       createdAt: documento.createdAt,
     })
-    const documentVersion = await prisma.documentoVersion.create({
-      data: {
-        documentoId: documento.id,
-        versionNumber: 1,
-        ...storedPdf,
-        createdByUserId: user.id,
-      },
+    const documentoWithVersion = await prisma.$transaction(async tx => {
+      const documentVersion = await tx.documentoVersion.create({
+        data: { documentoId: documento.id, versionNumber: 1, ...storedPdf, createdByUserId: user.id },
+      })
+      const updated = await tx.documento.update({
+        where: { id: documento.id }, data: { currentVersionId: documentVersion.id }, include: { currentVersion: true },
+      })
+      const queuedEvent = await enqueueExternalEvent(tx, user, {
+        eventType: 'stamp.generated', module: 'documents', result: 'success',
+        recordType: 'Documento', recordId: updated.id, rolId: diligencia.rolId, rol: diligencia.rol.rol,
+        description: 'Estampo generado.', deduplicationKey: `stamp:${documentVersion.id}:generated`,
+        metadata: { documentId: updated.id, documentVersionId: documentVersion.id, templateId: estampo.id, templateSlug: `custom-${estampo.id}`, templateCategory: estampo.tipo, notificationId: notificacionId, version: 1 },
+      })
+      return { documento: updated, outboxId: queuedEvent.id }
     })
-    const documentoWithVersion = await prisma.documento.update({
-      where: { id: documento.id },
-      data: { currentVersionId: documentVersion.id },
-      include: { currentVersion: true },
-    })
+    await processActivityOutbox(1, documentoWithVersion.outboxId).catch(() => undefined)
+    const completedDocumento = documentoWithVersion.documento
 
     return NextResponse.json({
       ok: true,
       data: {
-        id: documentoWithVersion.id,
-        nombre: documentoWithVersion.nombre,
-        tipo: documentoWithVersion.tipo,
-        version: documentoWithVersion.version,
-        hasPdf: hasStoredPdf(documentoWithVersion),
-        createdAt: documentoWithVersion.createdAt.toISOString(),
-        diligenciaId: documentoWithVersion.diligenciaId,
-        notificacionId: documentoWithVersion.notificacionId,
+        id: completedDocumento.id,
+        nombre: completedDocumento.nombre,
+        tipo: completedDocumento.tipo,
+        version: completedDocumento.version,
+        hasPdf: hasStoredPdf(completedDocumento),
+        createdAt: completedDocumento.createdAt.toISOString(),
+        diligenciaId: completedDocumento.diligenciaId,
+        notificacionId: completedDocumento.notificacionId,
         voidedAt: null,
         voidReason: null,
         voidedByUserId: null,
-        generatedByUserId: documentoWithVersion.generatedByUserId,
-        generatedAt: documentoWithVersion.generatedAt ? documentoWithVersion.generatedAt.toISOString() : null,
-        sourceTemplate: documentoWithVersion.sourceTemplate,
-        generationVariables: documentoWithVersion.generationVariables,
-        generationVersion: documentoWithVersion.generationVersion,
+        generatedByUserId: completedDocumento.generatedByUserId,
+        generatedAt: completedDocumento.generatedAt ? completedDocumento.generatedAt.toISOString() : null,
+        sourceTemplate: completedDocumento.sourceTemplate,
+        generationVariables: completedDocumento.generationVariables,
+        generationVersion: completedDocumento.generationVersion,
         diligencia: {
           id: diligencia.id,
           tipo: null,
@@ -313,5 +308,7 @@ export async function POST(
   } catch (error) {
     return apiFailure(new ApiError('INTERNAL_ERROR', 'Ocurrió un error inesperado', 500))
   }
+
+  })
 }
 

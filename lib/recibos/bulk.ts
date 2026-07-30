@@ -2,7 +2,7 @@ import 'server-only'
 
 import { Prisma } from '@prisma/client'
 
-import { recordActivityEvent } from '@/lib/audit/activityEvent'
+import { recordCriticalEvent } from '@/lib/audit/activityEvent'
 import { prisma } from '@/lib/prisma'
 import { classifyBulkItem, receiptBulkStateHash } from '@/lib/recibos/bulk-core'
 
@@ -176,12 +176,7 @@ export async function executeReceiptBulkOperation(params: { officeId: number; us
         summary: { counts: preview.counts, totalEligibleAmount: preview.totalEligibleAmount } as Prisma.InputJsonValue,
       },
     })
-    await tx.auditLog.create({
-      data: { userId: params.userId, officeId: params.officeId, tabla: 'OperationalActivity', accion: params.input.action === 'markPaid' ? 'bulk_payment' : 'bulk_boleta', diff: { operationId: operation.id, count: preview.counts.eligible, receiptIds: preview.items.filter(item => item.disposition === 'eligible').map(item => item.receiptId).slice(0, 100) } },
-    })
-    await recordActivityEvent({
-      userId: params.userId,
-      officeId: params.officeId,
+    await recordCriticalEvent(tx, { id: params.userId, officeId: params.officeId }, {
       eventType: params.input.action === 'markPaid' ? 'receipt.payment' : 'receipt.boleta',
       module: 'payments',
       result: 'success',
@@ -197,7 +192,7 @@ export async function executeReceiptBulkOperation(params: { officeId: number; us
         numeroBoleta: params.input.action === 'associateBoleta' ? params.input.numeroBoleta : undefined,
         fechaPago: params.input.action === 'markPaid' ? params.input.fechaPago : undefined,
       },
-    }, tx)
+    })
     return { operationId: operation.id, preview }
   })
 }
@@ -234,10 +229,7 @@ export async function undoReceiptBulkOperation(params: { officeId: number; userI
       else await tx.diligencia.update({ where: { id: state.targetId }, data: { estadoCobro: state.paymentStatus ?? 'NO_PAGADO', fechaPago: state.paymentDate ? new Date(state.paymentDate) : null } })
     }
     await tx.receiptBulkOperation.update({ where: { id: operation.id }, data: { undoneAt: new Date(), undoneByUserId: params.userId } })
-    await tx.auditLog.create({ data: { userId: params.userId, officeId: params.officeId, tabla: 'OperationalActivity', accion: 'bulk_undo', diff: { operationId: operation.id, action: operation.action, receiptIds: operation.receiptIds } } })
-    await recordActivityEvent({
-      userId: params.userId,
-      officeId: params.officeId,
+    await recordCriticalEvent(tx, { id: params.userId, officeId: params.officeId }, {
       eventType: 'receipt.undo',
       module: 'payments',
       result: 'success',
@@ -249,7 +241,7 @@ export async function undoReceiptBulkOperation(params: { officeId: number; userI
         action: operation.action,
         receiptIds: operation.receiptIds,
       },
-    }, tx)
+    })
     return { operationId: operation.id }
   })
 }

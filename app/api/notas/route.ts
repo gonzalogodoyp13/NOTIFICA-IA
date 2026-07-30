@@ -1,25 +1,19 @@
+import { withApiUser } from '@/lib/api/server'
 // API route: /api/notas
 // GET: List notes (q search, page)
 // POST: Add new Nota (validate zNota)
 // DELETE: Only author or Receptor can delete
 import { NextRequest, NextResponse } from 'next/server'
-import { getCurrentUserWithOffice } from '@/lib/auth-server'
 import { prisma } from '@/lib/prisma'
+import { recordCriticalEvent } from '@/lib/audit/activityEvent'
 import { zNota } from '@/lib/validations/nota'
 import { ZodError } from 'zod'
 
 export const dynamic = 'force-dynamic'
 
 export async function GET(req: NextRequest) {
+  return withApiUser(req, 'get.notas', async user => {
   try {
-    const user = await getCurrentUserWithOffice()
-
-    if (!user) {
-      return NextResponse.json(
-        { ok: false, error: 'No autorizado' },
-        { status: 401 }
-      )
-    }
 
     const searchParams = req.nextUrl.searchParams
     const rolId = searchParams.get('rolId')
@@ -89,18 +83,13 @@ export async function GET(req: NextRequest) {
       { status: 500 }
     )
   }
+
+  })
 }
 
 export async function POST(req: NextRequest) {
+  return withApiUser(req, 'post.notas', async user => {
   try {
-    const user = await getCurrentUserWithOffice()
-
-    if (!user) {
-      return NextResponse.json(
-        { ok: false, error: 'No autorizado' },
-        { status: 401 }
-      )
-    }
 
     const body = await req.json()
     const parsed = zNota.safeParse(body)
@@ -128,12 +117,16 @@ export async function POST(req: NextRequest) {
     }
 
     // Create Nota
-    const nota = await prisma.nota.create({
-      data: {
-        rolId: parsed.data.rolId,
-        userId: user.id,
-        contenido: parsed.data.contenido,
-      },
+    const nota = await prisma.$transaction(async tx => {
+      const created = await tx.nota.create({
+        data: { rolId: parsed.data.rolId, userId: user.id, contenido: parsed.data.contenido },
+      })
+      await recordCriticalEvent(tx, user, {
+        eventType: 'note.created', module: 'roles', result: 'success',
+        recordType: 'Nota', recordId: created.id, rolId: rol.id, rol: rol.rol,
+        description: 'Nota creada.', metadata: { noteId: created.id },
+      })
+      return created
     })
 
     return NextResponse.json({ ok: true, data: nota })
@@ -150,18 +143,13 @@ export async function POST(req: NextRequest) {
       { status: 500 }
     )
   }
+
+  })
 }
 
 export async function DELETE(req: NextRequest) {
+  return withApiUser(req, 'delete.notas', async user => {
   try {
-    const user = await getCurrentUserWithOffice()
-
-    if (!user) {
-      return NextResponse.json(
-        { ok: false, error: 'No autorizado' },
-        { status: 401 }
-      )
-    }
 
     const searchParams = req.nextUrl.searchParams
     const id = searchParams.get('id')
@@ -203,8 +191,13 @@ export async function DELETE(req: NextRequest) {
       )
     }
 
-    await prisma.nota.delete({
-      where: { id },
+    await prisma.$transaction(async tx => {
+      await tx.nota.delete({ where: { id } })
+      await recordCriticalEvent(tx, user, {
+        eventType: 'note.deleted', module: 'roles', result: 'success',
+        recordType: 'Nota', recordId: id, rolId: nota.rolId,
+        description: 'Nota eliminada.', metadata: { noteId: id },
+      })
     })
 
     return NextResponse.json({ ok: true, message: 'Nota eliminada correctamente' })
@@ -215,5 +208,7 @@ export async function DELETE(req: NextRequest) {
       { status: 500 }
     )
   }
+
+  })
 }
 

@@ -8,6 +8,7 @@ type Step = {
 
 const steps: Step[] = [
   { name: 'Seed QA data', command: 'npm', args: ['run', 'db:seed:qa'] },
+  { name: 'Refresh QA authentication state', command: 'npm', args: ['run', 'qa:auth:auto'] },
   { name: 'Vitest integration checks', command: 'npm', args: ['run', 'test:integration'] },
   { name: 'Playwright authenticated workflows', command: 'npm', args: ['run', 'test:e2e'] },
 ]

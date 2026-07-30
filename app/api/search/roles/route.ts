@@ -1,8 +1,8 @@
+import { withApiUser } from '@/lib/api/server'
 import { NextRequest, NextResponse } from 'next/server'
 import { Prisma } from '@prisma/client'
 import { z } from 'zod'
 
-import { getCurrentUserWithOffice } from '@/lib/auth-server'
 import { recordActivityEvent } from '@/lib/audit/activityEvent'
 import { prisma } from '@/lib/prisma'
 import type { RoleSearchPayload, RoleSearchResult } from '@/lib/dashboard/types'
@@ -40,9 +40,8 @@ function normalizeSearch(value: string) {
 }
 
 export async function GET(req: NextRequest) {
+  return withApiUser(req, 'get.search.roles', async user => {
   try {
-    const user = await getCurrentUserWithOffice()
-    if (!user) return NextResponse.json({ ok: false, error: 'No autorizado' }, { status: 401 })
 
     const query = QuerySchema.parse(Object.fromEntries(req.nextUrl.searchParams))
     const normalizedQuery = normalizeSearch(query.q)
@@ -150,4 +149,6 @@ export async function GET(req: NextRequest) {
     console.error('[GET /api/search/roles]', error)
     return NextResponse.json({ ok: false, error: 'No se pudo completar la busqueda.' }, { status: 500 })
   }
+
+  })
 }

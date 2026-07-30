@@ -1,7 +1,8 @@
+import { withApiUser } from '@/lib/api/server'
 import { NextRequest, NextResponse } from 'next/server'
 
-import { getCurrentUserWithOffice } from '@/lib/auth-server'
 import { prisma } from '@/lib/prisma'
+import { recordCriticalEvent } from '@/lib/audit/activityEvent'
 import { NotaCreateSchema } from '@/lib/validations/rol-workspace'
 
 export const dynamic = 'force-dynamic'
@@ -10,12 +11,8 @@ export async function GET(
   _req: NextRequest,
   { params }: { params: { id: string } }
 ) {
+  return withApiUser(_req, 'get.roles.id.notas', async user => {
   try {
-    const user = await getCurrentUserWithOffice()
-
-    if (!user) {
-      return NextResponse.json({ ok: false, error: 'No autorizado' }, { status: 401 })
-    }
 
     const rol = await prisma.rolCausa.findFirst({
       where: {
@@ -54,18 +51,16 @@ export async function GET(
       { status: 500 }
     )
   }
+
+  })
 }
 
 export async function POST(
   req: NextRequest,
   { params }: { params: { id: string } }
 ) {
+  return withApiUser(req, 'post.roles.id.notas', async user => {
   try {
-    const user = await getCurrentUserWithOffice()
-
-    if (!user) {
-      return NextResponse.json({ ok: false, error: 'No autorizado' }, { status: 401 })
-    }
 
     const rol = await prisma.rolCausa.findFirst({
       where: {
@@ -87,12 +82,14 @@ export async function POST(
       return NextResponse.json({ ok: false, error: parsed.error.format() }, { status: 400 })
     }
 
-    const nota = await prisma.nota.create({
-      data: {
-        rolId: rol.id,
-        userId: user.id,
-        contenido: parsed.data.contenido,
-      },
+    const nota = await prisma.$transaction(async tx => {
+      const created = await tx.nota.create({ data: { rolId: rol.id, userId: user.id, contenido: parsed.data.contenido } })
+      await recordCriticalEvent(tx, user, {
+        eventType: 'note.created', module: 'roles', result: 'success',
+        recordType: 'Nota', recordId: created.id, rolId: rol.id,
+        description: 'Nota creada.', metadata: { noteId: created.id },
+      })
+      return created
     })
 
     return NextResponse.json({ ok: true, data: { ...nota, createdAt: nota.createdAt.toISOString() } })
@@ -103,18 +100,16 @@ export async function POST(
       { status: 500 }
     )
   }
+
+  })
 }
 
 export async function DELETE(
   req: NextRequest,
   { params }: { params: { id: string } }
 ) {
+  return withApiUser(req, 'delete.roles.id.notas', async user => {
   try {
-    const user = await getCurrentUserWithOffice()
-
-    if (!user) {
-      return NextResponse.json({ ok: false, error: 'No autorizado' }, { status: 401 })
-    }
 
     const noteId = req.nextUrl.searchParams.get('noteId')
 
@@ -146,8 +141,13 @@ export async function DELETE(
       )
     }
 
-    await prisma.nota.delete({
-      where: { id: nota.id },
+    await prisma.$transaction(async tx => {
+      await tx.nota.delete({ where: { id: nota.id } })
+      await recordCriticalEvent(tx, user, {
+        eventType: 'note.deleted', module: 'roles', result: 'success',
+        recordType: 'Nota', recordId: nota.id, rolId: nota.rolId,
+        description: 'Nota eliminada.', metadata: { noteId: nota.id },
+      })
     })
 
     return NextResponse.json({ ok: true })
@@ -158,5 +158,7 @@ export async function DELETE(
       { status: 500 }
     )
   }
+
+  })
 }
 

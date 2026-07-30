@@ -1,24 +1,18 @@
+import { withApiUser } from '@/lib/api/server'
 // API route: /api/documentos
 // GET/POST/PUT/DELETE: CRUD operations for Documento (ROL Phase 4)
 import { NextRequest, NextResponse } from 'next/server'
-import { getCurrentUserWithOffice } from '@/lib/auth-server'
 import { deletePdfFromDocumentStorage } from '@/lib/documents/storage'
 import { prisma } from '@/lib/prisma'
+import { recordCriticalEvent } from '@/lib/audit/activityEvent'
 import { zDocumento, zDocumentoUpdate } from '@/lib/validations/documento'
 import { ZodError } from 'zod'
 
 export const dynamic = 'force-dynamic'
 
 export async function GET(req: NextRequest) {
+  return withApiUser(req, 'get.documentos', async user => {
   try {
-    const user = await getCurrentUserWithOffice()
-
-    if (!user) {
-      return NextResponse.json(
-        { ok: false, error: 'No autorizado' },
-        { status: 401 }
-      )
-    }
 
     const searchParams = req.nextUrl.searchParams
     const rolId = searchParams.get('rolId')
@@ -76,18 +70,13 @@ export async function GET(req: NextRequest) {
       { status: 500 }
     )
   }
+
+  })
 }
 
 export async function POST(req: NextRequest) {
+  return withApiUser(req, 'post.documentos', async user => {
   try {
-    const user = await getCurrentUserWithOffice()
-
-    if (!user) {
-      return NextResponse.json(
-        { ok: false, error: 'No autorizado' },
-        { status: 401 }
-      )
-    }
 
     const body = await req.json()
     const parsed = zDocumento.safeParse(body)
@@ -148,32 +137,27 @@ export async function POST(req: NextRequest) {
     }
 
     // Create Documento
-    const documento = await prisma.documento.create({
-      data: {
-        rolId: parsed.data.rolId,
-        diligenciaId: parsed.data.diligenciaId || null,
-        estampoId: parsed.data.estampoId || null,
-        estampoBaseId: parsed.data.estampoBaseId || null,
-        nombre: parsed.data.nombre,
-        tipo: parsed.data.tipo,
-        pdfId: null,
-        version: parsed.data.version,
-      },
-      include: {
-        estampo: true,
-        estampoBase: true,
-        currentVersion: true,
-        diligencia: {
-          select: {
-            id: true,
-            tipo: {
-              select: {
-                nombre: true,
-              },
-            },
+    const documento = await prisma.$transaction(async tx => {
+      const created = await tx.documento.create({
+        data: {
+          rolId: parsed.data.rolId, diligenciaId: parsed.data.diligenciaId || null,
+          estampoId: parsed.data.estampoId || null, estampoBaseId: parsed.data.estampoBaseId || null,
+          nombre: parsed.data.nombre, tipo: parsed.data.tipo, pdfId: null, version: parsed.data.version,
+        },
+        include: {
+          estampo: true, estampoBase: true, currentVersion: true,
+          diligencia: {
+            select: { id: true, tipo: { select: { nombre: true } } },
           },
         },
-      },
+      })
+      await recordCriticalEvent(tx, user, {
+        eventType: 'document.created', module: 'documents', result: 'success',
+        recordType: 'Documento', recordId: created.id, rolId: rol.id, rol: rol.rol,
+        description: 'Documento creado.',
+        metadata: { documentId: created.id, documentType: created.tipo, version: created.version, diligenceId: created.diligenciaId },
+      })
+      return created
     })
 
     // TODO: Phase 5 - If tipo === "Recibo", auto-create Recibo
@@ -195,18 +179,13 @@ export async function POST(req: NextRequest) {
       { status: 500 }
     )
   }
+
+  })
 }
 
 export async function PUT(req: NextRequest) {
+  return withApiUser(req, 'put.documentos', async user => {
   try {
-    const user = await getCurrentUserWithOffice()
-
-    if (!user) {
-      return NextResponse.json(
-        { ok: false, error: 'No autorizado' },
-        { status: 401 }
-      )
-    }
 
     const body = await req.json()
     const { id, ...updateData } = body
@@ -245,24 +224,23 @@ export async function PUT(req: NextRequest) {
     }
 
     // Update documento
-    const updated = await prisma.documento.update({
-      where: { id },
-      data: parsed.data,
-      include: {
-        estampo: true,
-        estampoBase: true,
-        currentVersion: true,
-        diligencia: {
-          select: {
-            id: true,
-            tipo: {
-              select: {
-                nombre: true,
-              },
-            },
+    const updated = await prisma.$transaction(async tx => {
+      const result = await tx.documento.update({
+        where: { id }, data: parsed.data,
+        include: {
+          estampo: true, estampoBase: true, currentVersion: true,
+          diligencia: {
+            select: { id: true, tipo: { select: { nombre: true } } },
           },
         },
-      },
+      })
+      await recordCriticalEvent(tx, user, {
+        eventType: 'document.updated', module: 'documents', result: 'success',
+        recordType: 'Documento', recordId: result.id, rolId: documento.rolId,
+        description: 'Documento actualizado.',
+        metadata: { documentId: result.id, version: result.version, changedFields: Object.keys(parsed.data).slice(0, 100) },
+      })
+      return result
     })
 
     return NextResponse.json({ ok: true, data: updated })
@@ -279,18 +257,13 @@ export async function PUT(req: NextRequest) {
       { status: 500 }
     )
   }
+
+  })
 }
 
 export async function DELETE(req: NextRequest) {
+  return withApiUser(req, 'delete.documentos', async user => {
   try {
-    const user = await getCurrentUserWithOffice()
-
-    if (!user) {
-      return NextResponse.json(
-        { ok: false, error: 'No autorizado' },
-        { status: 401 }
-      )
-    }
 
     const searchParams = req.nextUrl.searchParams
     const id = searchParams.get('id')
@@ -334,8 +307,14 @@ export async function DELETE(req: NextRequest) {
       await deletePdfFromDocumentStorage(version.storageBucket, version.storageKey)
     }
 
-    await prisma.documento.delete({
-      where: { id },
+    await prisma.$transaction(async tx => {
+      await tx.documento.delete({ where: { id } })
+      await recordCriticalEvent(tx, user, {
+        eventType: 'document.deleted', module: 'documents', result: 'success',
+        recordType: 'Documento', recordId: id, rolId: documento.rolId,
+        description: 'Documento eliminado.',
+        metadata: { documentId: id, documentType: documento.tipo, version: documento.version, deletedVersionCount: documento.versions.length },
+      })
     })
 
     return NextResponse.json({ ok: true, message: 'Documento eliminado correctamente' })
@@ -346,5 +325,7 @@ export async function DELETE(req: NextRequest) {
       { status: 500 }
     )
   }
+
+  })
 }
 

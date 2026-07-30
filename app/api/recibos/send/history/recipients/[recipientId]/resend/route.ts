@@ -7,6 +7,6 @@ import { DispatchResendSchema } from '@/lib/validations/recibos'
 export async function POST(req: NextRequest, { params }: { params: { recipientId: string } }) {
   return withApiUser(req, 'resend receipt dispatch', async user => {
     const input = parseApiInput(DispatchResendSchema, await req.json())
-    return apiSuccess(await resendDispatch({ officeId: user.officeId, userId: user.id, recipientId: params.recipientId, input }))
+    return apiSuccess(await resendDispatch({ officeId: user.officeId, userId: user.id, requestId: user.requestId, recipientId: params.recipientId, input }))
   })
 }

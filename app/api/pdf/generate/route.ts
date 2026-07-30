@@ -1,15 +1,15 @@
+import { withApiUser } from '@/lib/api/server'
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import { wrapText } from "@/lib/pdf/textLayout";
 import { embedSignatureImages } from "@/lib/pdf/imageUtils";
 import { drawRolHeader } from "@/lib/pdf/header";
-import { getCurrentUserWithOffice } from "@/lib/auth-server";
-import { prisma } from "@/lib/prisma";
 import { formatCuantiaCLP } from "@/lib/utils/cuantia";
 import { loadOfficePdfConfig, loadOfficePdfImages } from "@/lib/pdf/officeConfig";
 
 export async function POST(req: NextRequest) {
+  return withApiUser(req, 'pdf.preview', async user => {
   try {
     const { contenido = "", variables = {} } = await req.json();
 
@@ -43,25 +43,14 @@ export async function POST(req: NextRequest) {
     const fontSize = 12;
     const lineHeight = fontSize + 4;
     let y = page.getSize().height - margin;
-
-    // Get authenticated user for receptor name
-    const user = await getCurrentUserWithOffice();
-    const dbUser = user
-      ? await prisma.user.findUnique({
-          where: { id: user.id },
-          select: { officeName: true },
-        })
-      : null;
-    const [officeImages, officePdfConfig] = user
-      ? await Promise.all([
+    const [officeImages, officePdfConfig] = await Promise.all([
           loadOfficePdfImages(user.officeId),
-          loadOfficePdfConfig(user.officeId, dbUser?.officeName ?? null),
-        ])
-      : [{}, null] as const;
+          loadOfficePdfConfig(user.officeId, user.officeName),
+        ]);
 
     // Draw header before content
     const headerData = {
-      receptorNombre: officePdfConfig?.receptorNombre ?? dbUser?.officeName ?? "Receptor Judicial",
+      receptorNombre: officePdfConfig?.receptorNombre ?? user.officeName ?? "Receptor Judicial",
       tribunalNombre: (variables.tribunal as string | undefined) ?? sample.tribunal,
       rolNumero: (variables.rol as string | undefined) ?? sample.rol,
       bancoNombre: "Banco de Chile", // Mock for preview
@@ -124,5 +113,7 @@ export async function POST(req: NextRequest) {
       { status: 500 }
     );
   }
+
+  })
 }
 

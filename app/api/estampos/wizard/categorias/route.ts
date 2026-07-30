@@ -1,6 +1,6 @@
+import { withApiUser } from '@/lib/api/server'
 import { NextRequest, NextResponse } from 'next/server'
 
-import { getCurrentUserWithOffice } from '@/lib/auth-server'
 import { prisma } from '@/lib/prisma'
 
 export const dynamic = 'force-dynamic'
@@ -15,12 +15,8 @@ function categoriaToLabel(categoria: string): string {
 }
 
 export async function GET(_req: NextRequest) {
+  return withApiUser(_req, 'get.estampos.wizard.categorias', async user => {
   try {
-    const user = await getCurrentUserWithOffice()
-
-    if (!user) {
-      return NextResponse.json({ ok: false, error: 'No autorizado' }, { status: 401 })
-    }
 
     // Obtener categorías únicas desde EstampoBase activos
     const estamposBase = await prisma.estampoBase.findMany({
@@ -70,4 +66,6 @@ export async function GET(_req: NextRequest) {
       { status: 500 }
     )
   }
+
+  })
 }

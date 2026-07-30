@@ -1,8 +1,9 @@
+import { withApiUser } from '@/lib/api/server'
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 
-import { getCurrentUserWithOffice } from '@/lib/auth-server'
 import { prisma } from '@/lib/prisma'
+import { recordSettingsEvent } from '@/lib/audit/businessEvents'
 
 export const dynamic = 'force-dynamic'
 
@@ -13,12 +14,8 @@ const ResetCustomSchema = z.object({
 })
 
 export async function POST(req: NextRequest) {
+  return withApiUser(req, 'post.estampos-custom.reset', async user => {
   try {
-    const user = await getCurrentUserWithOffice()
-
-    if (!user) {
-      return NextResponse.json({ ok: false, error: 'No autorizado' }, { status: 401 })
-    }
 
     const body = await req.json()
     const parsed = ResetCustomSchema.safeParse(body)
@@ -49,13 +46,9 @@ export async function POST(req: NextRequest) {
     }
 
     // Delete custom (soft delete by setting isActive: false)
-    await prisma.estampoCustom.update({
-      where: {
-        id: estampoCustom.id,
-      },
-      data: {
-        isActive: false,
-      },
+    await prisma.$transaction(async tx => {
+      await tx.estampoCustom.update({ where: { id: estampoCustom.id }, data: { isActive: false } })
+      await recordSettingsEvent(tx, user, { resource: 'EstampoCustom', action: 'reset', recordId: estampoCustom.id, changedFields: ['isActive'] })
     })
 
     return NextResponse.json({
@@ -69,5 +62,7 @@ export async function POST(req: NextRequest) {
       { status: 500 }
     )
   }
+
+  })
 }
 

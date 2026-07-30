@@ -1,10 +1,11 @@
+import { withApiUser, type RequestContext } from '@/lib/api/server'
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 
-import { getCurrentUserWithOffice } from '@/lib/auth-server'
 import { prisma } from '@/lib/prisma'
 import { validateRequiredVariables } from '@/lib/estampos/variables'
 import type { VariableDef, WizardQuestion } from '@/lib/estampos/types'
+import { recordSettingsEvent } from '@/lib/audit/businessEvents'
 
 export const dynamic = 'force-dynamic'
 
@@ -16,15 +17,11 @@ const CreateCustomSchema = z.object({
 })
 
 export async function POST(req: NextRequest) {
+  return withApiUser(req, 'post.estampos-custom', async user => {
   try {
-    const user = await getCurrentUserWithOffice()
-
-    if (!user) {
-      return NextResponse.json({ ok: false, error: 'No autorizado' }, { status: 401 })
-    }
 
     const body = await req.json()
-    return handleCreateOrUpdate(req, body, user.officeId)
+    return handleCreateOrUpdate(req, body, user)
   } catch (error) {
     console.error('Error en POST /api/estampos-custom:', error)
     return NextResponse.json(
@@ -32,13 +29,16 @@ export async function POST(req: NextRequest) {
       { status: 500 }
     )
   }
+
+  })
 }
 
 async function handleCreateOrUpdate(
   req: NextRequest,
   body: unknown,
-  officeId: number
+  context: RequestContext
 ): Promise<NextResponse> {
+  const officeId = context.officeId
   const parsed = CreateCustomSchema.safeParse(body)
 
   if (!parsed.success) {
@@ -101,7 +101,8 @@ async function handleCreateOrUpdate(
 
   // Upsert EstampoCustom
   // Security: Always use officeId from session
-  const estampoCustom = await prisma.estampoCustom.upsert({
+  const estampoCustom = await prisma.$transaction(async tx => {
+   const updated = await tx.estampoCustom.upsert({
     where: {
       EstampoCustom_base_office_unique: {
         baseId,
@@ -121,6 +122,9 @@ async function handleCreateOrUpdate(
       version: { increment: 1 },
       isActive: true,
     },
+   })
+   await recordSettingsEvent(tx, context, { resource: 'EstampoCustom', action: 'updated', recordId: updated.id, changedFields: ['textoTemplate', 'version', 'isActive'] })
+   return updated
   })
 
   return NextResponse.json({

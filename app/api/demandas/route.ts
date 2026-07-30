@@ -4,6 +4,7 @@ import { ApiError, apiSuccess, parseApiInput, withApiUser } from '@/lib/api/serv
 import { prisma } from '@/lib/prisma'
 import { parseCuantiaForStorage } from '@/lib/utils/cuantia'
 import { DemandaCreateSchema } from '@/lib/validations/demanda'
+import { recordCriticalEvent } from '@/lib/audit/activityEvent'
 
 export const dynamic = 'force-dynamic'
 
@@ -62,6 +63,23 @@ export async function POST(req: NextRequest) {
           createdAt: demanda.createdAt,
         },
         include: { tribunal: true },
+      })
+      await recordCriticalEvent(tx, user, {
+        eventType: 'case.created',
+        module: 'roles',
+        result: 'success',
+        recordType: 'Demanda',
+        recordId: demanda.id,
+        rolId: rolCausa.id,
+        rol: rolCausa.rol,
+        description: 'Demanda y ROL creados.',
+        metadata: {
+          demandId: demanda.id,
+          rolId: rolCausa.id,
+          executedPartyCount: ejecutados.length,
+          tribunalId: tribunal.id,
+          lawyerId: abogado.id,
+        },
       })
       return { ...demanda, tribunal: rolCausa.tribunal, rolId: rolCausa.id }
     }, { timeout: 15000 })

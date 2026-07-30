@@ -1,6 +1,6 @@
+import { withApiUser } from '@/lib/api/server'
 import { NextRequest, NextResponse } from 'next/server'
 
-import { getCurrentUserWithOffice } from '@/lib/auth-server'
 import { recordActivityEvent } from '@/lib/audit/activityEvent'
 import { downloadPdfFromDocumentStorage, hasStoredPdf, pdfBase64ToBuffer } from '@/lib/documents/storage'
 import { prisma } from '@/lib/prisma'
@@ -11,12 +11,8 @@ export async function GET(
   req: NextRequest,
   { params }: { params: { id: string } }
 ) {
+  return withApiUser(req, 'get.documentos.id.download', async user => {
   try {
-    const user = await getCurrentUserWithOffice()
-
-    if (!user) {
-      return NextResponse.json({ ok: false, error: 'No autorizado' }, { status: 401 })
-    }
 
     // Extract mode query parameter for inline viewing
     const searchParams = req.nextUrl.searchParams
@@ -103,7 +99,6 @@ export async function GET(
       recordId: documento.id,
       rolId: documento.rol.id,
       rol: documento.rol.rol,
-      shortName: documento.nombre,
       description: isInline ? 'Documento visualizado.' : 'Documento descargado.',
       metadata: {
         documentType: documento.tipo,
@@ -128,5 +123,7 @@ export async function GET(
       { status: 500 }
     )
   }
+
+  })
 }
 

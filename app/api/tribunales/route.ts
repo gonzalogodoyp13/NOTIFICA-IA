@@ -3,6 +3,7 @@ import { NextRequest } from 'next/server'
 import { ApiError, apiSuccess, parseApiInput, withApiUser } from '@/lib/api/server'
 import { prisma } from '@/lib/prisma'
 import { TribunalSchema } from '@/lib/zodSchemas'
+import { recordSettingsEvent } from '@/lib/audit/businessEvents'
 
 export const dynamic = 'force-dynamic'
 
@@ -25,6 +26,11 @@ export async function POST(req: NextRequest) {
       select: { id: true },
     })
     if (duplicate) throw new ApiError('CONFLICT', 'Ya existe un tribunal con ese nombre', 409)
-    return apiSuccess(await prisma.tribunal.create({ data: { ...data, officeId: user.officeId } }), 201)
+    const created = await prisma.$transaction(async tx => {
+      const tribunal = await tx.tribunal.create({ data: { ...data, officeId: user.officeId } })
+      await recordSettingsEvent(tx, user, { resource: 'Tribunal', action: 'created', recordId: tribunal.id })
+      return tribunal
+    })
+    return apiSuccess(created, 201)
   })
 }

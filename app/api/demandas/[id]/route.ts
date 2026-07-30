@@ -1,11 +1,12 @@
+import { withApiUser } from '@/lib/api/server'
 // API route: /api/demandas/[id]
 // PUT: Update an existing Demanda and synchronize RolCausa.rol if ROL changed
 // Validates user, officeId, and ensures ROL uniqueness per office
 import { NextRequest, NextResponse } from 'next/server'
-import { getCurrentUserWithOffice } from '@/lib/auth-server'
 import { debugLog, toSafeErrorMessage } from '@/lib/debugLog'
 import { prisma } from '@/lib/prisma'
 import { parseCuantiaForStorage } from '@/lib/utils/cuantia'
+import { recordCriticalEvent } from '@/lib/audit/activityEvent'
 
 export const dynamic = 'force-dynamic'
 
@@ -35,15 +36,8 @@ export async function PUT(
   req: NextRequest,
   { params }: { params: { id: string } }
 ) {
+  return withApiUser(req, 'put.demandas.id', async user => {
   try {
-    const user = await getCurrentUserWithOffice()
-
-    if (!user) {
-      return NextResponse.json(
-        { ok: false, error: 'No autorizado' },
-        { status: 401 }
-      )
-    }
 
     const body = await req.json()
 
@@ -376,6 +370,26 @@ export async function PUT(
         data: { ...(rolChanged ? { rol: normalizedRol } : {}), tribunalId: tribunal.id },
       })
 
+      await recordCriticalEvent(tx, user, {
+        eventType: 'case.updated',
+        module: 'roles',
+        result: 'success',
+        recordType: 'Demanda',
+        recordId: updatedDemanda.id,
+        rolId: rolCausa.id,
+        rol: normalizedRol,
+        description: 'Demanda y ROL actualizados.',
+        metadata: {
+          demandId: updatedDemanda.id,
+          rolId: rolCausa.id,
+          changedFields: [
+            'rol', 'tribunalId', 'caratula', 'cuantia', 'abogadoId', 'materiaId', 'procuradorId',
+            ...(normalizedEjecutados !== undefined ? ['ejecutados'] : []),
+          ],
+          executedPartyCount: normalizedEjecutados?.length,
+        },
+      })
+
       return updatedDemanda
     })
 
@@ -403,4 +417,6 @@ export async function PUT(
       { status: 500 }
     )
   }
+
+  })
 }

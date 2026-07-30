@@ -1,8 +1,9 @@
+import { withApiUser } from '@/lib/api/server'
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getCurrentUserWithOffice } from "@/lib/auth-server";
 import type { NextRequest } from "next/server";
 import { EstampoSchema } from "@/lib/zodSchemas";
+import { recordSettingsEvent } from '@/lib/audit/businessEvents'
 
 export const dynamic = 'force-dynamic'
 
@@ -10,15 +11,8 @@ export async function PUT(
   req: NextRequest,
   { params }: { params: { id: string } }
 ) {
+  return withApiUser(req, 'put.estampos.id', async user => {
   try {
-    const user = await getCurrentUserWithOffice();
-
-    if (!user) {
-      return NextResponse.json(
-        { ok: false, message: "No autorizado", error: "No autorizado" },
-        { status: 401 }
-      );
-    }
 
     const id = params.id;
 
@@ -55,14 +49,15 @@ export async function PUT(
       );
     }
 
-    const estampo = await prisma.estampo.update({
-      where: { id },
-      data: {
+    const estampo = await prisma.$transaction(async tx => {
+      const updated = await tx.estampo.update({ where: { id }, data: {
         nombre: parsed.data.nombre,
         tipo: parsed.data.tipo,
         contenido: parsed.data.contenido ?? "",
         fileUrl: parsed.data.fileUrl ?? "",
-      },
+      } })
+      await recordSettingsEvent(tx, user, { resource: 'Estampo', action: 'updated', recordId: id, changedFields: Object.keys(parsed.data) })
+      return updated
     });
 
     return NextResponse.json({ ok: true, data: estampo });
@@ -74,21 +69,16 @@ export async function PUT(
       { status: 500 }
     );
   }
+
+  })
 }
 
 export async function DELETE(
   req: NextRequest,
   { params }: { params: { id: string } }
 ) {
+  return withApiUser(req, 'delete.estampos.id', async user => {
   try {
-    const user = await getCurrentUserWithOffice();
-
-    if (!user) {
-      return NextResponse.json(
-        { ok: false, message: "No autorizado", error: "No autorizado" },
-        { status: 401 }
-      );
-    }
 
     const id = params.id;
 
@@ -114,8 +104,9 @@ export async function DELETE(
       );
     }
 
-    await prisma.estampo.delete({
-      where: { id },
+    await prisma.$transaction(async tx => {
+      await tx.estampo.delete({ where: { id } })
+      await recordSettingsEvent(tx, user, { resource: 'Estampo', action: 'deleted', recordId: id })
     });
 
     return NextResponse.json({ ok: true, message: "Estampo eliminado correctamente" });
@@ -127,6 +118,8 @@ export async function DELETE(
       { status: 500 }
     );
   }
+
+  })
 }
 
 

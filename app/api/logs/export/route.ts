@@ -1,129 +1,111 @@
-// API route: /api/logs/export
-// GET endpoint to export audit logs in CSV or JSON format
-// Requires authentication and scopes to user's office
 import { NextRequest, NextResponse } from 'next/server'
-import { Prisma } from '@prisma/client'
-import { getCurrentUserWithOffice } from '@/lib/auth-server'
-import { recordActivityEvent } from '@/lib/audit/activityEvent'
+
+import { withApiUser } from '@/lib/api/server'
+import { recordCriticalEvent } from '@/lib/audit/activityEvent'
 import { sanitizeAuditDiff } from '@/lib/auditSanitizer'
 import { prisma } from '@/lib/prisma'
 
 export const dynamic = 'force-dynamic'
 
+function csvCell(value: unknown) {
+  const text = value === null || value === undefined ? '' : String(value)
+  return `"${text.replaceAll('"', '""')}"`
+}
+
 export async function GET(req: NextRequest) {
-  try {
-    const user = await getCurrentUserWithOffice()
+  return withApiUser(req, 'audit.export', async context => {
+    const format = req.nextUrl.searchParams.get('format') === 'csv' ? 'csv' : 'json'
+    const source = req.nextUrl.searchParams.get('source') === 'legacy' ? 'legacy' : 'activity'
 
-    if (!user) {
-      return NextResponse.json(
-        { ok: false, message: 'No autorizado', error: 'No autorizado' },
-        { status: 401 }
-      )
-    }
+    const rows = await prisma.$transaction(async tx => {
+      const exported = source === 'legacy'
+        ? (await tx.auditLog.findMany({
+            where: { officeId: context.officeId },
+            select: {
+              id: true,
+              userId: true,
+              officeId: true,
+              tabla: true,
+              accion: true,
+              createdAt: true,
+              diff: true,
+              user: { select: { email: true } },
+              office: { select: { nombre: true } },
+            },
+            orderBy: { createdAt: 'desc' },
+            take: 300,
+          })).map(log => ({
+            id: log.id,
+            userId: log.userId,
+            officeId: log.officeId,
+            tabla: log.tabla,
+            accion: log.accion,
+            createdAt: log.createdAt,
+            diff: sanitizeAuditDiff(log.diff),
+            userEmail: log.user.email,
+            officeNombre: log.office.nombre,
+          }))
+        : (await tx.activityEvent.findMany({
+            where: { officeId: context.officeId },
+            select: {
+              id: true,
+              userId: true,
+              officeId: true,
+              eventType: true,
+              module: true,
+              recordType: true,
+              occurredAt: true,
+              metadata: true,
+              requestId: true,
+              user: { select: { email: true } },
+              office: { select: { nombre: true } },
+            },
+            orderBy: { occurredAt: 'desc' },
+            take: 300,
+          })).map(event => ({
+            id: event.id,
+            userId: event.userId,
+            officeId: event.officeId,
+            tabla: event.recordType || event.module,
+            accion: event.eventType,
+            createdAt: event.occurredAt,
+            diff: event.metadata,
+            requestId: event.requestId,
+            userEmail: event.user?.email || 'Sistema',
+            officeNombre: event.office.nombre,
+          }))
 
-    const { searchParams } = new URL(req.url)
-    const format = searchParams.get('format') || 'json'
-
-    const logs = await prisma.auditLog.findMany({
-      where: { officeId: user.officeId },
-      select: {
-        id: true,
-        userId: true,
-        officeId: true,
-        tabla: true,
-        accion: true,
-        createdAt: true,
-        diff: true,
-        user: { select: { email: true } },
-        office: { select: { nombre: true } },
-      },
-      orderBy: { createdAt: 'desc' },
-      take: 300,
-    })
-
-    const sanitizedLogs = logs.map((log) => ({
-      ...log,
-      diff: sanitizeAuditDiff(log.diff),
-    }))
-
-    await recordActivityEvent({
-      userId: user.id,
-      officeId: user.officeId,
-      eventType: 'audit.export',
-      module: 'audit',
-      result: 'success',
-      recordType: 'AuditLog',
-      description: 'Exportacion de auditoria generada.',
-      metadata: {
-        format,
-        count: sanitizedLogs.length,
-      },
+      await recordCriticalEvent(tx, context, {
+        eventType: 'audit.export',
+        module: 'audit',
+        result: 'success',
+        recordType: source === 'legacy' ? 'AuditLog' : 'ActivityEvent',
+        description: 'Exportacion de auditoria generada.',
+        metadata: { format, source, count: exported.length },
+      })
+      return exported
     })
 
     if (format === 'csv') {
-      const headers = [
-        'id',
-        'userId',
-        'officeId',
-        'tabla',
-        'accion',
-        'createdAt',
-        'userEmail',
-        'officeNombre',
-      ]
-      const rows = sanitizedLogs.map((l) => [
-        l.id,
-        l.userId,
-        l.officeId,
-        l.tabla,
-        l.accion,
-        new Date(l.createdAt).toISOString(),
-        l.user?.email || '',
-        l.office?.nombre || '',
-      ])
-      const csv = [headers.join(','), ...rows.map((r) => r.join(','))].join(
-        '\n'
-      )
-
-      return new Response(csv, {
+      const headers = ['id', 'userId', 'officeId', 'tabla', 'accion', 'createdAt', 'userEmail', 'officeNombre']
+      const body = rows.map(row => [
+        row.id,
+        row.userId,
+        row.officeId,
+        row.tabla,
+        row.accion,
+        row.createdAt.toISOString(),
+        row.userEmail,
+        row.officeNombre,
+      ].map(csvCell).join(','))
+      return new Response([headers.join(','), ...body].join('\n'), {
         headers: {
           'Content-Type': 'text/csv; charset=utf-8',
-          'Content-Disposition': 'attachment; filename=audit_logs.csv',
+          'Content-Disposition': `attachment; filename=audit_${source}.csv`,
         },
       })
     }
 
-    return NextResponse.json({ ok: true, data: sanitizedLogs })
-  } catch (error) {
-    console.error('Error exporting logs:', error)
-
-    if (
-      error instanceof Prisma.PrismaClientKnownRequestError &&
-      error.code === 'P1001'
-    ) {
-      const errorMessage = 'No se pudieron exportar los registros. Intente nuevamente.'
-      return NextResponse.json(
-        {
-          ok: false,
-          message: errorMessage,
-          error: errorMessage,
-        },
-        { status: 503 }
-      )
-    }
-
-    if (error instanceof Prisma.PrismaClientKnownRequestError) {
-      const errorMessage = 'Error al procesar la solicitud.'
-      return NextResponse.json(
-        { ok: false, message: errorMessage, error: errorMessage },
-        { status: 500 }
-      )
-    }
-
-    const errorMessage = error instanceof Error ? error.message : 'Error al exportar los registros.'
-    return NextResponse.json(
-      { ok: false, message: errorMessage, error: errorMessage },
-      { status: 500 }
-    )
-  }
+    return NextResponse.json({ ok: true, source, data: rows })
+  })
 }

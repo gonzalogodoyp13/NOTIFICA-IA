@@ -5,7 +5,7 @@ import { dailyEventDetail } from './dailyWorkbook'
 import { formatChileDateTime } from './chileTime'
 import { MONTHLY_FINANCIAL_LABELS, summarizeMonthlyAmounts, type MonthlyFinancialClass } from './monthlyCore'
 
-type EventWithUser = ActivityEvent & { user: Pick<User, 'email'> }
+type EventWithUser = ActivityEvent & { user: Pick<User, 'email'> | null }
 
 export type MonthlyReportRow = {
   receiptId: string
@@ -153,7 +153,7 @@ function addEventsSheet(workbook: ExcelJS.Workbook, name: string, events: EventW
   for (const event of events) {
     sheet.addRow([
       event.occurredAt,
-      event.user.email,
+      event.user?.email ?? 'Sistema',
       event.module,
       event.eventType,
       event.result,

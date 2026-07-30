@@ -1,7 +1,7 @@
+import { withApiUser } from '@/lib/api/server'
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 
-import { getCurrentUserWithOffice } from '@/lib/auth-server'
 import { buildWizardInitialVariables, loadWizardDiligenciaContext, loadWizardEstampoTemplate } from '@/lib/estampos/server'
 import { computeDerivedVariables, renderEstampoTemplate } from '@/lib/estampos/runtime'
 import type { VariableDef } from '@/lib/estampos/types'
@@ -17,12 +17,8 @@ export async function POST(
   req: NextRequest,
   { params }: { params: { id: string } }
 ) {
+  return withApiUser(req, 'post.diligencias.id.estampos.preview', async user => {
   try {
-    const user = await getCurrentUserWithOffice()
-
-    if (!user) {
-      return NextResponse.json({ ok: false, error: 'No autorizado' }, { status: 401 })
-    }
 
     const body = await req.json()
     const parsed = PreviewEstampoSchema.safeParse(body)
@@ -100,4 +96,6 @@ export async function POST(
       { status: 500 }
     )
   }
+
+  })
 }

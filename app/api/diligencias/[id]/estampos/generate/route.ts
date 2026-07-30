@@ -1,9 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 
-import { getCurrentUserWithOffice } from '@/lib/auth-server'
-import { recordActivityEvent } from '@/lib/audit/activityEvent'
-import { ApiError, apiFailure, parseApiInput } from '@/lib/api/server'
+import { enqueueExternalEvent, processActivityOutbox } from '@/lib/audit/outbox'
+import { ApiError, apiFailure, handleApiError, parseApiInput, withApiUser } from '@/lib/api/server'
 import { buildDocumentGenerationMetadata } from '@/lib/documents/generationMetadata'
 import { hasStoredPdf, uploadPdfToDocumentStorage } from '@/lib/documents/storage'
 import { prisma } from '@/lib/prisma'
@@ -27,12 +26,8 @@ export async function POST(
   req: NextRequest,
   { params }: { params: { id: string } }
 ) {
-  try {
-    const user = await getCurrentUserWithOffice()
-
-    if (!user) {
-      return apiFailure(new ApiError('UNAUTHORIZED', 'No autorizado', 401))
-    }
+  return withApiUser(req, 'stamp.generate', async user => {
+   try {
 
     const body = await req.json()
     const { estampoBaseId, wizardAnswers, textoEditado, notificacionId } = parseApiInput(GenerateEstampoSchema, body)
@@ -166,63 +161,67 @@ export async function POST(
       fileName: documento.nombre,
       createdAt: documento.createdAt,
     })
-    const documentVersion = await prisma.documentoVersion.create({
-      data: {
-        documentoId: documento.id,
-        versionNumber: 1,
-        ...storedPdf,
-        createdByUserId: user.id,
-      },
+    const documentoWithVersion = await prisma.$transaction(async tx => {
+      const documentVersion = await tx.documentoVersion.create({
+        data: {
+          documentoId: documento.id,
+          versionNumber: 1,
+          ...storedPdf,
+          createdByUserId: user.id,
+        },
+      })
+      const updated = await tx.documento.update({
+        where: { id: documento.id },
+        data: { currentVersionId: documentVersion.id },
+        include: { currentVersion: true },
+      })
+      const queuedEvent = await enqueueExternalEvent(tx, user, {
+        eventType: 'stamp.generated',
+        module: 'documents',
+        result: 'success',
+        recordType: 'Documento',
+        recordId: updated.id,
+        rolId: diligencia.rolId,
+        rol: diligencia.rol.rol,
+        description: 'Estampo generado.',
+        deduplicationKey: `stamp:${documentVersion.id}:generated`,
+        metadata: {
+          documentId: updated.id,
+          documentVersionId: documentVersion.id,
+          templateId: estampoBase.id,
+          templateSlug: estampoBase.slug,
+          templateCategory: estampoBase.categoria,
+          notificationId: notificacionId ?? null,
+          version: 1,
+        },
+      })
+      return { documento: updated, outboxId: queuedEvent.id }
     })
-    const documentoWithVersion = await prisma.documento.update({
-      where: { id: documento.id },
-      data: { currentVersionId: documentVersion.id },
-      include: { currentVersion: true },
+    await processActivityOutbox(1, documentoWithVersion.outboxId).catch(error => {
+      console.error('[stamp] Immediate activity outbox drain failed:', error)
     })
-
-    await recordActivityEvent({
-      userId: user.id,
-      officeId: user.officeId,
-      eventType: 'document.generate',
-      module: 'documents',
-      result: 'success',
-      recordType: 'Documento',
-      recordId: documentoWithVersion.id,
-      rolId: diligencia.rolId,
-      rol: diligencia.rol.rol,
-      shortName: documentoWithVersion.nombre,
-      description: 'Estampo generado.',
-      metadata: {
-        documentType: documentoWithVersion.tipo,
-        templateType: 'wizard-estampo',
-        templateId: estampoBase.id,
-        templateSlug: estampoBase.slug,
-        templateCategory: estampoBase.categoria,
-        hasNotification: !!notificacionId,
-        version: documentoWithVersion.version,
-      },
-    })
+    const completedDocumento = documentoWithVersion.documento
 
     return NextResponse.json({
       ok: true,
       data: {
         documento: {
-          id: documentoWithVersion.id,
-          nombre: documentoWithVersion.nombre,
-          tipo: documentoWithVersion.tipo,
-          version: documentoWithVersion.version,
-          hasPdf: hasStoredPdf(documentoWithVersion),
-          createdAt: documentoWithVersion.createdAt.toISOString(),
-          diligenciaId: documentoWithVersion.diligenciaId,
-          notificacionId: documentoWithVersion.notificacionId,
+          id: completedDocumento.id,
+          nombre: completedDocumento.nombre,
+          tipo: completedDocumento.tipo,
+          version: completedDocumento.version,
+          hasPdf: hasStoredPdf(completedDocumento),
+          createdAt: completedDocumento.createdAt.toISOString(),
+          diligenciaId: completedDocumento.diligenciaId,
+          notificacionId: completedDocumento.notificacionId,
           voidedAt: null,
           voidReason: null,
           voidedByUserId: null,
-          generatedByUserId: documentoWithVersion.generatedByUserId,
-          generatedAt: documentoWithVersion.generatedAt ? documentoWithVersion.generatedAt.toISOString() : null,
-          sourceTemplate: documentoWithVersion.sourceTemplate,
-          generationVariables: documentoWithVersion.generationVariables,
-          generationVersion: documentoWithVersion.generationVersion,
+          generatedByUserId: completedDocumento.generatedByUserId,
+          generatedAt: completedDocumento.generatedAt ? completedDocumento.generatedAt.toISOString() : null,
+          sourceTemplate: completedDocumento.sourceTemplate,
+          generationVariables: completedDocumento.generationVariables,
+          generationVersion: completedDocumento.generationVersion,
           diligencia: {
             id: diligencia.id,
             tipo: null,
@@ -238,6 +237,7 @@ export async function POST(
       },
     })
   } catch (error) {
-    return apiFailure(new ApiError('INTERNAL_ERROR', 'Ocurrió un error inesperado', 500))
+    return handleApiError(error, { operation: 'stamp.generate', request: req })
   }
+  })
 }

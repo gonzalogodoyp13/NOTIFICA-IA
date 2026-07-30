@@ -1,23 +1,17 @@
+import { withApiUser } from '@/lib/api/server'
 // API route: /api/materias
 // GET: List all materias for the current office
 // POST: Create a new materia
 import { NextRequest, NextResponse } from 'next/server'
-import { getCurrentUserWithOffice } from '@/lib/auth-server'
 import { prisma } from '@/lib/prisma'
 import { MateriaSchema } from '@/lib/zodSchemas'
+import { recordSettingsEvent } from '@/lib/audit/businessEvents'
 
 export const dynamic = 'force-dynamic'
 
-export async function GET() {
+export async function GET(req: NextRequest) {
+  return withApiUser(req, 'get.materias', async user => {
   try {
-    const user = await getCurrentUserWithOffice()
-
-    if (!user) {
-      return NextResponse.json(
-        { ok: false, message: 'No autorizado', error: 'No autorizado' },
-        { status: 401 }
-      )
-    }
 
     const materias = await prisma.materia.findMany({
       where: { officeId: user.officeId },
@@ -34,18 +28,13 @@ export async function GET() {
       { status: 500 }
     )
   }
+
+  })
 }
 
 export async function POST(req: NextRequest) {
+  return withApiUser(req, 'post.materias', async user => {
   try {
-    const user = await getCurrentUserWithOffice()
-
-    if (!user) {
-      return NextResponse.json(
-        { ok: false, message: 'No autorizado', error: 'No autorizado' },
-        { status: 401 }
-      )
-    }
 
     const body = await req.json()
     const parsed = MateriaSchema.safeParse(body)
@@ -58,11 +47,10 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    const materia = await prisma.materia.create({
-      data: {
-        ...parsed.data,
-        officeId: user.officeId,
-      },
+    const materia = await prisma.$transaction(async tx => {
+      const created = await tx.materia.create({ data: { ...parsed.data, officeId: user.officeId } })
+      await recordSettingsEvent(tx, user, { resource: 'Materia', action: 'created', recordId: created.id })
+      return created
     })
 
     return NextResponse.json({ ok: true, data: materia })
@@ -74,5 +62,7 @@ export async function POST(req: NextRequest) {
       { status: 500 }
     )
   }
+
+  })
 }
 

@@ -4,12 +4,18 @@ import { Prisma } from '@prisma/client'
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 
-import { getCurrentUserWithOffice } from '@/lib/auth-server'
-import { recordActivityEvent } from '@/lib/audit/activityEvent'
+import { AuthResolutionError, resolveAuthenticatedUser, type AuthUser } from '@/lib/auth-server'
+import { recordActivityEvent, recordBestEffortEvent } from '@/lib/audit/activityEvent'
+import { requestEventWasRecorded, runWithAuditRequestState } from '@/lib/audit/requestState'
 import { debugLog, toSafeErrorMessage } from '@/lib/debugLog'
+import { createServerSupabaseClient } from '@/lib/supabaseServer'
 
 export type ApiErrorCode =
   | 'UNAUTHORIZED'
+  | 'USER_NOT_PROVISIONED'
+  | 'ACCOUNT_DISABLED'
+  | 'FORBIDDEN'
+  | 'SERVICE_UNAVAILABLE'
   | 'VALIDATION_ERROR'
   | 'NOT_FOUND'
   | 'CONFLICT'
@@ -26,7 +32,13 @@ export type ApiFailure = {
   }
 }
 
-export type ApiUser = NonNullable<Awaited<ReturnType<typeof getCurrentUserWithOffice>>>
+export type ApiUser = AuthUser
+export type RequestContext = ApiUser & {
+  user: ApiUser
+  requestId: string
+  actorType: 'USER'
+  source: 'WEB'
+}
 
 export class ApiError extends Error {
   constructor(
@@ -95,11 +107,21 @@ function translatePrismaError(error: unknown): ApiError | null {
   return new ApiError('DATABASE_ERROR', 'No se pudo completar la operación', 500)
 }
 
+function translateAuthError(error: unknown): ApiError | null {
+  if (!(error instanceof AuthResolutionError)) return null
+  return new ApiError(error.code, error.message, error.status)
+}
+
 function moduleForOperation(operation: string) {
   if (/send|mail|email|dispatch|reply/i.test(operation)) return 'emails'
   if (/receipt|recibo/i.test(operation)) return 'recibos'
   if (/search/i.test(operation)) return 'search'
   if (/document|pdf/i.test(operation)) return 'documents'
+  if (/notification|notificacion/i.test(operation)) return 'notificaciones'
+  if (/diligenc/i.test(operation)) return 'diligencias'
+  if (/role|rol|demand|ejecutad/i.test(operation)) return 'roles'
+  if (/setting|ajuste|arancel|banco|abogado|procurador|comuna|materia|tribunal|estampo/i.test(operation)) return 'settings'
+  if (/report/i.test(operation)) return 'reports'
   return 'security'
 }
 
@@ -107,7 +129,7 @@ export async function handleApiError(
   error: unknown,
   context: { operation: string; request?: NextRequest; user?: ApiUser | null }
 ) {
-  const known = error instanceof ApiError ? error : translatePrismaError(error)
+  const known = error instanceof ApiError ? error : translateAuthError(error) ?? translatePrismaError(error)
   if (known) {
     if (context.user && known.code !== 'UNAUTHORIZED') {
       await recordActivityEvent({
@@ -139,22 +161,66 @@ export async function handleApiError(
   return apiFailure(new ApiError('INTERNAL_ERROR', 'Ocurrió un error inesperado', 500))
 }
 
-export async function requireApiUser(): Promise<ApiUser> {
-  const user = await getCurrentUserWithOffice()
-  if (!user) throw new ApiError('UNAUTHORIZED', 'No autorizado', 401)
-  return user
+function requestIdFor(request?: NextRequest) {
+  const value = request?.headers.get('x-request-id')?.trim()
+  return value && /^[A-Za-z0-9._:-]{1,128}$/.test(value) ? value : crypto.randomUUID()
+}
+
+export async function requireApiUser(request?: NextRequest): Promise<RequestContext> {
+  const user = await resolveAuthenticatedUser()
+  return {
+    ...user,
+    user,
+    requestId: requestIdFor(request),
+    actorType: 'USER',
+    source: 'WEB',
+  }
 }
 
 export async function withApiUser(
   request: NextRequest,
   operation: string,
-  handler: (user: ApiUser) => Promise<Response>
+  handler: (context: RequestContext) => Promise<Response>
 ) {
-  let user: ApiUser | null = null
+  let user: RequestContext | null = null
   try {
-    user = await requireApiUser()
-    return await handler(user)
+    user = await requireApiUser(request)
+    const response = await runWithAuditRequestState(async () => {
+      const result = await handler(user!)
+      const isReadLikeOperation = /(?:^|[. ])(?:preview|lookup)(?:$|[. ])/i.test(operation)
+      const isMutation = !['GET', 'HEAD', 'OPTIONS'].includes(request.method)
+      if (!requestEventWasRecorded() && ((!isReadLikeOperation && isMutation) || result.status === 403)) {
+        await recordBestEffortEvent(user!, {
+          eventType: operation,
+          module: moduleForOperation(operation),
+          result: result.ok ? 'success' : result.status === 401 || result.status === 403 ? 'denied' : 'failure',
+          description: result.ok ? 'Accion de negocio registrada.' : 'Accion de negocio fallida.',
+          metadata: {
+            operation,
+            method: request.method,
+            path: request.nextUrl.pathname,
+            status: result.status,
+          },
+        })
+      }
+      return result
+    })
+    response.headers.set('x-request-id', user.requestId)
+    return response
   } catch (error) {
-    return await handleApiError(error, { operation, request, user })
+    if (error instanceof AuthResolutionError && error.code === 'ACCOUNT_DISABLED') {
+      if (error.user) {
+        await recordBestEffortEvent({ ...error.user, requestId: requestIdFor(request) }, {
+          eventType: 'security.access_denied', module: 'security', result: 'denied',
+          recordType: 'user', recordId: error.user.id,
+          description: 'Acceso denegado a una cuenta desactivada.',
+          metadata: { errorCode: error.code, path: request.nextUrl.pathname },
+        })
+      }
+      await createServerSupabaseClient().auth.signOut({ scope: 'local' }).catch(() => undefined)
+    }
+    const response = await handleApiError(error, { operation, request, user })
+    response.headers.set('x-request-id', user?.requestId ?? requestIdFor(request))
+    return response
   }
 }

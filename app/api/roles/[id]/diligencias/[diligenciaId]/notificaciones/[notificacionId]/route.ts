@@ -2,8 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 
 import { Prisma } from '@prisma/client'
 
-import { getCurrentUserWithOffice } from '@/lib/auth-server'
-import { ApiError, apiFailure } from '@/lib/api/server'
+import { recordCriticalEvent } from '@/lib/audit/activityEvent'
+import { ApiError, apiFailure, handleApiError, withApiUser } from '@/lib/api/server'
 import { deletePdfFromDocumentStorage } from '@/lib/documents/storage'
 import { prisma } from '@/lib/prisma'
 import { asJsonObject } from '@/lib/utils/json'
@@ -16,12 +16,8 @@ export async function PATCH(
     params,
   }: { params: { id: string; diligenciaId: string; notificacionId: string } }
 ) {
-  try {
-    const user = await getCurrentUserWithOffice()
-
-    if (!user) {
-      return apiFailure(new ApiError('UNAUTHORIZED', 'No autorizado', 401))
-    }
+  return withApiUser(req, 'notification.update', async user => {
+   try {
 
     const rol = await prisma.rolCausa.findFirst({
       where: {
@@ -83,23 +79,40 @@ export async function PATCH(
       ...(incomingMeta as Record<string, unknown>),
     }
 
-    const updated = await prisma.notificacion.update({
-      where: { id: existing.id },
-      data: {
-        meta:
-          Object.keys(nextMeta).length > 0
-            ? (nextMeta as Prisma.JsonObject)
-            : Prisma.JsonNull,
-        updatedAt: new Date(),
-      },
-      select: {
-        id: true,
-        diligenciaId: true,
-        ejecutadoId: true,
-        meta: true,
-        createdAt: true,
-        updatedAt: true,
-      },
+    const updated = await prisma.$transaction(async tx => {
+      const result = await tx.notificacion.update({
+        where: { id: existing.id },
+        data: {
+          meta:
+            Object.keys(nextMeta).length > 0
+              ? (nextMeta as Prisma.JsonObject)
+              : Prisma.JsonNull,
+          updatedAt: new Date(),
+        },
+        select: {
+          id: true,
+          diligenciaId: true,
+          ejecutadoId: true,
+          meta: true,
+          createdAt: true,
+          updatedAt: true,
+        },
+      })
+      await recordCriticalEvent(tx, user, {
+        eventType: 'notification.updated',
+        module: 'notificaciones',
+        result: 'success',
+        recordType: 'Notificacion',
+        recordId: result.id,
+        rolId: rol.id,
+        description: 'Notificacion actualizada.',
+        metadata: {
+          notificationId: result.id,
+          diligenceId: result.diligenciaId,
+          changedFields: Object.keys(incomingMeta).slice(0, 100),
+        },
+      })
+      return result
     })
 
     const responseMeta =
@@ -120,8 +133,9 @@ export async function PATCH(
       },
     })
   } catch (error) {
-    return apiFailure(new ApiError('INTERNAL_ERROR', 'Ocurrió un error inesperado', 500))
+    return handleApiError(error, { operation: 'notification.update', request: req })
   }
+  })
 }
 
 export async function DELETE(
@@ -130,12 +144,8 @@ export async function DELETE(
     params,
   }: { params: { id: string; diligenciaId: string; notificacionId: string } }
 ) {
-  try {
-    const user = await getCurrentUserWithOffice()
-
-    if (!user) {
-      return apiFailure(new ApiError('UNAUTHORIZED', 'No autorizado', 401))
-    }
+  return withApiUser(req, 'notification.delete', async user => {
+   try {
 
     const rol = await prisma.rolCausa.findFirst({
       where: {
@@ -195,21 +205,37 @@ export async function DELETE(
     }
 
     await prisma.$transaction(async tx => {
-      await tx.recibo.deleteMany({
+      const receipts = await tx.recibo.deleteMany({
         where: { notificacionId: params.notificacionId },
       })
 
-      await tx.documento.deleteMany({
+      const documents = await tx.documento.deleteMany({
         where: { notificacionId: params.notificacionId },
       })
 
       await tx.notificacion.delete({
         where: { id: params.notificacionId },
       })
+      await recordCriticalEvent(tx, user, {
+        eventType: 'notification.deleted',
+        module: 'notificaciones',
+        result: 'success',
+        recordType: 'Notificacion',
+        recordId: params.notificacionId,
+        rolId: rol.id,
+        description: 'Notificacion eliminada.',
+        metadata: {
+          notificationId: params.notificacionId,
+          diligenceId: diligencia.id,
+          deletedDocumentCount: documents.count,
+          deletedReceiptCount: receipts.count,
+        },
+      })
     })
 
     return NextResponse.json({ ok: true, mode: 'DELETED' })
   } catch (error) {
-    return apiFailure(new ApiError('INTERNAL_ERROR', 'Ocurrió un error inesperado', 500))
+    return handleApiError(error, { operation: 'notification.delete', request: req })
   }
+  })
 }

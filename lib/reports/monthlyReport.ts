@@ -1,9 +1,10 @@
-import 'server-only'
+﻿import 'server-only'
 
 import { randomUUID } from 'crypto'
 import { Prisma, type GeneratedReport } from '@prisma/client'
 
-import { prismaNoMiddleware } from '@/lib/prismaNoMiddleware'
+import { prisma } from '@/lib/prisma'
+import { enqueueExternalEvent, processActivityOutbox } from '@/lib/audit/outbox'
 import { asJsonObject, getString } from '@/lib/utils/json'
 import { chileMonthBounds } from './chileTime'
 import { buildMonthlyBillingWorkbook, type MonthlyExclusionDetail, type MonthlyReportRow } from './monthlyWorkbook'
@@ -171,7 +172,7 @@ function nextMetadata(existing: GeneratedReport | null, input: {
 }
 
 export async function buildMonthlyReportData(officeId: number, bounds: ReturnType<typeof chileMonthBounds>) {
-  const receipts = await prismaNoMiddleware.recibo.findMany({
+  const receipts = await prisma.recibo.findMany({
     where: {
       rol: { officeId },
       OR: [
@@ -186,11 +187,11 @@ export async function buildMonthlyReportData(officeId: number, bounds: ReturnTyp
   const notificationIds = unique(receipts.map(receipt => receipt.notificacionId))
   const diligenceIds = unique(receipts.map(receipt => receipt.diligenciaId))
   const [notifications, diligences] = await Promise.all([
-    notificationIds.length ? prismaNoMiddleware.notificacion.findMany({
+    notificationIds.length ? prisma.notificacion.findMany({
       where: { id: { in: notificationIds }, diligencia: { rol: { officeId } } },
       select: notificationSelect,
     }) : [],
-    diligenceIds.length ? prismaNoMiddleware.diligencia.findMany({
+    diligenceIds.length ? prisma.diligencia.findMany({
       where: { id: { in: diligenceIds }, rol: { officeId } },
       select: diligenceSelect,
     }) : [],
@@ -251,9 +252,10 @@ export async function generateMonthlyReport(input: {
   userId?: string | null
   month: string
   force?: boolean
+  requestId?: string
 }): Promise<MonthlyReportResult> {
   const bounds = chileMonthBounds(input.month)
-  const existing = await prismaNoMiddleware.generatedReport.findUnique({
+  const existing = await prisma.generatedReport.findUnique({
     where: {
       officeId_reportType_periodStart_periodEnd: {
         officeId: input.officeId,
@@ -266,9 +268,9 @@ export async function generateMonthlyReport(input: {
   if (existing && !input.force) return { status: 'existing', report: existing }
 
   const [office, monthlyData, activityEvents] = await Promise.all([
-    prismaNoMiddleware.office.findUnique({ where: { id: input.officeId }, select: { nombre: true } }),
+    prisma.office.findUnique({ where: { id: input.officeId }, select: { nombre: true } }),
     buildMonthlyReportData(input.officeId, bounds),
-    prismaNoMiddleware.activityEvent.findMany({
+    prisma.activityEvent.findMany({
       where: { officeId: input.officeId, occurredAt: { gte: bounds.start, lte: bounds.end } },
       include: { user: { select: { email: true } } },
       orderBy: [{ occurredAt: 'asc' }, { id: 'asc' }],
@@ -329,23 +331,43 @@ export async function generateMonthlyReport(input: {
   }
 
   if (existing) {
-    const report = await prismaNoMiddleware.generatedReport.update({ where: { id: existing.id }, data })
+    const report = await prisma.$transaction(async tx => {
+      const updated = await tx.generatedReport.update({ where: { id: existing.id }, data })
+      await enqueueExternalEvent(tx, {
+        id: input.userId ?? undefined, officeId: input.officeId, requestId: input.requestId,
+        actorType: input.userId ? 'USER' : 'SYSTEM', source: input.userId ? 'WEB' : 'SYSTEM',
+      }, {
+        eventType: 'report.monthly.generated', module: 'reports', result: 'success',
+        recordType: 'GeneratedReport', recordId: updated.id, description: 'Reporte mensual generado.',
+        deduplicationKey: `report:${updated.id}:${stored.checksumSha256}`,
+        metadata: { reportId: updated.id, reportType: updated.reportType, periodDate: updated.periodDate, activityCount: updated.activityCount },
+      })
+      return updated
+    })
+    await processActivityOutbox(50).catch(() => undefined)
     return { status: 'generated', report }
   }
 
   try {
-    const report = await prismaNoMiddleware.generatedReport.create({
-      data: {
-        id: reportId,
-        officeId: input.officeId,
-        ...data,
-      },
+    const report = await prisma.$transaction(async tx => {
+      const created = await tx.generatedReport.create({ data: { id: reportId, officeId: input.officeId, ...data } })
+      await enqueueExternalEvent(tx, {
+        id: input.userId ?? undefined, officeId: input.officeId, requestId: input.requestId,
+        actorType: input.userId ? 'USER' : 'SYSTEM', source: input.userId ? 'WEB' : 'SYSTEM',
+      }, {
+        eventType: 'report.monthly.generated', module: 'reports', result: 'success',
+        recordType: 'GeneratedReport', recordId: created.id, description: 'Reporte mensual generado.',
+        deduplicationKey: `report:${created.id}:${stored.checksumSha256}`,
+        metadata: { reportId: created.id, reportType: created.reportType, periodDate: created.periodDate, activityCount: created.activityCount },
+      })
+      return created
     })
+    await processActivityOutbox(50).catch(() => undefined)
     return { status: 'generated', report }
   } catch (error) {
     if (isUniqueConstraint(error)) {
       await deleteReportFile(stored.storageBucket, stored.storageKey).catch(() => undefined)
-      const report = await prismaNoMiddleware.generatedReport.findUniqueOrThrow({
+      const report = await prisma.generatedReport.findUniqueOrThrow({
         where: {
           officeId_reportType_periodStart_periodEnd: {
             officeId: input.officeId,

@@ -9,6 +9,7 @@ datasource db {
 
 model User {
   id         String     @id @default(cuid())
+  authUserId String     @unique
   email      String     @unique
   officeName String
   officeId   Int
@@ -17,6 +18,7 @@ model User {
   createdAt  DateTime   @default(now())
   auditLogs  AuditLog[]
   activityEvents ActivityEvent[]
+  activityOutbox ActivityOutbox[]
   generatedReports GeneratedReport[]
   reportDeliveryRecipients ReportDeliveryRecipient[]
   demandas   Demanda[]
@@ -56,6 +58,7 @@ model Office {
   estampos       Estampo[]       @relation("OfficeEstampos")
   auditLogs      AuditLog[]
   activityEvents ActivityEvent[]
+  activityOutbox ActivityOutbox[]
   generatedReports GeneratedReport[]
   reportDeliveryBatches ReportDeliveryBatch[]
   demandas       Demanda[]
@@ -83,13 +86,19 @@ model AuditLog {
   office    Office   @relation(fields: [officeId], references: [id])
   user      User     @relation(fields: [userId], references: [id])
 
+  @@index([officeId, createdAt])
+  @@index([officeId, userId, createdAt])
+  @@index([officeId, tabla, createdAt])
+  @@index([officeId, accion, createdAt])
   @@map("audit_logs")
 }
 
 model ActivityEvent {
   id          Int      @id @default(autoincrement())
   officeId    Int
-  userId      String
+  userId      String?
+  actorType   ActivityActorType @default(USER)
+  source      ActivitySource @default(WEB)
   eventType   String
   module      String
   result      String
@@ -100,17 +109,66 @@ model ActivityEvent {
   shortName   String?
   description String
   metadata    Json?
+  requestId   String?
+  eventVersion Int     @default(1)
+  deduplicationKey String?
   occurredAt  DateTime @default(now())
   createdAt   DateTime @default(now())
   office      Office   @relation(fields: [officeId], references: [id], onDelete: Restrict, onUpdate: Cascade)
-  user        User     @relation(fields: [userId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  user        User?    @relation(fields: [userId], references: [id], onDelete: Restrict, onUpdate: Cascade)
 
   @@index([officeId, occurredAt])
-  @@index([userId, occurredAt])
-  @@index([eventType])
-  @@index([module])
-  @@index([result])
+  @@index([officeId, eventType, occurredAt])
+  @@index([officeId, userId, occurredAt])
+  @@index([requestId])
+  @@index([module, occurredAt])
+  @@index([result, occurredAt])
+  @@unique([officeId, deduplicationKey])
   @@map("activity_events")
+}
+
+model ActivityOutbox {
+  id                 String               @id @default(cuid())
+  officeId           Int
+  userId             String?
+  actorType          ActivityActorType
+  source             ActivitySource
+  eventType          String
+  payload            Json
+  requestId          String?
+  deduplicationKey   String
+  status             ActivityOutboxStatus @default(PENDING)
+  attempts           Int                  @default(0)
+  nextAttemptAt      DateTime             @default(now())
+  lastError          String?
+  processedAt        DateTime?
+  createdAt          DateTime             @default(now())
+  updatedAt          DateTime             @updatedAt
+  office             Office               @relation(fields: [officeId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  user               User?                @relation(fields: [userId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  @@unique([officeId, deduplicationKey])
+  @@index([status, nextAttemptAt])
+  @@index([officeId, createdAt])
+  @@map("activity_outbox")
+}
+
+enum ActivityActorType {
+  USER
+  SYSTEM
+}
+
+enum ActivitySource {
+  WEB
+  INTERNAL
+  SYSTEM
+}
+
+enum ActivityOutboxStatus {
+  PENDING
+  PROCESSING
+  PROCESSED
+  DEAD
 }
 
 model GeneratedReport {

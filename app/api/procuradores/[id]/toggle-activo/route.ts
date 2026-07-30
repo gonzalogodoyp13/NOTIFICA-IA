@@ -1,9 +1,10 @@
+import { withApiUser } from '@/lib/api/server'
 // API route: /api/procuradores/[id]/toggle-activo
 // PATCH: Toggle or set activo (global) for a procurador
 import { NextRequest, NextResponse } from 'next/server'
-import { getCurrentUserWithOffice } from '@/lib/auth-server'
 import { prisma } from '@/lib/prisma'
 import { ToggleActivoSchema } from '@/lib/zodSchemas'
+import { recordSettingsEvent } from '@/lib/audit/businessEvents'
 
 export const dynamic = 'force-dynamic'
 
@@ -11,15 +12,8 @@ export async function PATCH(
   req: NextRequest,
   { params }: { params: { id: string } }
 ) {
+  return withApiUser(req, 'patch.procuradores.id.toggle-activo', async user => {
   try {
-    const user = await getCurrentUserWithOffice()
-
-    if (!user) {
-      return NextResponse.json(
-        { ok: false, message: 'No autorizado', error: 'No autorizado' },
-        { status: 401 }
-      )
-    }
 
     const id = parseInt(params.id)
     if (isNaN(id)) {
@@ -63,9 +57,9 @@ export async function PATCH(
       : !procurador.activo
 
     // Update
-    await prisma.procurador.update({
-      where: { id },
-      data: { activo: nuevoActivo },
+    await prisma.$transaction(async tx => {
+      await tx.procurador.update({ where: { id }, data: { activo: nuevoActivo } })
+      await recordSettingsEvent(tx, user, { resource: 'Procurador', action: 'toggled', recordId: id, changedFields: ['activo'] })
     })
 
     return NextResponse.json({
@@ -82,5 +76,7 @@ export async function PATCH(
       { status: 500 }
     )
   }
+
+  })
 }
 

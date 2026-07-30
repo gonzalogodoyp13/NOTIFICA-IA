@@ -1,7 +1,7 @@
+import { withApiUser } from '@/lib/api/server'
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 
-import { getCurrentUserWithOffice } from '@/lib/auth-server'
 import { loadDashboardData } from '@/lib/dashboard/service'
 import type { DashboardFilters, DashboardSection } from '@/lib/dashboard/types'
 
@@ -29,11 +29,8 @@ function parseIds(values: string[]) {
 }
 
 export async function GET(req: NextRequest) {
+  return withApiUser(req, 'get.dashboard', async user => {
   try {
-    const user = await getCurrentUserWithOffice()
-    if (!user) {
-      return NextResponse.json({ ok: false, error: 'No autorizado' }, { status: 401 })
-    }
 
     const params = req.nextUrl.searchParams
     const fechaDesde = params.get('fechaDesde') || undefined
@@ -75,4 +72,6 @@ export async function GET(req: NextRequest) {
       { status: 500 }
     )
   }
+
+  })
 }

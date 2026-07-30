@@ -1,13 +1,14 @@
+import { withApiUser } from '@/lib/api/server'
 import { NextRequest, NextResponse } from 'next/server'
 
 import { Prisma } from '@prisma/client'
 
-import { getCurrentUserWithOffice } from '@/lib/auth-server'
 import { ApiError, apiFailure, parseApiInput } from '@/lib/api/server'
 import { prisma } from '@/lib/prisma'
 import { DiligenciaCreateSchema } from '@/lib/validations/rol-workspace'
 import { deriveNotificationCompleteness } from '@/lib/workflow/completeness'
 import { deriveNotificationWorkflowState } from '@/lib/workflow/notificationStatus'
+import { recordCriticalEvent } from '@/lib/audit/activityEvent'
 
 export const dynamic = 'force-dynamic'
 
@@ -86,8 +87,9 @@ function mapDiligencia(diligencia: any) {
   }
 }
 
-async function syncRolEstado(rolId: string) {
-  const rol = await prisma.rolCausa.findUnique({
+type RoleStateDb = Pick<Prisma.TransactionClient, 'rolCausa'>
+async function syncRolEstado(rolId: string, db: RoleStateDb = prisma) {
+  const rol = await db.rolCausa.findUnique({
     where: { id: rolId },
     select: {
       estado: true,
@@ -115,7 +117,7 @@ async function syncRolEstado(rolId: string) {
   }
 
   if (nextEstado !== rol.estado) {
-    await prisma.rolCausa.update({
+    await db.rolCausa.update({
       where: { id: rolId },
       data: { estado: nextEstado },
     })
@@ -126,12 +128,8 @@ export async function GET(
   _req: NextRequest,
   { params }: { params: { id: string } }
 ) {
+  return withApiUser(_req, 'get.roles.id.diligencias', async user => {
   try {
-    const user = await getCurrentUserWithOffice()
-
-    if (!user) {
-      return apiFailure(new ApiError('UNAUTHORIZED', 'No autorizado', 401))
-    }
 
     const rol = await prisma.rolCausa.findFirst({
       where: {
@@ -246,18 +244,16 @@ export async function GET(
       { status: 500 }
     )
   }
+
+  })
 }
 
 export async function POST(
   req: NextRequest,
   { params }: { params: { id: string } }
 ) {
+  return withApiUser(req, 'post.roles.id.diligencias', async user => {
   try {
-    const user = await getCurrentUserWithOffice()
-
-    if (!user) {
-      return apiFailure(new ApiError('UNAUTHORIZED', 'No autorizado', 401))
-    }
 
     const rol = await prisma.rolCausa.findFirst({
       where: {
@@ -342,20 +338,20 @@ export async function POST(
     const metaToPersist =
       Object.keys(metaPayload).length > 0 ? (metaPayload as Prisma.JsonObject) : undefined
 
-    const diligencia = await prisma.diligencia.create({
-      data: {
-        rolId: rol.id,
-        tipoId: payload.tipoId,
-        fecha: new Date(payload.fecha),
-        estado: 'pendiente',
-        meta: metaToPersist,
-      },
-      include: {
-        tipo: true,
-      },
+    const diligencia = await prisma.$transaction(async tx => {
+      const created = await tx.diligencia.create({
+        data: { rolId: rol.id, tipoId: payload.tipoId, fecha: new Date(payload.fecha), estado: 'pendiente', meta: metaToPersist },
+        include: { tipo: true },
+      })
+      await syncRolEstado(rol.id, tx)
+      await recordCriticalEvent(tx, user, {
+        eventType: 'diligence.created', module: 'diligencias', result: 'success',
+        recordType: 'Diligencia', recordId: created.id, rolId: rol.id, rol: rol.rol,
+        description: 'Diligencia creada.',
+        metadata: { diligenceId: created.id, typeId: created.tipoId, status: created.estado, legalDate: payload.fecha },
+      })
+      return created
     })
-
-    await syncRolEstado(rol.id)
 
     return NextResponse.json({
       ok: true,
@@ -368,4 +364,6 @@ export async function POST(
   } catch (error) {
     return apiFailure(new ApiError('INTERNAL_ERROR', 'Ocurrió un error inesperado', 500))
   }
+
+  })
 }

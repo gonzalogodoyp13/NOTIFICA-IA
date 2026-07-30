@@ -1,6 +1,6 @@
+import { withApiUser } from '@/lib/api/server'
 import { NextRequest, NextResponse } from 'next/server'
 
-import { getCurrentUserWithOffice } from '@/lib/auth-server'
 import { hasStoredPdf } from '@/lib/documents/storage'
 import { prisma } from '@/lib/prisma'
 
@@ -10,12 +10,8 @@ export async function GET(
   _req: NextRequest,
   { params }: { params: { id: string } }
 ) {
+  return withApiUser(_req, 'get.roles.id.documentos', async user => {
   try {
-    const user = await getCurrentUserWithOffice()
-
-    if (!user) {
-      return NextResponse.json({ ok: false, error: 'No autorizado' }, { status: 401 })
-    }
 
     const rol = await prisma.rolCausa.findFirst({
       where: {
@@ -101,5 +97,7 @@ export async function GET(
       { status: 500 }
     )
   }
+
+  })
 }
 

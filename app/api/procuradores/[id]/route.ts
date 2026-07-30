@@ -1,9 +1,10 @@
+import { withApiUser } from '@/lib/api/server'
 // API route: /api/procuradores/[id]
 // GET: Get a single procurador
 // PATCH: Update a procurador and sync abogado relations
 import { NextRequest, NextResponse } from 'next/server'
-import { getCurrentUserWithOffice } from '@/lib/auth-server'
 import { prisma } from '@/lib/prisma'
+import { recordSettingsEvent } from '@/lib/audit/businessEvents'
 import { ProcuradorUpdateSchema } from '@/lib/zodSchemas'
 import { mapProcuradorListItem } from '@/lib/procuradores'
 
@@ -47,15 +48,8 @@ export async function GET(
   req: NextRequest,
   { params }: { params: { id: string } }
 ) {
+  return withApiUser(req, 'get.procuradores.id', async user => {
   try {
-    const user = await getCurrentUserWithOffice()
-
-    if (!user) {
-      return NextResponse.json(
-        { ok: false, message: 'No autorizado', error: 'No autorizado' },
-        { status: 401 }
-      )
-    }
 
     const id = parseInt(params.id)
     if (isNaN(id)) {
@@ -89,21 +83,16 @@ export async function GET(
       { status: 500 }
     )
   }
+
+  })
 }
 
 export async function PATCH(
   req: NextRequest,
   { params }: { params: { id: string } }
 ) {
+  return withApiUser(req, 'patch.procuradores.id', async user => {
   try {
-    const user = await getCurrentUserWithOffice()
-
-    if (!user) {
-      return NextResponse.json(
-        { ok: false, message: 'No autorizado', error: 'No autorizado' },
-        { status: 401 }
-      )
-    }
 
     const id = parseInt(params.id)
     if (isNaN(id)) {
@@ -197,10 +186,15 @@ export async function PATCH(
         }
       }
 
-      return tx.procurador.findUniqueOrThrow({
+      const updated = await tx.procurador.findUniqueOrThrow({
         where: { id },
         include: procuradorInclude,
       })
+      await recordSettingsEvent(tx, user, {
+        resource: 'Procurador', action: 'updated', recordId: id,
+        changedFields: [...Object.keys(updateData), ...(normalizedAbogadoIds ? ['abogadoIds'] : [])],
+      })
+      return updated
     })
 
     return NextResponse.json({ ok: true, data: mapProcuradorListItem(procurador) })
@@ -212,4 +206,6 @@ export async function PATCH(
       { status: 500 }
     )
   }
+
+  })
 }

@@ -1,9 +1,10 @@
+import { withApiUser } from '@/lib/api/server'
 // API route: /api/procuradores
 // GET: List all procuradores for the current office
 // POST: Create a new procurador and link it to one or many abogados
 import { NextRequest, NextResponse } from 'next/server'
-import { getCurrentUserWithOffice } from '@/lib/auth-server'
 import { prisma } from '@/lib/prisma'
+import { recordSettingsEvent } from '@/lib/audit/businessEvents'
 import { ProcuradorSchema } from '@/lib/zodSchemas'
 import { mapProcuradorListItem } from '@/lib/procuradores'
 
@@ -70,15 +71,8 @@ async function validateAbogadoIds(officeId: number, abogadoIds: number[]) {
 }
 
 export async function GET(req: NextRequest) {
+  return withApiUser(req, 'get.procuradores', async user => {
   try {
-    const user = await getCurrentUserWithOffice()
-
-    if (!user) {
-      return NextResponse.json(
-        { ok: false, message: 'No autorizado', error: 'No autorizado' },
-        { status: 401 }
-      )
-    }
 
     const searchParams = req.nextUrl.searchParams
     const bancoIdParam = searchParams.get('bancoId')
@@ -145,18 +139,13 @@ export async function GET(req: NextRequest) {
       { status: 500 }
     )
   }
+
+  })
 }
 
 export async function POST(req: NextRequest) {
+  return withApiUser(req, 'post.procuradores', async user => {
   try {
-    const user = await getCurrentUserWithOffice()
-
-    if (!user) {
-      return NextResponse.json(
-        { ok: false, message: 'No autorizado', error: 'No autorizado' },
-        { status: 401 }
-      )
-    }
 
     const body = await req.json()
     const parsed = ProcuradorSchema.safeParse(body)
@@ -242,6 +231,10 @@ export async function POST(req: NextRequest) {
         where: { id: procurador.id },
         include: procuradorInclude,
       })
+      await recordSettingsEvent(tx, user, {
+        resource: 'Procurador', action: existingProcurador ? 'updated' : 'created',
+        recordId: procurador.id, changedFields: existingProcurador ? ['abogadoIds'] : undefined,
+      })
 
       return {
         procurador: mapProcuradorListItem(procuradorWithRelations),
@@ -262,4 +255,6 @@ export async function POST(req: NextRequest) {
       { status: 500 }
     )
   }
+
+  })
 }

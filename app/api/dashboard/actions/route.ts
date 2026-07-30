@@ -1,7 +1,7 @@
+import { withApiUser } from '@/lib/api/server'
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 
-import { getCurrentUserWithOffice } from '@/lib/auth-server'
 import { loadQuickActions } from '@/lib/dashboard/actions'
 import type { DashboardFilters } from '@/lib/dashboard/types'
 
@@ -20,9 +20,8 @@ const DateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine(value => {
 })
 
 export async function GET(req: NextRequest) {
+  return withApiUser(req, 'get.dashboard.actions', async user => {
   try {
-    const user = await getCurrentUserWithOffice()
-    if (!user) return NextResponse.json({ ok: false, error: 'No autorizado' }, { status: 401 })
     const params = req.nextUrl.searchParams
     const query = QuerySchema.parse(Object.fromEntries(params))
     const fechaDesde = params.get('fechaDesde') || undefined
@@ -47,4 +46,6 @@ export async function GET(req: NextRequest) {
     console.error('[GET /api/dashboard/actions]', error)
     return NextResponse.json({ ok: false, error: 'No se pudo cargar la cola.' }, { status: 500 })
   }
+
+  })
 }

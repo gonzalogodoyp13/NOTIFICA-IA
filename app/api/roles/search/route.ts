@@ -1,24 +1,17 @@
+import { withApiUser } from '@/lib/api/server'
 // API route: /api/roles/search
 // GET: Search for RolCausa by exact ROL match, scoped by officeId
 // Returns: { ok: true, data: { id } } if found
 //          { ok: false, error: "NOT_FOUND", message: "..." } if not found
 import { NextRequest, NextResponse } from 'next/server'
-import { getCurrentUserWithOffice } from '@/lib/auth-server'
 import { recordActivityEvent } from '@/lib/audit/activityEvent'
 import { prisma } from '@/lib/prisma'
 
 export const dynamic = 'force-dynamic'
 
 export async function GET(req: NextRequest) {
+  return withApiUser(req, 'get.roles.search', async user => {
   try {
-    const user = await getCurrentUserWithOffice()
-
-    if (!user) {
-      return NextResponse.json(
-        { ok: false, error: 'No autorizado' },
-        { status: 401 }
-      )
-    }
 
     // Get ROL from query params
     const { searchParams } = new URL(req.url)
@@ -99,5 +92,7 @@ export async function GET(req: NextRequest) {
       { status: 500 }
     )
   }
+
+  })
 }
 

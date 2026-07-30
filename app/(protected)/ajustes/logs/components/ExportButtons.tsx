@@ -2,19 +2,19 @@
 
 import { useState } from 'react'
 
-export default function ExportButtons() {
+export default function ExportButtons({ source }: { source: 'activity' | 'legacy' }) {
   const [exporting, setExporting] = useState<'csv' | 'json' | null>(null)
 
   const handleExport = async (format: 'csv' | 'json') => {
     setExporting(format)
     try {
-      const url = `/api/logs/export?format=${format}`
+      const url = `/api/logs/export?format=${format}&source=${source}`
       
       if (format === 'csv') {
         // For CSV, trigger download
         const link = document.createElement('a')
         link.href = url
-        link.download = 'audit_logs.csv'
+        link.download = `audit_${source}.csv`
         document.body.appendChild(link)
         link.click()
         document.body.removeChild(link)

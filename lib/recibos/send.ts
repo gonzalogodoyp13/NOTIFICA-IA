@@ -6,6 +6,7 @@ import { Buffer } from 'buffer'
 import { prisma } from '@/lib/prisma'
 import { ApiError } from '@/lib/api/server'
 import { recordOperationalActivity } from '@/lib/audit/operationalActivity'
+import { enqueueExternalEvent, processActivityOutbox } from '@/lib/audit/outbox'
 import { getReceiptList, type ReceiptListRow } from '@/lib/recibos/query'
 import { buildRecibosWorkbook } from '@/lib/recibos/xlsx'
 import { createMailAdapter, sendWithRetries, type MailAdapter } from '@/lib/recibos/mailer'
@@ -18,7 +19,7 @@ import { duplicateIntelligenceForGroup, enrichSendPreview } from '@/lib/recibos/
 import { recordProviderSuccess } from '@/lib/recibos/provider-health'
 import type { ReceiptSendInput, ReceiptSendPreviewInput, ReceiptTestSendInput } from '@/lib/validations/recibos'
 
-type UserContext = { id: string; officeId: number }
+type UserContext = { id: string; officeId: number; requestId?: string; actorType?: 'USER'; source?: 'WEB' }
 
 function selectionOptions(selection: ReceiptSendPreviewInput['selection']) {
   return selection.mode === 'explicit'
@@ -346,40 +347,25 @@ export async function sendReceiptGroups(params: {
     prisma.recibosDispatchRecipient.count({ where: { batchId: batch.id, status: 'skipped' } }),
   ])
   const status = finalBatchStatus({ sent: sentCount, failed: failedCount })
-  await prisma.recibosDispatchBatch.update({
-    where: { id: batch.id },
-    data: {
-      status,
-      sentCount,
-      failedCount,
-      skippedCount,
-      sentAt: sentCount > 0 ? new Date() : null,
-      completedAt: new Date(),
-    },
-  })
-  if (sentCount > 0) await recordProviderSuccess({ officeId: params.user.officeId, provider: adapter.provider, mailboxAddress: adapter.fromAccount, kind: 'send' })
   const duplicateOverrideCount = Array.from(duplicateByGroup.values()).filter(item => item.requiresConfirmation).length
-  if (duplicateOverrideCount) await recordOperationalActivity({ userId: params.user.id, officeId: params.user.officeId, eventType: 'receipt_duplicate_override', count: duplicateOverrideCount, details: { dispatchBatchId: batch.id, groupCount: duplicateOverrideCount } })
-
-  await recordOperationalActivity({
-    userId: params.user.id,
-    officeId: params.user.officeId,
-    eventType: 'receipt_send',
-    count: rows.length,
-    details: {
-      provider: adapter.provider,
-      recipientMode: params.input.recipientMode,
-      groupCount: preview.groups.length,
-      sentCount,
-      failedCount,
-      skippedCount,
-      status,
-      templateMode,
-      dispatchBatchId: batch.id,
-      duplicateOverrideCount,
-    } satisfies Prisma.JsonObject,
+  await prisma.$transaction(async tx => {
+    await tx.recibosDispatchBatch.update({
+      where: { id: batch.id },
+      data: { status, sentCount, failedCount, skippedCount, sentAt: sentCount > 0 ? new Date() : null, completedAt: new Date() },
+    })
+    await enqueueExternalEvent(tx, params.user, {
+      eventType: 'receipt.send', module: 'emails', result: 'success',
+      recordType: 'RecibosDispatchBatch', recordId: batch.id,
+      description: 'Envio de recibos registrado.',
+      deduplicationKey: `receipt-send:${batch.id}:completed`,
+      metadata: {
+        dispatchBatchId: batch.id, count: rows.length, groupCount: preview.groups.length,
+        sentCount, failedCount, skippedCount, status, provider: adapter.provider, duplicateOverrideCount,
+      },
+    })
   })
-
+  await processActivityOutbox(50).catch(() => undefined)
+  if (sentCount > 0) await recordProviderSuccess({ officeId: params.user.officeId, provider: adapter.provider, mailboxAddress: adapter.fromAccount, kind: 'send' })
   return {
     dispatchBatchId: batch.id,
     provider: adapter.provider,
@@ -410,11 +396,18 @@ export async function sendReceiptTest(params: { user: UserContext & { email: str
   try {
     const result = await sendWithRetries(adapter, { to: [params.user.email], subject: `[PRUEBA] ${rendered.subject}`, text: rendered.body, attachments: [{ filename: group.attachmentFilename, content: workbook, contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }] }, 3)
     const now = new Date()
-    await prisma.$transaction([
-      prisma.recibosDispatchRecipient.update({ where: { id: recipient.id }, data: { status: 'sent', attemptCount: result.attempts, providerMessageId: result.messageId, providerThreadId: result.threadId ?? null, providerInternetMessageId: result.internetMessageId ?? null, attachmentFilename: group.attachmentFilename, attachmentMimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', attachmentByteSize: workbook.byteLength, attachmentSha256: sha256Hex(workbook), sentAt: now, completedAt: now } }),
-      prisma.recibosDispatchBatch.update({ where: { id: batch.id }, data: { status: 'sent', sentCount: 1, sentAt: now, completedAt: now } }),
-    ])
-    await recordOperationalActivity({ userId: params.user.id, officeId: params.user.officeId, eventType: 'receipt_test_send', count: workbookRows.length, details: { dispatchBatchId: batch.id, recipientId: recipient.id, provider: adapter.provider } })
+    await prisma.$transaction(async tx => {
+      await tx.recibosDispatchRecipient.update({ where: { id: recipient.id }, data: { status: 'sent', attemptCount: result.attempts, providerMessageId: result.messageId, providerThreadId: result.threadId ?? null, providerInternetMessageId: result.internetMessageId ?? null, attachmentFilename: group.attachmentFilename, attachmentMimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', attachmentByteSize: workbook.byteLength, attachmentSha256: sha256Hex(workbook), sentAt: now, completedAt: now } })
+      await tx.recibosDispatchBatch.update({ where: { id: batch.id }, data: { status: 'sent', sentCount: 1, sentAt: now, completedAt: now } })
+      await enqueueExternalEvent(tx, params.user, {
+        eventType: 'receipt.test_send', module: 'emails', result: 'success',
+        recordType: 'RecibosDispatchBatch', recordId: batch.id,
+        description: 'Envio de prueba de recibos registrado.',
+        deduplicationKey: `receipt-test-send:${batch.id}:completed`,
+        metadata: { dispatchBatchId: batch.id, recipientId: recipient.id, count: workbookRows.length, provider: adapter.provider },
+      })
+    })
+    await processActivityOutbox(50).catch(() => undefined)
     return { dispatchBatchId: batch.id, recipientId: recipient.id, provider: adapter.provider, sentCount: 1 }
   } catch (error) {
     const message = sanitizeDispatchError(error)

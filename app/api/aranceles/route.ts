@@ -1,23 +1,17 @@
+import { withApiUser } from '@/lib/api/server'
 // API route: /api/aranceles
 // GET: List aranceles for a banco (with optional abogadoId filter)
 // POST: Create a new arancel
 import { NextRequest, NextResponse } from 'next/server'
-import { getCurrentUserWithOffice } from '@/lib/auth-server'
 import { prisma } from '@/lib/prisma'
 import { ArancelSchema, parseArancelMonto } from '@/lib/zodSchemas'
+import { recordCriticalEvent } from '@/lib/audit/activityEvent'
 
 export const dynamic = 'force-dynamic'
 
 export async function GET(req: NextRequest) {
+  return withApiUser(req, 'get.aranceles', async user => {
   try {
-    const user = await getCurrentUserWithOffice()
-
-    if (!user) {
-      return NextResponse.json(
-        { ok: false, message: 'No autorizado', error: 'No autorizado' },
-        { status: 401 }
-      )
-    }
 
     const { searchParams } = new URL(req.url)
     const bancoIdParam = searchParams.get('bancoId')
@@ -135,18 +129,13 @@ export async function GET(req: NextRequest) {
       { status: 500 }
     )
   }
+
+  })
 }
 
 export async function POST(req: NextRequest) {
+  return withApiUser(req, 'post.aranceles', async user => {
   try {
-    const user = await getCurrentUserWithOffice()
-
-    if (!user) {
-      return NextResponse.json(
-        { ok: false, message: 'No autorizado', error: 'No autorizado' },
-        { status: 401 }
-      )
-    }
 
     const body = await req.json()
 
@@ -265,7 +254,8 @@ export async function POST(req: NextRequest) {
 
     // Crear arancel
     try {
-      const arancel = await prisma.arancel.create({
+      const arancel = await prisma.$transaction(async tx => {
+       const created = await tx.arancel.create({
         data: {
           officeId: user.officeId,
           bancoId: parsed.data.bancoId,
@@ -285,6 +275,13 @@ export async function POST(req: NextRequest) {
               }
             : false,
         },
+       })
+       await recordCriticalEvent(tx, user, {
+         eventType: 'settings.tariff.created', module: 'settings', result: 'success',
+         recordType: 'Arancel', recordId: created.id, description: 'Arancel creado.',
+         metadata: { tariffId: created.id, amount: Number(created.monto), active: created.activo, bankId: created.bancoId },
+       })
+       return created
       })
 
       return NextResponse.json({ ok: true, data: arancel })
@@ -311,4 +308,6 @@ export async function POST(req: NextRequest) {
       { status: 500 }
     )
   }
+
+  })
 }

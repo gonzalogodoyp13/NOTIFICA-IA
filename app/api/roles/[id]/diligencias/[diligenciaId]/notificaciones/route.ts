@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 
 import { randomUUID } from 'crypto'
-import { getCurrentUserWithOffice } from '@/lib/auth-server'
+import { recordCriticalEvent } from '@/lib/audit/activityEvent'
+import { handleApiError, withApiUser } from '@/lib/api/server'
 import { prisma } from '@/lib/prisma'
 
 export const dynamic = 'force-dynamic'
@@ -10,12 +11,8 @@ export async function POST(
   req: NextRequest,
   { params }: { params: { id: string; diligenciaId: string } }
 ) {
-  try {
-    const user = await getCurrentUserWithOffice()
-
-    if (!user) {
-      return NextResponse.json({ ok: false, error: 'No autorizado' }, { status: 401 })
-    }
+  return withApiUser(req, 'notification.create', async user => {
+   try {
 
     // Verificar que el rol pertenece a la oficina del usuario
     const rol = await prisma.rolCausa.findFirst({
@@ -105,22 +102,39 @@ export async function POST(
     }
 
     // Crear nueva notificación
-    const notificacion = await prisma.notificacion.create({
-      data: {
-        id: randomUUID(),
-        diligenciaId: params.diligenciaId,
-        ejecutadoId: finalEjecutadoId,
-        meta: {}, // Evitar null para no chocar con Prisma JSON/DB
-        updatedAt: new Date(),
-      },
-      select: {
-        id: true,
-        diligenciaId: true,
-        ejecutadoId: true,
-        meta: true,
-        createdAt: true,
-        updatedAt: true,
-      },
+    const notificacion = await prisma.$transaction(async tx => {
+      const created = await tx.notificacion.create({
+        data: {
+          id: randomUUID(),
+          diligenciaId: params.diligenciaId,
+          ejecutadoId: finalEjecutadoId,
+          meta: {},
+          updatedAt: new Date(),
+        },
+        select: {
+          id: true,
+          diligenciaId: true,
+          ejecutadoId: true,
+          meta: true,
+          createdAt: true,
+          updatedAt: true,
+        },
+      })
+      await recordCriticalEvent(tx, user, {
+        eventType: 'notification.created',
+        module: 'notificaciones',
+        result: 'success',
+        recordType: 'Notificacion',
+        recordId: created.id,
+        rolId: rol.id,
+        description: 'Notificacion creada.',
+        metadata: {
+          notificationId: created.id,
+          diligenceId: created.diligenciaId,
+          executedPartyId: created.ejecutadoId,
+        },
+      })
+      return created
     })
 
     return NextResponse.json({
@@ -143,9 +157,7 @@ export async function POST(
     })
   } catch (error) {
     console.error('Error creando notificación:', error)
-    return NextResponse.json(
-      { ok: false, error: 'Error al crear la notificación' },
-      { status: 500 }
-    )
+    return handleApiError(error, { operation: 'notification.create', request: req })
   }
+  })
 }

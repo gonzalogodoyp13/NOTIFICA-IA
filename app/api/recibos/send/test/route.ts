@@ -7,6 +7,6 @@ import { ReceiptTestSendSchema } from '@/lib/validations/recibos'
 export async function POST(req: NextRequest) {
   return withApiUser(req, 'send receipt test', async user => {
     const input = parseApiInput(ReceiptTestSendSchema, await req.json())
-    return apiSuccess(await sendReceiptTest({ user: { id: user.id, officeId: user.officeId, email: user.email }, input }))
+    return apiSuccess(await sendReceiptTest({ user, input }))
   })
 }

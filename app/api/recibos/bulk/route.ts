@@ -1,7 +1,7 @@
+import { withApiUser } from '@/lib/api/server'
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 
-import { getCurrentUserWithOffice } from '@/lib/auth-server'
 import { executeReceiptBulkOperation } from '@/lib/recibos/bulk'
 
 export const dynamic = 'force-dynamic'
@@ -12,9 +12,8 @@ const Schema = z.object({
 })
 
 export async function POST(req: NextRequest) {
+  return withApiUser(req, 'post.recibos.bulk', async user => {
   try {
-    const user = await getCurrentUserWithOffice()
-    if (!user) return NextResponse.json({ ok: false, error: 'No autorizado' }, { status: 401 })
     const parsed = Schema.safeParse(await req.json())
     if (!parsed.success) throw new Error(parsed.error.issues[0]?.message ?? 'Datos invalidos.')
     const { stateHash, ...input } = parsed.data
@@ -22,4 +21,6 @@ export async function POST(req: NextRequest) {
   } catch (error) {
     return NextResponse.json({ ok: false, error: error instanceof Error ? error.message : 'Error al actualizar recibos' }, { status: 400 })
   }
+
+  })
 }

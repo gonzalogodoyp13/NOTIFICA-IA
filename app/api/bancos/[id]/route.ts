@@ -1,10 +1,11 @@
+import { withApiUser } from '@/lib/api/server'
 // API route: /api/bancos/[id]
 // PUT: Update a banco
 // DELETE: Delete a banco
 import { NextRequest, NextResponse } from 'next/server'
-import { getCurrentUserWithOffice } from '@/lib/auth-server'
 import { prisma } from '@/lib/prisma'
 import { BancoSchema } from '@/lib/zodSchemas'
+import { recordSettingsEvent } from '@/lib/audit/businessEvents'
 
 export const dynamic = 'force-dynamic'
 
@@ -12,15 +13,8 @@ export async function PUT(
   req: NextRequest,
   { params }: { params: { id: string } }
 ) {
+  return withApiUser(req, 'put.bancos.id', async user => {
   try {
-    const user = await getCurrentUserWithOffice()
-
-    if (!user) {
-      return NextResponse.json(
-        { ok: false, message: 'No autorizado', error: 'No autorizado' },
-        { status: 401 }
-      )
-    }
 
     const id = parseInt(params.id)
     if (isNaN(id)) {
@@ -56,9 +50,10 @@ export async function PUT(
       )
     }
 
-    const banco = await prisma.banco.update({
-      where: { id },
-      data: parsed.data,
+    const banco = await prisma.$transaction(async tx => {
+      const updated = await tx.banco.update({ where: { id }, data: parsed.data })
+      await recordSettingsEvent(tx, user, { resource: 'Banco', action: 'updated', recordId: id, changedFields: Object.keys(parsed.data) })
+      return updated
     })
 
     return NextResponse.json({ ok: true, data: banco })
@@ -70,21 +65,16 @@ export async function PUT(
       { status: 500 }
     )
   }
+
+  })
 }
 
 export async function DELETE(
   req: NextRequest,
   { params }: { params: { id: string } }
 ) {
+  return withApiUser(req, 'delete.bancos.id', async user => {
   try {
-    const user = await getCurrentUserWithOffice()
-
-    if (!user) {
-      return NextResponse.json(
-        { ok: false, message: 'No autorizado', error: 'No autorizado' },
-        { status: 401 }
-      )
-    }
 
     const id = parseInt(params.id)
     if (isNaN(id)) {
@@ -109,8 +99,9 @@ export async function DELETE(
       )
     }
 
-    await prisma.banco.delete({
-      where: { id },
+    await prisma.$transaction(async tx => {
+      await tx.banco.delete({ where: { id } })
+      await recordSettingsEvent(tx, user, { resource: 'Banco', action: 'deleted', recordId: id })
     })
 
     return NextResponse.json({ ok: true, message: 'Banco eliminado correctamente' })
@@ -122,5 +113,7 @@ export async function DELETE(
       { status: 500 }
     )
   }
+
+  })
 }
 

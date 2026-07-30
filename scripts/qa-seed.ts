@@ -385,6 +385,12 @@ export async function seedQaData(prismaClient: PrismaClient) {
 }
 
 async function main() {
+  const environment = process.env.NEXT_PUBLIC_ENVIRONMENT?.trim().toLowerCase()
+  const allowedEnvironments = new Set(['local', 'test', 'qa'])
+  if (!allowedEnvironments.has(environment ?? '') || process.env.QA_ALLOW_MUTATIONS !== 'true') {
+    throw new Error('QA database mutations require NEXT_PUBLIC_ENVIRONMENT=local|test|qa and QA_ALLOW_MUTATIONS=true.')
+  }
+
   const mode = process.argv[2] ?? 'seed'
   if (mode === 'reset') {
     await cleanupQaSeed(prisma)

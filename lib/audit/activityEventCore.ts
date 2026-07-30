@@ -16,14 +16,18 @@ export const ACTIVITY_MODULES = [
   'settings',
   'security',
   'audit',
+  'reports',
+  'system',
 ] as const
 export type ActivityModule = (typeof ACTIVITY_MODULES)[number]
 
 export type ActivityMetadata = Record<string, unknown>
 
 export type ActivityEventInput = {
-  userId: string
+  userId?: string | null
   officeId: number
+  actorType?: 'USER' | 'SYSTEM'
+  source?: 'WEB' | 'INTERNAL' | 'SYSTEM'
   eventType: string
   module: ActivityModule
   result?: ActivityResult
@@ -34,6 +38,9 @@ export type ActivityEventInput = {
   shortName?: string | null
   description?: string | null
   metadata?: ActivityMetadata | null
+  requestId?: string | null
+  eventVersion?: number
+  deduplicationKey?: string | null
   occurredAt?: Date
 }
 
@@ -64,7 +71,7 @@ export const FIELD_LABELS: Record<string, string> = {
 }
 
 const BLOCKED_KEY_PATTERN =
-  /password|pass|token|authorization|cookie|secret|api[_-]?key|access[_-]?token|refresh[_-]?token|body|bodyText|textPreview|subject|pdf|base64|document|documentoRaw|rawDocument|texto|textoEditado|contenido|generationVariables|variables|search(Text|Query|Term)?|query|q$/i
+  /password|pass|token|authorization|cookie|secret|api[_-]?key|access[_-]?token|refresh[_-]?token|body|bodyText|textPreview|subject|pdf|base64|documentoRaw|rawDocument|documentText|texto|textoEditado|contenido|generationVariables|variables|search(Text|Query|Term)?|query|q$|(^|_)(name|nombre|email|rut|phone|telefono|address|direccion|note|nota)(_|$)/i
 
 const EMAIL_PATTERN = /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi
 const RUT_PATTERN = /\b\d{7,9}-[0-9Kk]\b/g

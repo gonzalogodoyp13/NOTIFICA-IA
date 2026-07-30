@@ -1,8 +1,9 @@
+import { withApiUser } from '@/lib/api/server'
 import { NextRequest, NextResponse } from 'next/server'
 
-import { getCurrentUserWithOffice } from '@/lib/auth-server'
 import { prisma } from '@/lib/prisma'
 import { StatusChangeSchema } from '@/lib/validations/rol-workspace'
+import { recordCriticalEvent } from '@/lib/audit/activityEvent'
 
 export const dynamic = 'force-dynamic'
 
@@ -32,12 +33,8 @@ export async function PUT(
   req: NextRequest,
   { params }: { params: { id: string } }
 ) {
+  return withApiUser(req, 'put.roles.id.status', async user => {
   try {
-    const user = await getCurrentUserWithOffice()
-
-    if (!user) {
-      return NextResponse.json({ ok: false, error: 'No autorizado' }, { status: 401 })
-    }
 
     const parsed = StatusChangeSchema.safeParse(await req.json())
 
@@ -99,11 +96,23 @@ export async function PUT(
       }
     }
 
-    const updatedRol = await prisma.rolCausa.update({
-      where: { id: rol.id },
-      data: {
-        estado: nextEstado,
-      },
+    const updatedRol = await prisma.$transaction(async tx => {
+      const updated = await tx.rolCausa.update({
+        where: { id: rol.id },
+        data: { estado: nextEstado },
+      })
+      await recordCriticalEvent(tx, user, {
+        eventType: 'case.status_changed',
+        module: 'roles',
+        result: 'success',
+        recordType: 'RolCausa',
+        recordId: rol.id,
+        rolId: rol.id,
+        rol: rol.rol,
+        description: 'Estado del ROL actualizado.',
+        metadata: { previousStatus: currentEstado, nextStatus: nextEstado, changedFields: ['estado'] },
+      })
+      return updated
     })
 
     return NextResponse.json({ ok: true, data: updatedRol })
@@ -114,5 +123,7 @@ export async function PUT(
       { status: 500 }
     )
   }
+
+  })
 }
 

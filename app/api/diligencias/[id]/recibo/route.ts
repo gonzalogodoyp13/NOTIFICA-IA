@@ -1,9 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { Prisma } from '@prisma/client'
 
-import { getCurrentUserWithOffice } from '@/lib/auth-server'
-import { recordActivityEvent } from '@/lib/audit/activityEvent'
-import { ApiError, apiFailure, parseApiInput } from '@/lib/api/server'
+import { enqueueExternalEvent, processActivityOutbox } from '@/lib/audit/outbox'
+import { ApiError, apiFailure, handleApiError, parseApiInput, withApiUser } from '@/lib/api/server'
 import { buildDocumentGenerationMetadata } from '@/lib/documents/generationMetadata'
 import { hasStoredPdf, uploadPdfToDocumentStorage } from '@/lib/documents/storage'
 import { prisma } from '@/lib/prisma'
@@ -55,17 +54,8 @@ export async function POST(
   req: NextRequest,
   { params }: { params: { id: string } }
 ) {
-  try {
-    const user = await getCurrentUserWithOffice()
-
-    if (!user) {
-      return apiFailure(new ApiError('UNAUTHORIZED', 'No autorizado', 401))
-    }
-
-    const dbUser = await prisma.user.findUnique({
-      where: { id: user.id },
-      select: { officeName: true },
-    })
+  return withApiUser(req, 'receipt.generate', async user => {
+   try {
 
     const diligencia = await prisma.diligencia.findFirst({
       where: {
@@ -144,7 +134,7 @@ export async function POST(
     const numeroReciboYear = fechaRecibo.getFullYear()
     const [stampBytes, officePdfConfig] = await Promise.all([
       loadOfficeReciboStampForPdf(user.officeId),
-      loadOfficePdfConfig(user.officeId, dbUser?.officeName ?? null),
+      loadOfficePdfConfig(user.officeId, user.officeName),
     ])
 
     const result = await prisma.$transaction(async tx => {
@@ -221,7 +211,7 @@ export async function POST(
       const numeroRecibo = formatNumeroRecibo(numeroReciboYear, assignedNumber)
       const variables = buildReciboVariables(
         diligencia,
-        dbUser,
+        user,
         officePdfConfig,
         numeroRecibo,
         data.monto,
@@ -317,7 +307,7 @@ export async function POST(
         },
       })
 
-      await tx.recibo.create({
+      const recibo = await tx.recibo.create({
         data: {
           rolId: diligencia.rolId,
           officeId: user.officeId,
@@ -343,9 +333,33 @@ export async function POST(
         },
       })
 
+      const queuedEvent = await enqueueExternalEvent(tx, user, {
+        eventType: existingLogicalDocumento ? 'receipt.regenerated' : 'receipt.generated',
+        module: 'recibos',
+        result: 'success',
+        recordType: 'Recibo',
+        recordId: recibo.id,
+        rolId: diligencia.rolId,
+        rol: diligencia.rol.rol,
+        description: existingLogicalDocumento ? 'Recibo regenerado.' : 'Recibo generado.',
+        deduplicationKey: `receipt:${documentVersion.id}:${existingLogicalDocumento ? 'regenerated' : 'generated'}`,
+        metadata: {
+          receiptId: recibo.id,
+          documentId: createdDocumento.id,
+          documentVersionId: documentVersion.id,
+          numeroRecibo: recibo.numeroRecibo,
+          version: nextVersionNumber,
+          amount: Number(recibo.monto),
+          paymentMethod: recibo.medio,
+          operationalReference: recibo.ref,
+          notificationId: notificacionId ?? null,
+        },
+      })
+
       return {
         kind: 'created' as const,
         documento: createdDocumento,
+        outboxId: queuedEvent.id,
       }
     })
 
@@ -355,24 +369,8 @@ export async function POST(
 
     const documento = result.documento
 
-    await recordActivityEvent({
-      userId: user.id,
-      officeId: user.officeId,
-      eventType: 'document.generate',
-      module: 'documents',
-      result: 'success',
-      recordType: 'Documento',
-      recordId: documento.id,
-      rolId: diligencia.rolId,
-      rol: diligencia.rol.rol,
-      shortName: documento.nombre,
-      description: 'Recibo generado.',
-      metadata: {
-        documentType: documento.tipo,
-        templateType: 'recibo',
-        hasNotification: !!notificacionId,
-        version: documento.version,
-      },
+    await processActivityOutbox(1, result.outboxId).catch(error => {
+      console.error('[receipt] Immediate activity outbox drain failed:', error)
     })
 
     return NextResponse.json({
@@ -404,6 +402,7 @@ export async function POST(
     })
   } catch (error) {
     console.error('Error generando recibo:', error)
-    return apiFailure(new ApiError('INTERNAL_ERROR', 'Ocurrió un error inesperado', 500))
+    return handleApiError(error, { operation: 'receipt.generate', request: req })
   }
+  })
 }

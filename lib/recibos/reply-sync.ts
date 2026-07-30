@@ -4,6 +4,7 @@ import { Prisma } from '@prisma/client'
 
 import { prisma } from '@/lib/prisma'
 import { recordOperationalActivity } from '@/lib/audit/operationalActivity'
+import { recordBestEffortEvent } from '@/lib/audit/activityEvent'
 import { sanitizeDispatchError } from '@/lib/recibos/dispatch-history-core'
 import { enabledReplyProviders, type ReplyProviderAdapter } from '@/lib/recibos/reply-providers'
 import {
@@ -199,7 +200,7 @@ async function syncProvider(officeId: number, adapter: ReplyProviderAdapter, can
   }
 }
 
-export async function syncOfficeReplies(params: { officeId: number; userId?: string; adapters?: ReplyProviderAdapter[] }) {
+export async function syncOfficeReplies(params: { officeId: number; userId?: string; requestId?: string; adapters?: ReplyProviderAdapter[] }) {
   const adapters = params.adapters ?? enabledReplyProviders()
   const candidates = await dispatchCandidates(params.officeId)
   const results: ProviderSyncResult[] = []
@@ -217,22 +218,30 @@ export async function syncOfficeReplies(params: { officeId: number; userId?: str
     await recordOperationalActivity({
       userId: params.userId,
       officeId: params.officeId,
+      requestId: params.requestId,
       eventType: 'receipt_reply_sync',
       count: totals.checked,
       details: { ...totals, providers: results.map(item => item.provider) } satisfies Prisma.JsonObject,
+    })
+  } else {
+    await recordBestEffortEvent({ officeId: params.officeId, requestId: params.requestId, actorType: 'SYSTEM', source: 'SYSTEM' }, {
+      eventType: 'receipt.reply_sync', module: 'emails',
+      result: totals.failedProviders > 0 ? 'failure' : 'success',
+      recordType: 'RecibosReplySync', description: 'Sincronizacion de respuestas de recibos registrada.',
+      metadata: { ...totals, providers: results.map(item => item.provider) },
     })
   }
   return { providers: results, totals }
 }
 
-export async function syncAllConfiguredOfficeReplies() {
+export async function syncAllConfiguredOfficeReplies(requestId?: string) {
   const offices = await prisma.recibosDispatchBatch.findMany({
     where: { provider: { not: 'dry-run' }, status: { in: ['sent', 'partial'] } },
     distinct: ['officeId'],
     select: { officeId: true },
   })
   const results = []
-  for (const office of offices) results.push({ officeId: office.officeId, result: await syncOfficeReplies({ officeId: office.officeId }) })
+  for (const office of offices) results.push({ officeId: office.officeId, result: await syncOfficeReplies({ officeId: office.officeId, requestId }) })
   return results
 }
 

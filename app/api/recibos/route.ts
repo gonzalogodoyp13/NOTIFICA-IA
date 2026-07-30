@@ -1,20 +1,13 @@
+import { withApiUser } from '@/lib/api/server'
 import { NextRequest, NextResponse } from 'next/server'
 
-import { getCurrentUserWithOffice } from '@/lib/auth-server'
 import { getReceiptList, parseReceiptFilters } from '@/lib/recibos/query'
 
 export const dynamic = 'force-dynamic'
 
 export async function GET(req: NextRequest) {
+  return withApiUser(req, 'get.recibos', async user => {
   try {
-    const user = await getCurrentUserWithOffice()
-
-    if (!user) {
-      return NextResponse.json(
-        { ok: false, error: 'No autorizado' },
-        { status: 401 }
-      )
-    }
 
     const filters = parseReceiptFilters(req.nextUrl.searchParams)
     const result = await getReceiptList(user.officeId, filters)
@@ -35,4 +28,6 @@ export async function GET(req: NextRequest) {
       { status: 400 }
     )
   }
+
+  })
 }

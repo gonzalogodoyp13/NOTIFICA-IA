@@ -1,22 +1,15 @@
+import { withApiUser } from '@/lib/api/server'
 // API route: /api/roles
 // GET: List all Demandas for the logged-in user's officeId (Phase 3)
 import { NextRequest, NextResponse } from 'next/server'
 import { Prisma } from '@prisma/client'
-import { getCurrentUserWithOffice } from '@/lib/auth-server'
 import { prisma } from '@/lib/prisma'
 
 export const dynamic = 'force-dynamic'
 
 export async function GET(req: NextRequest) {
+  return withApiUser(req, 'get.roles', async user => {
   try {
-    const user = await getCurrentUserWithOffice()
-
-    if (!user) {
-      return NextResponse.json(
-        { ok: false, error: 'No autorizado' },
-        { status: 401 }
-      )
-    }
 
     // Get query params for future filters (structure ready but not implemented yet)
     const { searchParams } = new URL(req.url)
@@ -54,6 +47,8 @@ export async function GET(req: NextRequest) {
       ok: true,
       data: demandas.map(demanda => ({
         ...demanda,
+        demandaId: demanda.id,
+        id: demanda.roles?.id ?? demanda.id,
         tribunal: demanda.roles?.tribunal ?? null,
       })),
     })
@@ -64,6 +59,8 @@ export async function GET(req: NextRequest) {
       { status: 500 }
     )
   }
+
+  })
 }
 
 

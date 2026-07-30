@@ -1,21 +1,15 @@
+import { withApiUser } from '@/lib/api/server'
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getCurrentUserWithOffice } from "@/lib/auth-server";
 import type { NextRequest } from "next/server";
 import { EstampoSchema } from "@/lib/zodSchemas";
+import { recordSettingsEvent } from '@/lib/audit/businessEvents'
 
 export const dynamic = 'force-dynamic'
 
-export async function GET() {
+export async function GET(req: NextRequest) {
+  return withApiUser(req, 'get.estampos', async user => {
   try {
-    const user = await getCurrentUserWithOffice();
-
-    if (!user) {
-      return NextResponse.json(
-        { ok: false, message: "No autorizado", error: "No autorizado" },
-        { status: 401 }
-      );
-    }
 
     const estampos = await prisma.estampo.findMany({
       where: { officeId: user.officeId },
@@ -32,18 +26,13 @@ export async function GET() {
       { status: 500 }
     );
   }
+
+  })
 }
 
 export async function POST(req: NextRequest) {
+  return withApiUser(req, 'post.estampos', async user => {
   try {
-    const user = await getCurrentUserWithOffice();
-
-    if (!user) {
-      return NextResponse.json(
-        { ok: false, message: "No autorizado", error: "No autorizado" },
-        { status: 401 }
-      );
-    }
 
     const body = await req.json();
     const parsed = EstampoSchema.safeParse(body);
@@ -56,14 +45,16 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const estampo = await prisma.estampo.create({
-      data: {
+    const estampo = await prisma.$transaction(async tx => {
+      const created = await tx.estampo.create({ data: {
         officeId: user.officeId,
         nombre: parsed.data.nombre,
         tipo: parsed.data.tipo,
         contenido: parsed.data.contenido ?? "",
         fileUrl: parsed.data.fileUrl ?? "",
-      },
+      } })
+      await recordSettingsEvent(tx, user, { resource: 'Estampo', action: 'created', recordId: created.id })
+      return created
     });
 
     return NextResponse.json({ ok: true, data: estampo });
@@ -75,4 +66,6 @@ export async function POST(req: NextRequest) {
       { status: 500 }
     );
   }
+
+  })
 }

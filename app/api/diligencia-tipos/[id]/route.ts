@@ -1,10 +1,11 @@
+import { withApiUser } from '@/lib/api/server'
 // API route: /api/diligencia-tipos/[id]
 // PUT: Update a diligencia tipo
 // DELETE: Delete a diligencia tipo
 import { NextRequest, NextResponse } from 'next/server'
-import { getCurrentUserWithOffice } from '@/lib/auth-server'
 import { prisma } from '@/lib/prisma'
 import { DiligenciaTipoSchema } from '@/lib/zodSchemas'
+import { recordSettingsEvent } from '@/lib/audit/businessEvents'
 
 export const dynamic = 'force-dynamic'
 
@@ -12,15 +13,8 @@ export async function PUT(
   req: NextRequest,
   { params }: { params: { id: string } }
 ) {
+  return withApiUser(req, 'put.diligencia-tipos.id', async user => {
   try {
-    const user = await getCurrentUserWithOffice()
-
-    if (!user) {
-      return NextResponse.json(
-        { ok: false, message: 'No autorizado', error: 'No autorizado' },
-        { status: 401 }
-      )
-    }
 
     const id = params.id
 
@@ -50,9 +44,10 @@ export async function PUT(
       )
     }
 
-    const diligencia = await prisma.diligenciaTipo.update({
-      where: { id },
-      data: parsed.data,
+    const diligencia = await prisma.$transaction(async tx => {
+      const updated = await tx.diligenciaTipo.update({ where: { id }, data: parsed.data })
+      await recordSettingsEvent(tx, user, { resource: 'DiligenciaTipo', action: 'updated', recordId: id, changedFields: Object.keys(parsed.data) })
+      return updated
     })
 
     return NextResponse.json({ ok: true, data: diligencia })
@@ -64,21 +59,16 @@ export async function PUT(
       { status: 500 }
     )
   }
+
+  })
 }
 
 export async function DELETE(
   req: NextRequest,
   { params }: { params: { id: string } }
 ) {
+  return withApiUser(req, 'delete.diligencia-tipos.id', async user => {
   try {
-    const user = await getCurrentUserWithOffice()
-
-    if (!user) {
-      return NextResponse.json(
-        { ok: false, message: 'No autorizado', error: 'No autorizado' },
-        { status: 401 }
-      )
-    }
 
     const id = params.id
 
@@ -97,8 +87,9 @@ export async function DELETE(
       )
     }
 
-    await prisma.diligenciaTipo.delete({
-      where: { id },
+    await prisma.$transaction(async tx => {
+      await tx.diligenciaTipo.delete({ where: { id } })
+      await recordSettingsEvent(tx, user, { resource: 'DiligenciaTipo', action: 'deleted', recordId: id })
     })
 
     return NextResponse.json({ ok: true, message: 'Tipo de diligencia eliminado correctamente' })
@@ -110,5 +101,7 @@ export async function DELETE(
       { status: 500 }
     )
   }
+
+  })
 }
 

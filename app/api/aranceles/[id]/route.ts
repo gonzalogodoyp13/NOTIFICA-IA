@@ -1,11 +1,12 @@
+import { withApiUser } from '@/lib/api/server'
 // API route: /api/aranceles/[id]
 // GET: Get a specific arancel
 // PUT: Update an arancel
 // DELETE: Delete an arancel
 import { NextRequest, NextResponse } from 'next/server'
-import { getCurrentUserWithOffice } from '@/lib/auth-server'
 import { prisma } from '@/lib/prisma'
 import { ArancelSchema, parseArancelMonto } from '@/lib/zodSchemas'
+import { recordCriticalEvent } from '@/lib/audit/activityEvent'
 
 export const dynamic = 'force-dynamic'
 
@@ -13,15 +14,8 @@ export async function GET(
   req: NextRequest,
   { params }: { params: { id: string } }
 ) {
+  return withApiUser(req, 'get.aranceles.id', async user => {
   try {
-    const user = await getCurrentUserWithOffice()
-
-    if (!user) {
-      return NextResponse.json(
-        { ok: false, message: 'No autorizado', error: 'No autorizado' },
-        { status: 401 }
-      )
-    }
 
     const id = parseInt(params.id)
     if (isNaN(id)) {
@@ -65,21 +59,16 @@ export async function GET(
       { status: 500 }
     )
   }
+
+  })
 }
 
 export async function PUT(
   req: NextRequest,
   { params }: { params: { id: string } }
 ) {
+  return withApiUser(req, 'put.aranceles.id', async user => {
   try {
-    const user = await getCurrentUserWithOffice()
-
-    if (!user) {
-      return NextResponse.json(
-        { ok: false, message: 'No autorizado', error: 'No autorizado' },
-        { status: 401 }
-      )
-    }
 
     const id = parseInt(params.id)
     if (isNaN(id)) {
@@ -143,7 +132,8 @@ export async function PUT(
 
     // Actualizar arancel
     try {
-      const arancel = await prisma.arancel.update({
+      const arancel = await prisma.$transaction(async tx => {
+       const updated = await tx.arancel.update({
         where: { id },
         data: updateData,
         include: {
@@ -156,6 +146,20 @@ export async function PUT(
               }
             : false,
         },
+       })
+       await recordCriticalEvent(tx, user, {
+         eventType: 'settings.tariff.updated', module: 'settings', result: 'success',
+         recordType: 'Arancel', recordId: updated.id, description: 'Arancel actualizado.',
+         metadata: {
+           tariffId: updated.id,
+           changedFields: Object.keys(updateData),
+           previousAmount: Number(existingArancel.monto),
+           nextAmount: Number(updated.monto),
+           previousStatus: existingArancel.activo ? 'active' : 'inactive',
+           nextStatus: updated.activo ? 'active' : 'inactive',
+         },
+       })
+       return updated
       })
 
       return NextResponse.json({ ok: true, data: arancel })
@@ -181,21 +185,16 @@ export async function PUT(
       { status: 500 }
     )
   }
+
+  })
 }
 
 export async function DELETE(
   req: NextRequest,
   { params }: { params: { id: string } }
 ) {
+  return withApiUser(req, 'delete.aranceles.id', async user => {
   try {
-    const user = await getCurrentUserWithOffice()
-
-    if (!user) {
-      return NextResponse.json(
-        { ok: false, message: 'No autorizado', error: 'No autorizado' },
-        { status: 401 }
-      )
-    }
 
     const id = parseInt(params.id)
     if (isNaN(id)) {
@@ -221,8 +220,13 @@ export async function DELETE(
     }
 
     // Hard delete
-    await prisma.arancel.delete({
-      where: { id },
+    await prisma.$transaction(async tx => {
+      await tx.arancel.delete({ where: { id } })
+      await recordCriticalEvent(tx, user, {
+        eventType: 'settings.tariff.deleted', module: 'settings', result: 'success',
+        recordType: 'Arancel', recordId: id, description: 'Arancel eliminado.',
+        metadata: { tariffId: id, amount: Number(existingArancel.monto) },
+      })
     })
 
     return NextResponse.json({ ok: true, message: 'Arancel eliminado correctamente' })
@@ -234,5 +238,7 @@ export async function DELETE(
       { status: 500 }
     )
   }
+
+  })
 }
 

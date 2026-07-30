@@ -1,7 +1,7 @@
 // Protected layout for authenticated routes
 // This layout ensures all child routes require authentication
 import { redirect } from 'next/navigation'
-import { getSession } from '@/lib/auth-server'
+import { AuthResolutionError, getCachedAuthenticatedUser } from '@/lib/auth-server'
 import TopBar from './_components/TopBar'
 
 export const dynamic = 'force-dynamic'
@@ -12,11 +12,15 @@ export default async function ProtectedLayout({
   children: React.ReactNode
 }) {
   // Check if user is authenticated
-  const session = await getSession()
-
-  // Redirect to login if not authenticated
-  if (!session) {
-    redirect('/login')
+  try {
+    await getCachedAuthenticatedUser()
+  } catch (error) {
+    if (error instanceof AuthResolutionError) {
+      if (error.code === 'ACCOUNT_DISABLED') redirect('/auth/disabled')
+      if (error.code === 'USER_NOT_PROVISIONED') redirect('/login?error=user_not_provisioned')
+      if (error.code === 'SERVICE_UNAVAILABLE') redirect('/login?error=service_unavailable')
+    }
+    redirect('/login?error=invalid_session')
   }
 
   // Render children if authenticated

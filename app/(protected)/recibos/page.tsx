@@ -566,7 +566,6 @@ export default function RecibosPage() {
     finally { setSending(false); void loadHistory() }
   }
 
-  const templateOptions = options.templates.map(item => ({ id: item.key, nombre: item.label }))
   return <div className="app-shell"><div className="page-stack mx-auto max-w-[1800px] px-4 sm:px-6 lg:px-8 2xl:px-10">
     <section className="page-section overflow-visible">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
@@ -577,17 +576,12 @@ export default function RecibosPage() {
         <div className="mb-4 flex items-center gap-2 text-sm font-semibold text-slate-800"><Filter className="h-4 w-4 text-blue-700" />Criterios de busqueda</div>
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           <MultiSelect label="Estado" options={[{ id: 'PAGADO', nombre: 'Pagado' }, { id: 'NO_PAGADO', nombre: 'Sin pagar' }]} selected={filters.estados} onChange={v => update('estados', v)} />
-          <MultiSelect label="Estampo exacto" options={templateOptions} selected={filters.estampoTemplates} onChange={v => update('estampoTemplates', v)} />
           <MultiSelect label="Abogado" options={options.abogados} selected={filters.abogadoIds} onChange={v => update('abogadoIds', v)} />
           <MultiSelect label="Procurador" options={options.procuradores} selected={filters.procuradorIds} onChange={v => update('procuradorIds', v)} />
           <MultiSelect label="Banco" options={options.bancos} selected={filters.bancoIds} onChange={v => update('bancoIds', v)} />
           <label className="space-y-2 text-sm text-slate-700"><span className="font-medium">ROL</span><Input value={filters.rol} onChange={e => update('rol', e.target.value)} placeholder="C-1234-2025" /></label>
           <label className="space-y-2 text-sm text-slate-700"><span className="font-medium">Ejecucion desde</span><Input type="date" value={filters.fechaEjecucionDesde} onChange={e => update('fechaEjecucionDesde', e.target.value)} /></label>
           <label className="space-y-2 text-sm text-slate-700"><span className="font-medium">Ejecucion hasta</span><Input type="date" value={filters.fechaEjecucionHasta} onChange={e => update('fechaEjecucionHasta', e.target.value)} /></label>
-          <label className="space-y-2 text-sm text-slate-700"><span className="font-medium">N° boleta</span><Input value={filters.numeroBoleta} onChange={e => update('numeroBoleta', e.target.value)} placeholder="Numero o fragmento" /></label>
-          <label className="space-y-2 text-sm text-slate-700"><span className="font-medium">Coincidencia boleta</span><select value={filters.boletaMatch} onChange={e => update('boletaMatch', e.target.value as 'contains' | 'exact')} className="h-10 w-full rounded-md border border-slate-300 bg-white px-3"><option value="contains">Contiene</option><option value="exact">Exacta</option></select></label>
-          <label className="space-y-2 text-sm text-slate-700"><span className="font-medium">Monto minimo</span><Input type="number" min="0" value={filters.montoMin} onChange={e => update('montoMin', e.target.value)} placeholder="$0" /></label>
-          <label className="space-y-2 text-sm text-slate-700"><span className="font-medium">Monto maximo</span><Input type="number" min="0" value={filters.montoMax} onChange={e => update('montoMax', e.target.value)} placeholder="Sin limite" /></label>
         </div>
         <div className="mt-5 flex items-center justify-end"><Button onClick={() => apply()} disabled={!hasFilters(filters)}><Search className="mr-2 h-4 w-4" />Aplicar filtros</Button></div>
       </div>
@@ -595,13 +589,11 @@ export default function RecibosPage() {
       {recentOperation?.reversible && <div className="mt-4 flex items-center justify-between gap-3 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900"><span>La ultima accion masiva se completo correctamente y puede deshacerse.</span><Button variant="outline" onClick={undoRecent} disabled={bulkUpdating}>Deshacer</Button></div>}
     </section>
 
-    {!applied ? <section className="page-section"><div className="flex min-h-64 flex-col items-center justify-center text-center"><div className="rounded-full bg-blue-50 p-4 text-blue-700"><Filter className="h-8 w-8" /></div><h2 className="mt-4 text-xl font-semibold text-slate-900">Elige como buscar</h2><p className="mt-2 max-w-xl text-slate-600">Selecciona estado, estampo, fecha de ejecucion, boleta, monto u otro criterio. Los recibos se cargaran solo despues de aplicar los filtros.</p></div></section> :
+    {!applied ? <section className="page-section"><div className="flex min-h-64 flex-col items-center justify-center text-center"><div className="rounded-full bg-blue-50 p-4 text-blue-700"><Filter className="h-8 w-8" /></div><h2 className="mt-4 text-xl font-semibold text-slate-900">Elige como buscar</h2><p className="mt-2 max-w-xl text-slate-600">Selecciona estado, abogado, procurador, banco, ROL o fecha de ejecucion. Los recibos se cargaran solo despues de aplicar los filtros.</p></div></section> :
     <section className="page-section overflow-hidden">
       <div className="flex flex-col gap-3 border-b border-slate-200 pb-4 lg:flex-row lg:items-center lg:justify-between">
         <div><div className="text-sm font-semibold text-slate-900">{loading ? 'Cargando recibos...' : `${data?.pagination.totalRows ?? 0} recibos encontrados`}</div><div className="mt-1 text-xs text-slate-500">{effectiveCount} seleccionados</div></div>
         <div className="flex flex-wrap gap-2">
-          <Button variant="outline" onClick={() => setSelection({ mode: 'allFiltered', excludedIds: [] })} disabled={!data?.pagination.totalRows}>Seleccionar todos los resultados</Button>
-          <Button variant="outline" onClick={() => setSelection({ mode: 'explicit', ids: [] })} disabled={!effectiveCount}>Quitar seleccion</Button>
           <Button variant="outline" onClick={openHistory}><History className="mr-2 h-4 w-4" />Historial</Button>
           <Button variant="outline" onClick={openSendCenter} disabled={!effectiveCount || sendLoading}><Mail className="mr-2 h-4 w-4" />Enviar listado</Button>
           <Button variant="outline" onClick={() => { setPaymentDate(todayInput()); setBulkPreview(null); setPaidOpen(true) }} disabled={selection.mode !== 'explicit' || !selection.ids.length}>Marcar pagado</Button>

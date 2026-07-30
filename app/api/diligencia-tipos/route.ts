@@ -1,23 +1,17 @@
+import { withApiUser } from '@/lib/api/server'
 // API route: /api/diligencia-tipos
 // GET: List all diligencia tipos for the current office
 // POST: Create a new diligencia tipo
 import { NextRequest, NextResponse } from 'next/server'
-import { getCurrentUserWithOffice } from '@/lib/auth-server'
 import { prisma } from '@/lib/prisma'
 import { DiligenciaTipoSchema } from '@/lib/zodSchemas'
+import { recordSettingsEvent } from '@/lib/audit/businessEvents'
 
 export const dynamic = 'force-dynamic'
 
-export async function GET() {
+export async function GET(req: NextRequest) {
+  return withApiUser(req, 'get.diligencia-tipos', async user => {
   try {
-    const user = await getCurrentUserWithOffice()
-
-    if (!user) {
-      return NextResponse.json(
-        { ok: false, message: 'No autorizado', error: 'No autorizado' },
-        { status: 401 }
-      )
-    }
 
     const diligencias = await prisma.diligenciaTipo.findMany({
       where: { officeId: user.officeId },
@@ -34,18 +28,13 @@ export async function GET() {
       { status: 500 }
     )
   }
+
+  })
 }
 
 export async function POST(req: NextRequest) {
+  return withApiUser(req, 'post.diligencia-tipos', async user => {
   try {
-    const user = await getCurrentUserWithOffice()
-
-    if (!user) {
-      return NextResponse.json(
-        { ok: false, message: 'No autorizado', error: 'No autorizado' },
-        { status: 401 }
-      )
-    }
 
     const body = await req.json()
     const parsed = DiligenciaTipoSchema.safeParse(body)
@@ -58,11 +47,10 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    const diligencia = await prisma.diligenciaTipo.create({
-      data: {
-        ...parsed.data,
-        officeId: user.officeId,
-      },
+    const diligencia = await prisma.$transaction(async tx => {
+      const created = await tx.diligenciaTipo.create({ data: { ...parsed.data, officeId: user.officeId } })
+      await recordSettingsEvent(tx, user, { resource: 'DiligenciaTipo', action: 'created', recordId: created.id })
+      return created
     })
 
     return NextResponse.json({ ok: true, data: diligencia })
@@ -74,5 +62,7 @@ export async function POST(req: NextRequest) {
       { status: 500 }
     )
   }
+
+  })
 }
 

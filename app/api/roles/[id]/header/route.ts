@@ -1,6 +1,6 @@
+import { withApiUser } from '@/lib/api/server'
 import { NextRequest, NextResponse } from 'next/server'
 
-import { getCurrentUserWithOffice } from '@/lib/auth-server'
 import { loadRoleHeaderData } from '@/lib/roles/workspace'
 
 export const dynamic = 'force-dynamic'
@@ -9,15 +9,8 @@ export async function GET(
   _req: NextRequest,
   { params }: { params: { id: string } }
 ) {
+  return withApiUser(_req, 'get.roles.id.header', async user => {
   try {
-    const user = await getCurrentUserWithOffice()
-
-    if (!user) {
-      return NextResponse.json(
-        { ok: false, error: 'No autorizado' },
-        { status: 401 }
-      )
-    }
 
     const data = await loadRoleHeaderData(params.id, user.officeId)
 
@@ -36,4 +29,6 @@ export async function GET(
       { status: 500 }
     )
   }
+
+  })
 }

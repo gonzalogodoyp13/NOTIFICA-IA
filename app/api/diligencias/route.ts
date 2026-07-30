@@ -1,3 +1,4 @@
+import { withApiUser } from '@/lib/api/server'
 // API route: /api/diligencias
 // GET: List all diligencias for given rolId (ROL Phase 4)
 // POST: Create new Diligencia (validates with zDiligencia)
@@ -5,23 +6,16 @@
 // DELETE: Remove if role = "Receptor"
 import { NextRequest, NextResponse } from 'next/server'
 import { Prisma } from '@prisma/client'
-import { getCurrentUserWithOffice } from '@/lib/auth-server'
 import { prisma } from '@/lib/prisma'
+import { recordCriticalEvent } from '@/lib/audit/activityEvent'
 import { zDiligencia, zDiligenciaUpdate } from '@/lib/validations/diligencia'
 import { ZodError } from 'zod'
 
 export const dynamic = 'force-dynamic'
 
 export async function GET(req: NextRequest) {
+  return withApiUser(req, 'get.diligencias', async user => {
   try {
-    const user = await getCurrentUserWithOffice()
-
-    if (!user) {
-      return NextResponse.json(
-        { ok: false, message: 'No autorizado', error: 'No autorizado' },
-        { status: 401 }
-      )
-    }
 
     const searchParams = req.nextUrl.searchParams
     const rolId = searchParams.get('rolId')
@@ -74,18 +68,13 @@ export async function GET(req: NextRequest) {
       { status: 500 }
     )
   }
+
+  })
 }
 
 export async function POST(req: NextRequest) {
+  return withApiUser(req, 'post.diligencias', async user => {
   try {
-    const user = await getCurrentUserWithOffice()
-
-    if (!user) {
-      return NextResponse.json(
-        { ok: false, message: 'No autorizado', error: 'No autorizado' },
-        { status: 401 }
-      )
-    }
 
     const body = await req.json()
     const parsed = zDiligencia.safeParse(body)
@@ -129,22 +118,28 @@ export async function POST(req: NextRequest) {
     }
 
     // Create Diligencia
-    const diligencia = await prisma.diligencia.create({
-      data: {
-        rolId: parsed.data.rolId,
-        tipoId: parsed.data.tipoId,
-        fecha: parsed.data.fecha,
-        estado: parsed.data.estado,
-        meta: parsed.data.meta ? (parsed.data.meta as Prisma.InputJsonValue) : undefined,
-      },
-      include: {
-        tipo: {
-          select: {
-            nombre: true,
-            descripcion: true,
+    const diligencia = await prisma.$transaction(async tx => {
+      const created = await tx.diligencia.create({
+        data: {
+          rolId: parsed.data.rolId,
+          tipoId: parsed.data.tipoId,
+          fecha: parsed.data.fecha,
+          estado: parsed.data.estado,
+          meta: parsed.data.meta ? (parsed.data.meta as Prisma.InputJsonValue) : undefined,
+        },
+        include: {
+          tipo: {
+            select: { nombre: true, descripcion: true },
           },
         },
-      },
+      })
+      await recordCriticalEvent(tx, user, {
+        eventType: 'diligence.created', module: 'diligencias', result: 'success',
+        recordType: 'Diligencia', recordId: created.id, rolId: rol.id, rol: rol.rol,
+        description: 'Diligencia creada.',
+        metadata: { diligenceId: created.id, typeId: created.tipoId, status: created.estado },
+      })
+      return created
     })
 
     return NextResponse.json({ ok: true, data: diligencia })
@@ -163,18 +158,13 @@ export async function POST(req: NextRequest) {
       { status: 500 }
     )
   }
+
+  })
 }
 
 export async function PUT(req: NextRequest) {
+  return withApiUser(req, 'put.diligencias', async user => {
   try {
-    const user = await getCurrentUserWithOffice()
-
-    if (!user) {
-      return NextResponse.json(
-        { ok: false, message: 'No autorizado', error: 'No autorizado' },
-        { status: 401 }
-      )
-    }
 
     const body = await req.json()
     const { id, ...updateData } = body
@@ -214,22 +204,26 @@ export async function PUT(req: NextRequest) {
     }
 
     // Update diligencia
-    const updated = await prisma.diligencia.update({
-      where: { id },
-      data: {
-        ...parsed.data,
-        ...(parsed.data.meta
-          ? { meta: parsed.data.meta as Prisma.InputJsonValue }
-          : {}),
-      },
-      include: {
-        tipo: {
-          select: {
-            nombre: true,
-            descripcion: true,
+    const updated = await prisma.$transaction(async tx => {
+      const result = await tx.diligencia.update({
+        where: { id },
+        data: {
+          ...parsed.data,
+          ...(parsed.data.meta ? { meta: parsed.data.meta as Prisma.InputJsonValue } : {}),
+        },
+        include: {
+          tipo: {
+            select: { nombre: true, descripcion: true },
           },
         },
-      },
+      })
+      await recordCriticalEvent(tx, user, {
+        eventType: 'diligence.updated', module: 'diligencias', result: 'success',
+        recordType: 'Diligencia', recordId: result.id, rolId: diligencia.rolId,
+        description: 'Diligencia actualizada.',
+        metadata: { diligenceId: result.id, changedFields: Object.keys(parsed.data).slice(0, 100) },
+      })
+      return result
     })
 
     return NextResponse.json({ ok: true, data: updated })
@@ -248,18 +242,13 @@ export async function PUT(req: NextRequest) {
       { status: 500 }
     )
   }
+
+  })
 }
 
 export async function DELETE(req: NextRequest) {
+  return withApiUser(req, 'delete.diligencias', async user => {
   try {
-    const user = await getCurrentUserWithOffice()
-
-    if (!user) {
-      return NextResponse.json(
-        { ok: false, message: 'No autorizado', error: 'No autorizado' },
-        { status: 401 }
-      )
-    }
 
     const searchParams = req.nextUrl.searchParams
     const id = searchParams.get('id')
@@ -297,8 +286,14 @@ export async function DELETE(req: NextRequest) {
     //   )
     // }
 
-    await prisma.diligencia.delete({
-      where: { id },
+    await prisma.$transaction(async tx => {
+      await tx.diligencia.delete({ where: { id } })
+      await recordCriticalEvent(tx, user, {
+        eventType: 'diligence.deleted', module: 'diligencias', result: 'success',
+        recordType: 'Diligencia', recordId: id, rolId: diligencia.rolId,
+        description: 'Diligencia eliminada.',
+        metadata: { diligenceId: id },
+      })
     })
 
     return NextResponse.json({ ok: true, message: 'Diligencia eliminada correctamente' })
@@ -310,4 +305,6 @@ export async function DELETE(req: NextRequest) {
       { status: 500 }
     )
   }
+
+  })
 }

@@ -3,8 +3,9 @@ import 'server-only'
 import { Prisma, type ReportDeliveryBatch, type ReportDeliveryRecipient } from '@prisma/client'
 
 import { debugLog, toSafeErrorMessage } from '@/lib/debugLog'
-import { prismaNoMiddleware } from '@/lib/prismaNoMiddleware'
+import { prisma } from '@/lib/prisma'
 import { createMailAdapter, sendWithRetries, type MailAdapter } from '@/lib/recibos/mailer'
+import { enqueueExternalEvent, processActivityOutbox } from '@/lib/audit/outbox'
 import { asJsonObject } from '@/lib/utils/json'
 import { chileMonthBounds, previousChileMonthString } from './chileTime'
 import { chooseAuditReportAttachment, deliveryStatusFromCounts, sanitizeDeliveryError } from './dailyDeliveryCore'
@@ -18,7 +19,6 @@ type DeliveryUser = {
   id: string
   email: string
 }
-
 type OfficeDeliveryResult =
   | { status: 'sent' | 'partial' | 'failed' | 'pending'; officeId: number; reportId: string; batchId: string; sentCount: number; failedCount: number; intendedRecipientCount: number }
   | { status: 'no_activity'; officeId: number; periodDate: string }
@@ -68,7 +68,7 @@ async function upsertBatch(input: {
   mode: DeliveryMode
   intendedRecipientCount: number
 }) {
-  return prismaNoMiddleware.reportDeliveryBatch.upsert({
+  return prisma.reportDeliveryBatch.upsert({
     where: {
       officeId_reportType_periodStart_periodEnd: {
         officeId: input.officeId,
@@ -110,7 +110,7 @@ async function ensureRecipients(batch: ReportDeliveryBatch, users: DeliveryUser[
   const recipients: ReportDeliveryRecipient[] = []
   for (const user of users) {
     try {
-      recipients.push(await prismaNoMiddleware.reportDeliveryRecipient.create({
+      recipients.push(await prisma.reportDeliveryRecipient.create({
         data: {
           batchId: batch.id,
           userId: user.id,
@@ -120,7 +120,7 @@ async function ensureRecipients(batch: ReportDeliveryBatch, users: DeliveryUser[
       }))
     } catch (error) {
       if (!isUniqueConstraint(error)) throw error
-      recipients.push(await prismaNoMiddleware.reportDeliveryRecipient.update({
+      recipients.push(await prisma.reportDeliveryRecipient.update({
         where: { batchId_userId: { batchId: batch.id, userId: user.id } },
         data: { email: user.email },
       }))
@@ -131,11 +131,11 @@ async function ensureRecipients(batch: ReportDeliveryBatch, users: DeliveryUser[
 
 async function refreshBatch(batchId: string) {
   const [sentCount, failedCount, skippedCount, pendingCount, batch] = await Promise.all([
-    prismaNoMiddleware.reportDeliveryRecipient.count({ where: { batchId, status: 'sent' } }),
-    prismaNoMiddleware.reportDeliveryRecipient.count({ where: { batchId, status: 'failed' } }),
-    prismaNoMiddleware.reportDeliveryRecipient.count({ where: { batchId, status: 'skipped' } }),
-    prismaNoMiddleware.reportDeliveryRecipient.count({ where: { batchId, status: { in: ['prepared', 'sending'] } } }),
-    prismaNoMiddleware.reportDeliveryBatch.findUniqueOrThrow({ where: { id: batchId } }),
+    prisma.reportDeliveryRecipient.count({ where: { batchId, status: 'sent' } }),
+    prisma.reportDeliveryRecipient.count({ where: { batchId, status: 'failed' } }),
+    prisma.reportDeliveryRecipient.count({ where: { batchId, status: 'skipped' } }),
+    prisma.reportDeliveryRecipient.count({ where: { batchId, status: { in: ['prepared', 'sending'] } } }),
+    prisma.reportDeliveryBatch.findUniqueOrThrow({ where: { id: batchId } }),
   ])
   const status = deliveryStatusFromCounts({
     intended: batch.intendedRecipientCount,
@@ -143,7 +143,7 @@ async function refreshBatch(batchId: string) {
     failed: failedCount,
     pending: pendingCount,
   })
-  return prismaNoMiddleware.reportDeliveryBatch.update({
+  return prisma.reportDeliveryBatch.update({
     where: { id: batchId },
     data: {
       status,
@@ -184,6 +184,7 @@ export async function sendMonthlyReportForOffice(input: {
   periodDate?: string
   mode: DeliveryMode
   userId?: string | null
+  requestId?: string
   adapter?: MailAdapter
 }): Promise<OfficeDeliveryResult> {
   const periodDate = input.periodDate ?? previousChileMonthString()
@@ -219,8 +220,8 @@ export async function sendMonthlyReportForOffice(input: {
 
   const report = reportResult.report
   const [office, users, downloaded] = await Promise.all([
-    prismaNoMiddleware.office.findUnique({ where: { id: input.officeId }, select: { nombre: true } }),
-    prismaNoMiddleware.user.findMany({
+    prisma.office.findUnique({ where: { id: input.officeId }, select: { nombre: true } }),
+    prisma.user.findMany({
       where: { officeId: input.officeId, isActive: true },
       orderBy: { email: 'asc' },
       select: { id: true, email: true },
@@ -272,7 +273,7 @@ export async function sendMonthlyReportForOffice(input: {
   for (const recipient of recipients) {
     if (recipient.status === 'sent') continue
 
-    await prismaNoMiddleware.reportDeliveryRecipient.update({
+    await prisma.reportDeliveryRecipient.update({
       where: { id: recipient.id },
       data: { status: 'sending', errorMessage: null },
     })
@@ -289,7 +290,7 @@ export async function sendMonthlyReportForOffice(input: {
         }],
       }, 3)
       const now = new Date()
-      await prismaNoMiddleware.reportDeliveryRecipient.update({
+      await prisma.reportDeliveryRecipient.update({
         where: { id: recipient.id },
         data: {
           status: 'sent',
@@ -307,7 +308,7 @@ export async function sendMonthlyReportForOffice(input: {
       })
     } catch (error) {
       const message = sanitizeDeliveryError(error)
-      await prismaNoMiddleware.reportDeliveryRecipient.update({
+      await prisma.reportDeliveryRecipient.update({
         where: { id: recipient.id },
         data: {
           status: 'failed',
@@ -335,6 +336,19 @@ export async function sendMonthlyReportForOffice(input: {
   const status = refreshed.status === 'sent' || refreshed.status === 'partial' || refreshed.status === 'failed'
     ? refreshed.status
     : 'pending'
+  await prisma.$transaction(async tx => {
+    await tx.reportDeliveryBatch.update({ where: { id: batch.id }, data: { completedAt: refreshed.completedAt } })
+    await enqueueExternalEvent(tx, {
+      id: input.userId ?? undefined, officeId: input.officeId, requestId: input.requestId,
+      actorType: input.userId ? 'USER' : 'SYSTEM', source: input.userId ? 'WEB' : 'SYSTEM',
+    }, {
+      eventType: 'report.monthly.sent', module: 'reports', result: status === 'failed' ? 'failure' : 'success',
+      recordType: 'ReportDeliveryBatch', recordId: batch.id, description: 'Envio de reporte mensual registrado.',
+      deduplicationKey: `report-delivery:${batch.id}:completed`,
+      metadata: { reportId: report.id, batchId: batch.id, status, sentCount: refreshed.sentCount, failedCount: refreshed.failedCount, recipientCount: refreshed.intendedRecipientCount },
+    })
+  })
+  await processActivityOutbox(50).catch(() => undefined)
   return {
     status,
     officeId: input.officeId,
@@ -351,11 +365,12 @@ export async function sendMonthlyReportsForAllOffices(input: {
   officeId?: number
   mode?: DeliveryMode
   adapter?: MailAdapter
+  requestId?: string
 }) {
   const periodDate = input.periodDate ?? previousChileMonthString()
   const offices = input.officeId
     ? [{ id: input.officeId }]
-    : await prismaNoMiddleware.office.findMany({
+    : await prisma.office.findMany({
       where: { users: { some: { isActive: true } } },
       orderBy: { id: 'asc' },
       select: { id: true },
@@ -368,6 +383,7 @@ export async function sendMonthlyReportsForAllOffices(input: {
       periodDate,
       mode: input.mode ?? 'scheduled',
       adapter: input.adapter,
+      requestId: input.requestId,
     }))
   }
 

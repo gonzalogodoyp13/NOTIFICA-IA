@@ -1,15 +1,18 @@
+import { withApiUser } from '@/lib/api/server'
 import { NextRequest, NextResponse } from 'next/server'
 
 import { Prisma } from '@prisma/client'
 
-import { getCurrentUserWithOffice } from '@/lib/auth-server'
 import { prisma } from '@/lib/prisma'
 import { DiligenciaUpdateSchema } from '@/lib/validations/rol-workspace'
+import { recordCriticalEvent } from '@/lib/audit/activityEvent'
 
 export const dynamic = 'force-dynamic'
 
-async function syncRolEstado(rolId: string) {
-  const rol = await prisma.rolCausa.findUnique({
+type RoleStateDb = Pick<Prisma.TransactionClient, 'rolCausa'>
+
+async function syncRolEstado(rolId: string, db: RoleStateDb = prisma) {
+  const rol = await db.rolCausa.findUnique({
     where: { id: rolId },
     select: {
       estado: true,
@@ -37,7 +40,7 @@ async function syncRolEstado(rolId: string) {
   }
 
   if (nextEstado !== rol.estado) {
-    await prisma.rolCausa.update({
+    await db.rolCausa.update({
       where: { id: rolId },
       data: { estado: nextEstado },
     })
@@ -48,12 +51,8 @@ export async function GET(
   _req: NextRequest,
   { params }: { params: { id: string } }
 ) {
+  return withApiUser(_req, 'get.diligencias.id', async user => {
   try {
-    const user = await getCurrentUserWithOffice()
-
-    if (!user) {
-      return NextResponse.json({ ok: false, message: 'No autorizado', error: 'No autorizado' }, { status: 401 })
-    }
 
     const diligencia = await prisma.diligencia.findFirst({
       where: {
@@ -89,18 +88,16 @@ export async function GET(
       { status: 500 }
     )
   }
+
+  })
 }
 
 export async function PUT(
   req: NextRequest,
   { params }: { params: { id: string } }
 ) {
+  return withApiUser(req, 'put.diligencias.id', async user => {
   try {
-    const user = await getCurrentUserWithOffice()
-
-    if (!user) {
-      return NextResponse.json({ ok: false, message: 'No autorizado', error: 'No autorizado' }, { status: 401 })
-    }
 
     const diligencia = await prisma.diligencia.findFirst({
       where: {
@@ -219,15 +216,19 @@ export async function PUT(
     updateData.meta =
       Object.keys(mergedMeta).length > 0 ? (mergedMeta as Prisma.JsonObject) : undefined
 
-    const updated = await prisma.diligencia.update({
-      where: { id: diligencia.id },
-      data: updateData,
-      include: {
-        tipo: true,
-      },
+    const updated = await prisma.$transaction(async tx => {
+      const result = await tx.diligencia.update({
+        where: { id: diligencia.id }, data: updateData, include: { tipo: true },
+      })
+      await syncRolEstado(diligencia.rol.id, tx)
+      await recordCriticalEvent(tx, user, {
+        eventType: 'diligence.updated', module: 'diligencias', result: 'success',
+        recordType: 'Diligencia', recordId: result.id, rolId: diligencia.rol.id,
+        description: 'Diligencia actualizada.',
+        metadata: { diligenceId: result.id, changedFields: Object.keys(updateData).slice(0, 100) },
+      })
+      return result
     })
-
-    await syncRolEstado(diligencia.rol.id)
 
     return NextResponse.json({ ok: true, data: updated })
   } catch (error) {
@@ -238,18 +239,16 @@ export async function PUT(
       { status: 500 }
     )
   }
+
+  })
 }
 
 export async function DELETE(
   _req: NextRequest,
   { params }: { params: { id: string } }
 ) {
+  return withApiUser(_req, 'delete.diligencias.id', async user => {
   try {
-    const user = await getCurrentUserWithOffice()
-
-    if (!user) {
-      return NextResponse.json({ ok: false, message: 'No autorizado', error: 'No autorizado' }, { status: 401 })
-    }
 
     const diligencia = await prisma.diligencia.findFirst({
       where: {
@@ -271,11 +270,15 @@ export async function DELETE(
       )
     }
 
-    await prisma.diligencia.delete({
-      where: { id: diligencia.id },
+    await prisma.$transaction(async tx => {
+      await tx.diligencia.delete({ where: { id: diligencia.id } })
+      await syncRolEstado(diligencia.rolId, tx)
+      await recordCriticalEvent(tx, user, {
+        eventType: 'diligence.deleted', module: 'diligencias', result: 'success',
+        recordType: 'Diligencia', recordId: diligencia.id, rolId: diligencia.rolId,
+        description: 'Diligencia eliminada.', metadata: { diligenceId: diligencia.id },
+      })
     })
-
-    await syncRolEstado(diligencia.rolId)
 
     return NextResponse.json({ ok: true, message: 'Diligencia eliminada correctamente' })
   } catch (error) {
@@ -286,5 +289,7 @@ export async function DELETE(
       { status: 500 }
     )
   }
+
+  })
 }
 

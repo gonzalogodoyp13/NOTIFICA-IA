@@ -1,10 +1,11 @@
+import { withApiUser } from '@/lib/api/server'
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 
 import { Prisma } from '@prisma/client'
 
-import { getCurrentUserWithOffice } from '@/lib/auth-server'
 import { prisma } from '@/lib/prisma'
+import { recordCriticalEvent } from '@/lib/audit/activityEvent'
 
 export const dynamic = 'force-dynamic'
 
@@ -22,8 +23,9 @@ const CompleteSchema = z.object({
     ),
 })
 
-async function syncRolEstado(rolId: string) {
-  const rol = await prisma.rolCausa.findUnique({
+type RoleStateDb = Pick<Prisma.TransactionClient, 'rolCausa'>
+async function syncRolEstado(rolId: string, db: RoleStateDb = prisma) {
+  const rol = await db.rolCausa.findUnique({
     where: { id: rolId },
     select: {
       estado: true,
@@ -51,7 +53,7 @@ async function syncRolEstado(rolId: string) {
   }
 
   if (nextEstado !== rol.estado) {
-    await prisma.rolCausa.update({
+    await db.rolCausa.update({
       where: { id: rolId },
       data: { estado: nextEstado },
     })
@@ -62,12 +64,8 @@ export async function PUT(
   req: NextRequest,
   { params }: { params: { id: string } }
 ) {
+  return withApiUser(req, 'put.diligencias.id.complete', async user => {
   try {
-    const user = await getCurrentUserWithOffice()
-
-    if (!user) {
-      return NextResponse.json({ ok: false, error: 'No autorizado' }, { status: 401 })
-    }
 
     const diligencia = await prisma.diligencia.findFirst({
       where: {
@@ -115,19 +113,21 @@ export async function PUT(
     const metaToPersist =
       Object.keys(mergedMeta).length > 0 ? (mergedMeta as Prisma.JsonObject) : undefined
 
-    const updated = await prisma.diligencia.update({
-      where: { id: diligencia.id },
-      data: {
-        estado: 'completada',
-        fecha: data.fechaRealizacion ? new Date(data.fechaRealizacion) : diligencia.fecha,
-        meta: metaToPersist,
-      },
-      include: {
-        tipo: true,
-      },
+    const updated = await prisma.$transaction(async tx => {
+      const result = await tx.diligencia.update({
+        where: { id: diligencia.id },
+        data: { estado: 'completada', fecha: data.fechaRealizacion ? new Date(data.fechaRealizacion) : diligencia.fecha, meta: metaToPersist },
+        include: { tipo: true },
+      })
+      await syncRolEstado(diligencia.rol.id, tx)
+      await recordCriticalEvent(tx, user, {
+        eventType: 'diligence.completed', module: 'diligencias', result: 'success',
+        recordType: 'Diligencia', recordId: result.id, rolId: diligencia.rol.id,
+        description: 'Diligencia completada.',
+        metadata: { diligenceId: result.id, previousStatus: diligencia.estado, nextStatus: 'completada', legalDate: data.fechaRealizacion ?? null },
+      })
+      return result
     })
-
-    await syncRolEstado(diligencia.rol.id)
 
     return NextResponse.json({ ok: true, data: updated })
   } catch (error) {
@@ -137,5 +137,7 @@ export async function PUT(
       { status: 500 }
     )
   }
+
+  })
 }
 

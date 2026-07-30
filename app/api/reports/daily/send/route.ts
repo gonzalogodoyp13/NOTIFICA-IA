@@ -19,6 +19,7 @@ export async function POST(request: NextRequest) {
       userId: user.id,
       periodDate: input.date,
       mode: 'manual',
+      requestId: user.requestId,
     }))
   })
 }

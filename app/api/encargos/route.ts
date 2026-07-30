@@ -1,22 +1,15 @@
+import { withApiUser } from '@/lib/api/server'
 // API route: /api/encargos
 // GET: List all diligencias (encargos) for the current office with computed fields
 // Returns: { ok: true, data: EncargoItem[], kpis: { total, activos, realizadosCobrados, realizadosNoCobrados } }
 import { NextRequest, NextResponse } from 'next/server'
-import { getCurrentUserWithOffice } from '@/lib/auth-server'
 import { prisma } from '@/lib/prisma'
 
 export const dynamic = 'force-dynamic'
 
 export async function GET(req: NextRequest) {
+  return withApiUser(req, 'get.encargos', async user => {
   try {
-    const user = await getCurrentUserWithOffice()
-
-    if (!user) {
-      return NextResponse.json(
-        { ok: false, message: 'No autorizado', error: 'No autorizado' },
-        { status: 401 }
-      )
-    }
 
     // Fetch all diligencias for the user's office
     const diligencias = await prisma.diligencia.findMany({
@@ -238,4 +231,6 @@ export async function GET(req: NextRequest) {
       { status: 500 }
     )
   }
+
+  })
 }

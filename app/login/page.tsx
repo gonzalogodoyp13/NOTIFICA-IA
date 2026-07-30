@@ -5,11 +5,18 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { signIn } from '@/lib/auth-client'
 
-export default function LoginPage() {
+const AUTH_MESSAGES: Record<string, string> = {
+  account_disabled: 'Tu cuenta está desactivada. Contacta al administrador de tu oficina.',
+  user_not_provisioned: 'Tu cuenta no está provisionada en NOTIFICA IA.',
+  service_unavailable: 'El servicio de acceso no está disponible. Intenta nuevamente en unos minutos.',
+  invalid_session: 'Tu sesión no es válida o expiró. Inicia sesión nuevamente.',
+}
+
+export default function LoginPage({ searchParams }: { searchParams?: { error?: string } }) {
   const router = useRouter()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
-  const [error, setError] = useState('')
+  const [error, setError] = useState(() => AUTH_MESSAGES[searchParams?.error || ''] || '')
   const [loading, setLoading] = useState(false)
 
   const hasSupabaseKeys =

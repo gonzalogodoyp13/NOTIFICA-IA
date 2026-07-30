@@ -29,6 +29,7 @@ export async function POST(req: NextRequest) {
       periodDate: parsed.data.month,
       officeId: parsed.data.officeId,
       mode: 'scheduled',
+      requestId: req.headers.get('x-request-id') ?? undefined,
     })
     return NextResponse.json({ ok: true, data: result })
   } catch {

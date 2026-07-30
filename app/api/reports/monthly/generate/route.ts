@@ -20,6 +20,7 @@ export async function POST(request: NextRequest) {
       userId: user.id,
       month: input.month,
       force: input.force,
+      requestId: user.requestId,
     })
 
     if (result.status === 'no_activity') {

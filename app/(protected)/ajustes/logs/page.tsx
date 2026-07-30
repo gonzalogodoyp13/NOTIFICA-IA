@@ -40,6 +40,7 @@ interface UnmatchedReply {
 }
 
 export default function LogsPage() {
+  const [source, setSource] = useState<'activity' | 'legacy'>('activity')
   const [logs, setLogs] = useState<AuditLog[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -62,6 +63,7 @@ export default function LogsPage() {
     try {
       const activeFilters = customFilters || filters
       const params = new URLSearchParams()
+      params.set('source', source)
 
       if (activeFilters.userId) params.append('userId', activeFilters.userId)
       if (activeFilters.tabla) params.append('tabla', activeFilters.tabla)
@@ -93,7 +95,7 @@ export default function LogsPage() {
     } finally {
       setLoading(false)
     }
-  }, [filters])
+  }, [filters, source])
 
   useEffect(() => {
     fetchLogs()
@@ -143,7 +145,28 @@ export default function LogsPage() {
             </div>
           )}
 
-          <LogsSummary />
+          {source === 'activity' && <LogsSummary />}
+
+          <div className="mb-6 flex gap-2 border-b border-gray-200" role="tablist" aria-label="Fuente de auditoria">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={source === 'activity'}
+              onClick={() => setSource('activity')}
+              className={`border-b-2 px-4 py-3 text-sm font-semibold ${source === 'activity' ? 'border-blue-600 text-blue-700' : 'border-transparent text-gray-500 hover:text-gray-800'}`}
+            >
+              Actividad canónica
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={source === 'legacy'}
+              onClick={() => setSource('legacy')}
+              className={`border-b-2 px-4 py-3 text-sm font-semibold ${source === 'legacy' ? 'border-blue-600 text-blue-700' : 'border-transparent text-gray-500 hover:text-gray-800'}`}
+            >
+              Histórico anterior
+            </button>
+          </div>
 
           <section className="mb-6 border-y border-gray-200 py-5">
             <div className="flex items-center justify-between gap-3">
@@ -155,7 +178,7 @@ export default function LogsPage() {
 
           <LogFilterBar onFilter={handleFilter} loading={loading} />
 
-          <ExportButtons />
+          <ExportButtons source={source} />
 
           <LogTable logs={logs} loading={loading} onViewDetail={handleViewDetail} />
 

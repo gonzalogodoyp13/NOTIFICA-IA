@@ -1,6 +1,6 @@
+import { withApiUser } from '@/lib/api/server'
 import { NextRequest, NextResponse } from 'next/server'
 
-import { getCurrentUserWithOffice } from '@/lib/auth-server'
 import { buildWizardInitialVariables, loadWizardCatalog, loadWizardDiligenciaContext } from '@/lib/estampos/server'
 
 export const dynamic = 'force-dynamic'
@@ -9,12 +9,8 @@ export async function GET(
   req: NextRequest,
   { params }: { params: { id: string } }
 ) {
+  return withApiUser(req, 'get.diligencias.id.estampos.wizard', async user => {
   try {
-    const user = await getCurrentUserWithOffice()
-
-    if (!user) {
-      return NextResponse.json({ ok: false, error: 'No autorizado' }, { status: 401 })
-    }
 
     const context = await loadWizardDiligenciaContext({
       diligenciaId: params.id,
@@ -68,4 +64,6 @@ export async function GET(
       { status: 500 }
     )
   }
+
+  })
 }

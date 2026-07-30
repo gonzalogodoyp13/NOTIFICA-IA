@@ -3,7 +3,7 @@ import type { ActivityEvent, User } from '@prisma/client'
 
 import { formatChileDateTime } from './chileTime'
 
-type EventWithUser = ActivityEvent & { user: Pick<User, 'email'> }
+type EventWithUser = ActivityEvent & { user: Pick<User, 'email'> | null }
 
 export type DailyReportWorkbookInput = {
   officeName: string
@@ -123,7 +123,7 @@ function addEventSheet(workbook: ExcelJS.Workbook, name: string, events: EventWi
   for (const event of events) {
     sheet.addRow([
       event.occurredAt,
-      event.user.email,
+      event.user?.email ?? 'Sistema',
       MODULE_LABELS[event.module] ?? event.module,
       event.eventType,
       RESULT_LABELS[event.result] ?? event.result,
@@ -173,12 +173,13 @@ function addUserSummary(workbook: ExcelJS.Workbook, events: EventWithUser[]) {
   styleHeader(header)
   const map = new Map<string, { total: number; success: number; failure: number; denied: number }>()
   for (const event of events) {
-    const row = map.get(event.user.email) ?? { total: 0, success: 0, failure: 0, denied: 0 }
+    const email = event.user?.email ?? 'Sistema'
+    const row = map.get(email) ?? { total: 0, success: 0, failure: 0, denied: 0 }
     row.total += 1
     if (event.result === 'success') row.success += 1
     if (event.result === 'failure') row.failure += 1
     if (event.result === 'denied') row.denied += 1
-    map.set(event.user.email, row)
+    map.set(email, row)
   }
   for (const [email, row] of Array.from(map.entries())) sheet.addRow([email, row.total, row.success, row.failure, row.denied])
   if (!events.length) sheet.addRow(['Sin actividad'])

@@ -71,6 +71,7 @@ export default function EjecutarWizard({
   const updateMeta = useUpdateNotificacionMeta(rolId, diligencia.id, notificacionId)
   const [creatingRecibo, setCreatingRecibo] = useState(false)
   const [creatingEstampo, setCreatingEstampo] = useState(false)
+  const [renderingEstampoPreview, setRenderingEstampoPreview] = useState(false)
 
   // Step state
   const [step, setStep] = useState<1 | 2 | 3>(initialStep ?? 1)
@@ -253,16 +254,70 @@ export default function EjecutarWizard({
     }
   }, [step, selectedEstampoTipo, rolData, monto])
 
-  // Pre-fill contenidoEstampo when entering Step III
+  // Pre-fill contenidoEstampo with rendered data when entering Step III
   useEffect(() => {
-    if (step === 3) {
-      if (effectiveMeta?.estampoDraft) {
-        setContenidoEstampo(effectiveMeta.estampoDraft as string)
-      } else if (selectedEstampo?.contenido) {
-        setContenidoEstampo(selectedEstampo.contenido)
-      }
+    if (step !== 3 || selectedEstampoTipo?.kind !== 'CUSTOM' || !selectedEstampoTipo.estampoId) {
+      return
     }
-  }, [step, effectiveMeta, selectedEstampo])
+
+    const draft =
+      typeof effectiveMeta?.estampoDraft === 'string' && effectiveMeta.estampoDraft.trim()
+        ? effectiveMeta.estampoDraft
+        : null
+    const source = draft ?? selectedEstampo?.contenido ?? ''
+
+    if (!source.trim()) {
+      setContenidoEstampo('')
+      return
+    }
+
+    let cancelled = false
+    setRenderingEstampoPreview(true)
+    setContenidoEstampo('')
+
+    fetch(`/api/diligencias/${diligencia.id}/estampo/preview`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({
+        estampoId: selectedEstampoTipo.estampoId,
+        notificacionId,
+        contenidoPersonalizado: source,
+      }),
+    })
+      .then(async res => {
+        const result = await res.json().catch(() => null)
+        if (!res.ok || result?.ok !== true) {
+          throw new Error(
+            (result && typeof result.error === 'string' && result.error) ||
+              'No se pudo preparar el texto del estampo.'
+          )
+        }
+        return result.data
+      })
+      .then(data => {
+        if (cancelled) return
+        setContenidoEstampo(
+          typeof data?.renderedText === 'string'
+            ? data.renderedText
+            : source
+        )
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setContenidoEstampo(source)
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setRenderingEstampoPreview(false)
+        }
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [step, effectiveMeta, selectedEstampo, selectedEstampoTipo, diligencia.id, notificacionId])
 
   // Handle Step I: Save fecha/hora
   const handleStepISave = async (goToNext: boolean) => {
@@ -584,7 +639,7 @@ export default function EjecutarWizard({
       .finally(() => setCreatingEstampo(false))
   }
 
-  const isLoading = updateMeta.isPending || creatingRecibo || creatingEstampo
+  const isLoading = updateMeta.isPending || creatingRecibo || creatingEstampo || renderingEstampoPreview
 
   if (!notificacion) {
     return (
@@ -756,6 +811,7 @@ export default function EjecutarWizard({
                 placeholder="Contenido del estampo…"
                 value={contenidoEstampo}
                 onChange={e => setContenidoEstampo(e.target.value)}
+                disabled={renderingEstampoPreview}
               />
               <p className="mt-1 text-xs text-slate-500">
                 Puedes modificar el contenido antes de generar el PDF.
