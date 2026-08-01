@@ -6,65 +6,10 @@ import { Prisma } from '@prisma/client'
 import { ApiError, apiFailure, parseApiInput } from '@/lib/api/server'
 import { prisma } from '@/lib/prisma'
 import { DiligenciaCreateSchema } from '@/lib/validations/rol-workspace'
-import { deriveNotificationCompleteness } from '@/lib/workflow/completeness'
-import { deriveNotificationWorkflowState } from '@/lib/workflow/notificationStatus'
+import { serializeNotification } from '@/lib/workflow/notificationView'
 import { recordCriticalEvent } from '@/lib/audit/activityEvent'
 
 export const dynamic = 'force-dynamic'
-
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return !!value && typeof value === 'object' && !Array.isArray(value)
-}
-
-function mapLatestEstampo(documento: any) {
-  if (!documento) return null
-
-  if (documento.estampoBase) {
-    return {
-      documentoId: documento.id,
-      slug: documento.estampoBase.slug,
-      nombreVisible: documento.estampoBase.nombreVisible,
-    }
-  }
-
-  if (documento.estampo) {
-    return {
-      documentoId: documento.id,
-      slug: null,
-      nombreVisible: documento.estampo.nombre,
-    }
-  }
-
-  return null
-}
-
-function mapNotificacion(notificacion: any) {
-  const meta = isPlainObject(notificacion.meta) ? notificacion.meta : {}
-  const documentos = Array.isArray(notificacion.documentos) ? notificacion.documentos : []
-  const workflow = deriveNotificationWorkflowState(documentos)
-  const latestRecibo = workflow.latestRecibo
-  const latestEstampoDoc = workflow.latestEstampo
-
-  return {
-    id: notificacion.id,
-    diligenciaId: notificacion.diligenciaId,
-    meta: notificacion.meta,
-    ejecutadoId: (notificacion as any).ejecutadoId ?? null,
-    createdAt: notificacion.createdAt ? notificacion.createdAt.toISOString() : null,
-    updatedAt: notificacion.updatedAt ? notificacion.updatedAt.toISOString() : null,
-    voidedAt: (notificacion as any).voidedAt ? (notificacion as any).voidedAt.toISOString() : null,
-    voidReason: (notificacion as any).voidReason ?? null,
-    voidedByUserId: (notificacion as any).voidedByUserId ?? null,
-    workflowStatus: workflow.workflowStatus,
-    completeness: deriveNotificationCompleteness({ notificacion, diligencia: notificacion.diligencia }),
-    step1Done: !!meta.fechaEjecucion,
-    step2Done: workflow.hasReciboPdf,
-    step3Done: workflow.hasEstampoPdf,
-    latestReciboId: latestRecibo?.id ?? null,
-    latestEstampoId: latestEstampoDoc?.id ?? null,
-    latestEstampo: mapLatestEstampo(latestEstampoDoc),
-  }
-}
 
 function mapDiligencia(diligencia: any) {
   return {
@@ -83,7 +28,9 @@ function mapDiligencia(diligencia: any) {
       nombre: ejecutado.nombre,
       direccion: [ejecutado.direccion, ejecutado.comunas?.nombre].filter(Boolean).join(', '),
     })),
-    notificaciones: (diligencia.notificaciones ?? []).map(mapNotificacion),
+    notificaciones: (diligencia.notificaciones ?? []).map((notification: any) =>
+      serializeNotification(notification, diligencia)
+    ),
   }
 }
 
@@ -177,27 +124,6 @@ export async function GET(
         notificaciones: {
           orderBy: { createdAt: 'asc' },
           include: {
-            diligencia: {
-              include: {
-                rol: {
-                  include: {
-                    demanda: {
-                      include: {
-                        abogados: {
-                          include: {
-                            bancos: {
-                              include: {
-                                banco: true,
-                              },
-                            },
-                          },
-                        },
-                      },
-                    },
-                  },
-                },
-              },
-            },
             ejecutado: {
               include: {
                 comunas: true,

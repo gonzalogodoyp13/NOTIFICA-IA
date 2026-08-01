@@ -210,6 +210,7 @@ export async function getReceiptList(
   ] })
 
   const where: Prisma.ReciboWhereInput = {
+    status: 'ACTIVE',
     documentoId: { in: validDocumentIds },
     ...(options?.reciboIds?.length ? { id: { in: options.reciboIds } } : options?.excludedIds?.length ? { id: { notIn: options.excludedIds } } : {}),
     ...(diligenceIds ? { diligenciaId: { in: diligenceIds } } : {}),

@@ -12,6 +12,7 @@ const notificationMetadata = z.object({
   deletedReceiptCount: z.number().int().nonnegative().optional(),
 }).strict()
 const receiptMetadata = z.object({
+  reservationId: id,
   receiptId: id,
   documentId: id,
   documentVersionId: id,
@@ -21,6 +22,14 @@ const receiptMetadata = z.object({
   paymentMethod: z.string().min(1).max(80),
   operationalReference: z.string().max(120).nullable().optional(),
   notificationId: nullableId,
+  priorReceiptId: nullableId,
+}).strict()
+const receiptFailureMetadata = z.object({
+  reservationId: id,
+  notificationId: id,
+  numeroRecibo: z.string().min(1).max(80),
+  operation: z.enum(['GENERATE', 'REGENERATE', 'CORRECT']),
+  errorCode: z.string().min(1).max(120),
 }).strict()
 const stampMetadata = z.object({
   documentId: id,
@@ -45,6 +54,8 @@ export const ACTIVITY_EVENT_CATALOG = {
   'notification.deleted': { module: 'notificaciones', critical: true, metadata: notificationMetadata },
   'receipt.generated': { module: 'recibos', critical: true, metadata: receiptMetadata },
   'receipt.regenerated': { module: 'recibos', critical: true, metadata: receiptMetadata },
+  'receipt.corrected': { module: 'recibos', critical: true, metadata: receiptMetadata },
+  'receipt.generation_failed': { module: 'recibos', critical: false, metadata: receiptFailureMetadata },
   'stamp.generated': { module: 'documents', critical: true, metadata: stampMetadata },
   'audit.export': { module: 'audit', critical: true, metadata: exportMetadata },
 } as const

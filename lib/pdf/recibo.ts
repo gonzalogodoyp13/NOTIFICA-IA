@@ -60,14 +60,15 @@ export function buildReciboVariables(
   referencia?: string,
   tipoEstampoNombre?: string,
   ejecutadoFromNotificacion?: any,
-  otrosMonto: number = 0
+  otrosMonto: number = 0,
+  selectedBank?: Banco | null
 ): ReciboVariables {
   const meta = diligencia.meta as Record<string, unknown> | null
   
   // Extraer relaciones de forma segura
   const demanda = diligencia.rol.demanda ?? null
   const abogado = demanda?.abogados ?? null
-  const banco = abogado?.bancos?.[0]?.banco ?? null
+  const banco = selectedBank ?? null
   const ejecutados = demanda?.ejecutados ?? []
   const tribunal = diligencia.rol.tribunal ?? null
   const tipoDiligencia = diligencia.tipo ?? null

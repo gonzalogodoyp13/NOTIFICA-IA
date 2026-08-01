@@ -86,7 +86,7 @@ export async function buildReceiptBulkPreview(officeId: number, input: ReceiptBu
   if (input.action === 'associateBoleta' && !boletaNumber) throw new Error('Debes ingresar un numero de boleta.')
 
   const receipts = await db.recibo.findMany({
-    where: { id: { in: ids }, rol: { officeId } },
+    where: { id: { in: ids }, status: 'ACTIVE', rol: { officeId } },
     select: { id: true, diligenciaId: true, documentoId: true, numeroRecibo: true, numeroBoleta: true, ref: true, monto: true, rol: { select: { rol: true } } },
   })
   const receiptMap = new Map(receipts.map(item => [item.id, item]))
@@ -208,7 +208,7 @@ export async function operationUndoability(officeId: number, operationId: string
   const after = snapshots(operation.afterState)
   for (const state of after) {
     if (state.targetType === 'receipt') {
-      const receipt = await db.recibo.findFirst({ where: { id: state.targetId, rol: { officeId } }, select: { numeroBoleta: true } })
+      const receipt = await db.recibo.findFirst({ where: { id: state.targetId, status: 'ACTIVE', rol: { officeId } }, select: { numeroBoleta: true } })
       if (!receipt || (receipt.numeroBoleta ?? null) !== (state.boletaNumber ?? null)) return { reversible: false, reason: 'Un recibo cambio despues de la operacion.' }
     } else {
       const diligence = await db.diligencia.findFirst({ where: { id: state.targetId, rol: { officeId } }, select: { estadoCobro: true, fechaPago: true } })

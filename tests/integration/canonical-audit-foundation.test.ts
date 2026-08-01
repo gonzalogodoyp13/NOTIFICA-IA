@@ -7,6 +7,7 @@ import { validateCatalogEvent } from '../../lib/audit/catalog'
 describe('canonical authentication and audit foundation', () => {
   it('accepts the approved receipt metadata and rejects extra personal data', () => {
     const metadata = {
+      reservationId: 'reservation-1',
       receiptId: 'receipt-1',
       documentId: 'document-1',
       documentVersionId: 'version-1',

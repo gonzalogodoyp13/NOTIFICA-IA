@@ -19,6 +19,11 @@ export type ApiErrorCode =
   | 'VALIDATION_ERROR'
   | 'NOT_FOUND'
   | 'CONFLICT'
+  | 'RECEIPT_EXISTS'
+  | 'RECEIPT_GENERATION_IN_PROGRESS'
+  | 'RECEIPT_CORRECTION_REQUIRED'
+  | 'IDEMPOTENCY_KEY_REUSED'
+  | 'RECEIPT_GENERATION_FAILED'
   | 'DATABASE_ERROR'
   | 'INTERNAL_ERROR'
 
@@ -29,6 +34,7 @@ export type ApiFailure = {
     code: ApiErrorCode
     message: string
     fields?: Record<string, string[]>
+    details?: Record<string, unknown>
   }
 }
 
@@ -45,7 +51,8 @@ export class ApiError extends Error {
     public readonly code: ApiErrorCode,
     message: string,
     public readonly status: number,
-    public readonly fields?: Record<string, string[]>
+    public readonly fields?: Record<string, string[]>,
+    public readonly details?: Record<string, unknown>
   ) {
     super(message)
     this.name = 'ApiError'
@@ -63,7 +70,8 @@ export function apiFailure(error: ApiError) {
       error: {
         code: error.code,
         message: error.message,
-        ...(error.fields ? { fields: error.fields } : {}),
+          ...(error.fields ? { fields: error.fields } : {}),
+          ...(error.details ? { details: error.details } : {}),
       },
     },
     { status: error.status }
@@ -131,7 +139,7 @@ export async function handleApiError(
 ) {
   const known = error instanceof ApiError ? error : translateAuthError(error) ?? translatePrismaError(error)
   if (known) {
-    if (context.user && known.code !== 'UNAUTHORIZED') {
+    if (context.user && known.code !== 'UNAUTHORIZED' && !requestEventWasRecorded()) {
       await recordActivityEvent({
         userId: context.user.id,
         officeId: context.user.officeId,

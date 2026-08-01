@@ -23,7 +23,12 @@ export function deriveNotificationCompleteness(params: {
   const ejecutado = notificacion?.ejecutado ?? null
   const demanda = diligencia?.rol?.demanda ?? null
   const abogado = demanda?.abogados ?? null
-  const banco = abogado?.bancos?.[0]?.banco ?? null
+  const bancos = Array.isArray(abogado?.bancos) ? abogado.bancos : []
+  const banco = notificacion?.bancoId
+    ? bancos.find((item: any) => item?.banco?.id === notificacion.bancoId)?.banco ?? null
+    : bancos.length === 1
+      ? bancos[0]?.banco ?? null
+      : null
   const estampoTipo = parseEstampoTipo(meta)
 
   if (!notificacion?.ejecutadoId || !ejecutado) missingFields.push('ejecutado')

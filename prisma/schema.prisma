@@ -64,6 +64,7 @@ model Office {
   demandas       Demanda[]
   estampoCustoms EstampoCustom[] @relation("OfficeEstampoCustoms")
   recibos        Recibo[]
+  receiptGenerationReservations ReceiptGenerationReservation[]
   documentNumberSequences DocumentNumberSequence[]
   receiptBulkOperations ReceiptBulkOperation[]
   emailTemplates EmailTemplate[]
@@ -299,6 +300,8 @@ model Banco {
   createdAt         DateTime          @default(now())
   abogadoBancos     AbogadoBanco[]    @relation("BancoAbogados")
   aranceles         Arancel[]         @relation("BancoAranceles")
+  notificaciones    Notificacion[]    @relation("NotificacionBanco")
+  recibos           Recibo[]          @relation("ReciboBanco")
   office            Office            @relation(fields: [officeId], references: [id], onDelete: Restrict, onUpdate: Cascade)
 
   @@index([officeId])
@@ -498,11 +501,15 @@ model Notificacion {
   voidReason     String?
   voidedByUserId String?
   ejecutadoId    String?
+  bancoId        Int?
   diligencia     Diligencia  @relation(fields: [diligenciaId], references: [id])
   ejecutado      Ejecutado?  @relation(fields: [ejecutadoId], references: [id], onDelete: Restrict)
+  banco          Banco?      @relation("NotificacionBanco", fields: [bancoId], references: [id], onDelete: Restrict, onUpdate: Cascade)
   documentos     Documento[]
 
   @@index([ejecutadoId])
+  @@index([bancoId])
+  @@index([diligenciaId, createdAt])
   @@map("notificaciones")
 }
 
@@ -582,6 +589,7 @@ model Recibo {
   notificacionId String?
   documentoId    String?
   documentVersionId String?
+  bancoId        Int?
   numeroRecibo   String?
   numeroReciboYear Int?
   numeroBoleta   String?
@@ -590,10 +598,19 @@ model Recibo {
   ref            String?
   fechaEjecucion DateTime?
   fechaRecibo    DateTime?
+  status         ReceiptStatus @default(ACTIVE)
+  generationFingerprint String?
+  voidedAt       DateTime?
+  voidReason     String?
+  voidedByUserId String?
+  supersedesReciboId String? @unique
   createdAt      DateTime @default(now())
   rol            RolCausa @relation(fields: [rolId], references: [id])
   office         Office?  @relation(fields: [officeId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  banco          Banco?   @relation("ReciboBanco", fields: [bancoId], references: [id], onDelete: Restrict, onUpdate: Cascade)
   documentVersion DocumentoVersion? @relation(fields: [documentVersionId], references: [id], onDelete: SetNull)
+  supersedes     Recibo?  @relation("ReciboCorrectionChain", fields: [supersedesReciboId], references: [id], onDelete: SetNull)
+  supersededBy   Recibo?  @relation("ReciboCorrectionChain")
 
   @@index([officeId, numeroReciboYear])
   @@index([rolId, fechaRecibo])
@@ -604,6 +621,46 @@ model Recibo {
   @@index([notificacionId])
   @@index([documentoId])
   @@index([documentVersionId])
+  @@index([bancoId])
+  @@index([status, createdAt])
+}
+
+model ReceiptGenerationReservation {
+  id                    String                     @id @default(cuid())
+  officeId              Int
+  rolId                 String
+  diligenciaId          String
+  notificacionId        String
+  operation             ReceiptGenerationOperation
+  status                ReceiptGenerationStatus   @default(RESERVED)
+  idempotencyKey        String
+  requestHash           String
+  numeroRecibo          String
+  numeroReciboYear      Int
+  assignedNumber        Int?
+  documentoId           String
+  targetVersionNumber   Int
+  storageBucket         String?
+  storageKey            String?
+  fileName              String?
+  sizeBytes             Int?
+  checksumSha256        String?
+  mimeType              String?
+  receiptId             String?
+  documentVersionId     String?
+  failureCode           String?
+  createdAt             DateTime                   @default(now())
+  updatedAt             DateTime                   @updatedAt
+  uploadedAt            DateTime?
+  completedAt           DateTime?
+  failedAt              DateTime?
+  office                Office                     @relation(fields: [officeId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  @@unique([officeId, idempotencyKey])
+  @@index([notificacionId, status])
+  @@index([officeId, status, createdAt])
+  @@index([status, updatedAt])
+  @@map("receipt_generation_reservations")
 }
 
 model ReceiptBulkOperation {
@@ -953,4 +1010,23 @@ enum EstadoCobro {
 
 enum DocumentType {
   RECIBO
+}
+
+enum ReceiptGenerationStatus {
+  RESERVED
+  UPLOADED
+  COMPLETED
+  FAILED
+}
+
+enum ReceiptGenerationOperation {
+  GENERATE
+  REGENERATE
+  CORRECT
+}
+
+enum ReceiptStatus {
+  ACTIVE
+  VOIDED
+  CORRECTED
 }

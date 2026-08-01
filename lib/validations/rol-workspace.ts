@@ -40,15 +40,44 @@ export const DiligenciaScheduleSchema = z.object({
   observaciones: z.string().max(1000).optional(),
 })
 
-export const ReciboGenerateSchema = z.object({
-  monto: z.number().min(0, 'El monto debe ser mayor o igual a 0'),
-  medio: z.string().min(1, 'El medio de pago es requerido'),
-  referencia: z.string().optional(),
-  otros: z.number().min(0, 'Otros debe ser mayor o igual a 0').optional(),
-  variables: z.record(z.string()).optional(),
-  tipoEstampoNombre: z.string().optional(), // Nuevo campo para el nombre del estampo
-  regenerate: z.boolean().optional(),
+const receiptExecutionSchema = z.object({
+  fecha: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'La fecha debe usar el formato YYYY-MM-DD'),
+  hora: z.string().regex(timeRegex, 'Hora inválida, use el formato HH:mm').optional().default(''),
 })
+
+const receiptEstampoSelectionSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('CUSTOM'), estampoId: z.string().min(1) }),
+  z.object({
+    kind: z.literal('WIZARD'),
+    categoria: z.string().min(1),
+    estampoBaseId: z.number().int().positive().optional(),
+  }),
+])
+
+export const ReciboGenerateSchema = z
+  .object({
+    notificacionId: z.string().min(1, 'notificacionId es requerido'),
+    bancoId: z.number().int().positive('bancoId es requerido'),
+    operation: z.enum(['GENERATE', 'REGENERATE', 'CORRECT']).default('GENERATE'),
+    ejecucion: receiptExecutionSchema,
+    estampoTipo: receiptEstampoSelectionSchema,
+    monto: z.number().min(0, 'El monto debe ser mayor o igual a 0'),
+    medio: z.string().min(1, 'El medio de pago es requerido'),
+    referencia: z.string().max(120).optional(),
+    otros: z.number().min(0, 'Otros debe ser mayor o igual a 0').optional(),
+    correctionReason: z.string().trim().min(3).max(500).optional(),
+  })
+  .superRefine((value, ctx) => {
+    if (value.operation === 'CORRECT' && !value.correctionReason) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['correctionReason'],
+        message: 'Debes indicar el motivo de la corrección',
+      })
+    }
+  })
+
+export type ReciboGenerateInput = z.infer<typeof ReciboGenerateSchema>
 
 export const EstampoGenerateSchema = z.object({
   estampoId: z.string().min(1, 'estampoId es requerido'),

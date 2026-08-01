@@ -106,6 +106,7 @@ export async function loadRoleSummaryData(roleId: string, officeId: number) {
         },
       },
       documentos: {
+        where: { voidedAt: null },
         include: {
           diligencia: {
             include: {
@@ -148,14 +149,21 @@ export async function loadRoleSummaryData(roleId: string, officeId: number) {
         },
       },
       recibos: {
+        where: { status: 'ACTIVE' },
         select: {
           id: true,
           notificacionId: true,
+          documentoId: true,
+          documentVersionId: true,
+          bancoId: true,
+          numeroRecibo: true,
           monto: true,
           medio: true,
           ref: true,
           fechaEjecucion: true,
           fechaRecibo: true,
+          status: true,
+          supersedesReciboId: true,
           createdAt: true,
         },
         orderBy: [{ fechaRecibo: 'desc' }, { createdAt: 'desc' }],
@@ -312,11 +320,17 @@ export async function loadRoleSummaryData(roleId: string, officeId: number) {
   const resumenRecibos = rolCausa.recibos.map(recibo => ({
     id: recibo.id,
     notificacionId: recibo.notificacionId ?? null,
+    documentoId: recibo.documentoId ?? null,
+    documentVersionId: recibo.documentVersionId ?? null,
+    bancoId: recibo.bancoId ?? null,
+    numeroRecibo: recibo.numeroRecibo ?? null,
     monto: Number(recibo.monto),
     medio: recibo.medio,
     ref: recibo.ref ?? null,
     fechaEjecucion: recibo.fechaEjecucion ? recibo.fechaEjecucion.toISOString() : null,
     fechaRecibo: (recibo.fechaRecibo ?? recibo.createdAt).toISOString(),
+    status: recibo.status,
+    supersedesReciboId: recibo.supersedesReciboId ?? null,
     createdAt: recibo.createdAt.toISOString(),
   }))
 

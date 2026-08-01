@@ -1,0 +1,16 @@
+=qa : The term '=qa' is not recognized as the name of a cmdlet, function, script file, or operable program. Check the 
+spelling of the name, or if a path was included, verify that the path is correct and try again.
+At line:1 char:1
++ ='qa'; ='true'; Set-Location -LiteralPath 'C:\Users\gonza\Desktop\NOT ...
++ ~~~~~
+    + CategoryInfo          : ObjectNotFound: (=qa:String) [], CommandNotFoundException
+    + FullyQualifiedErrorId : CommandNotFoundException
+ 
+=true : The term '=true' is not recognized as the name of a cmdlet, function, script file, or operable program. Check 
+the spelling of the name, or if a path was included, verify that the path is correct and try again.
+At line:1 char:8
++ ='qa'; ='true'; Set-Location -LiteralPath 'C:\Users\gonza\Desktop\NOT ...
++        ~~~~~~~
+    + CategoryInfo          : ObjectNotFound: (=true:String) [], CommandNotFoundException
+    + FullyQualifiedErrorId : CommandNotFoundException
+ 

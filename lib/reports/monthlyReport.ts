@@ -174,6 +174,7 @@ function nextMetadata(existing: GeneratedReport | null, input: {
 export async function buildMonthlyReportData(officeId: number, bounds: ReturnType<typeof chileMonthBounds>) {
   const receipts = await prisma.recibo.findMany({
     where: {
+      status: 'ACTIVE',
       rol: { officeId },
       OR: [
         { fechaEjecucion: { gte: bounds.start, lte: bounds.end } },

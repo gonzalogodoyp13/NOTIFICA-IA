@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 
 import { Prisma } from '@prisma/client'
+import { z } from 'zod'
 
 import { recordCriticalEvent } from '@/lib/audit/activityEvent'
 import { ApiError, apiFailure, handleApiError, withApiUser } from '@/lib/api/server'
@@ -9,6 +10,17 @@ import { prisma } from '@/lib/prisma'
 import { asJsonObject } from '@/lib/utils/json'
 
 export const dynamic = 'force-dynamic'
+
+const NotificationProgressSchema = z.object({
+  meta: z.record(z.unknown()),
+  bancoId: z.number().int().positive().optional(),
+})
+
+function hasExecutionDate(meta: Record<string, unknown>) {
+  if (typeof meta.fechaEjecucion === 'string' && meta.fechaEjecucion.trim()) return true
+  const ejecucion = asJsonObject(meta.ejecucion)
+  return typeof ejecucion?.fecha === 'string' && ejecucion.fecha.trim().length > 0
+}
 
 export async function PATCH(
   req: NextRequest,
@@ -24,7 +36,7 @@ export async function PATCH(
         id: params.id,
         officeId: user.officeId,
       },
-      select: { id: true },
+      select: { id: true, demanda: { select: { abogadoId: true } } },
     })
 
     if (!rol) {
@@ -51,6 +63,7 @@ export async function PATCH(
       select: {
         id: true,
         diligenciaId: true,
+        bancoId: true,
         meta: true,
         createdAt: true,
         updatedAt: true,
@@ -61,11 +74,23 @@ export async function PATCH(
       return apiFailure(new ApiError('NOT_FOUND', 'Notificacion no encontrada o no pertenece a esta diligencia', 404))
     }
 
-    const body = await req.json().catch(() => null)
-    const incomingMeta = asJsonObject(body)?.meta ?? null
+    const parsedBody = NotificationProgressSchema.safeParse(await req.json().catch(() => null))
+    if (!parsedBody.success) {
+      return apiFailure(new ApiError('VALIDATION_ERROR', 'meta debe ser un objeto y bancoId debe ser valido', 400))
+    }
+    const { meta: incomingMeta, bancoId } = parsedBody.data
 
-    if (!incomingMeta || typeof incomingMeta !== 'object' || Array.isArray(incomingMeta)) {
-      return apiFailure(new ApiError('VALIDATION_ERROR', 'meta debe ser un objeto', 400))
+    if (bancoId !== undefined) {
+      const abogadoId = rol.demanda?.abogadoId
+      const allowedBank = abogadoId
+        ? await prisma.abogadoBanco.findFirst({
+            where: { officeId: user.officeId, abogadoId, bancoId },
+            select: { id: true },
+          })
+        : null
+      if (!allowedBank) {
+        return apiFailure(new ApiError('VALIDATION_ERROR', 'El banco no pertenece al abogado de la demanda', 400))
+      }
     }
 
     const currentMeta = existing.meta
@@ -87,12 +112,14 @@ export async function PATCH(
             Object.keys(nextMeta).length > 0
               ? (nextMeta as Prisma.JsonObject)
               : Prisma.JsonNull,
+          ...(bancoId !== undefined ? { bancoId } : {}),
           updatedAt: new Date(),
         },
         select: {
           id: true,
           diligenciaId: true,
           ejecutadoId: true,
+          bancoId: true,
           meta: true,
           createdAt: true,
           updatedAt: true,
@@ -109,7 +136,10 @@ export async function PATCH(
         metadata: {
           notificationId: result.id,
           diligenceId: result.diligenciaId,
-          changedFields: Object.keys(incomingMeta).slice(0, 100),
+          changedFields: [
+            ...Object.keys(incomingMeta),
+            ...(bancoId !== undefined && bancoId !== existing.bancoId ? ['bancoId'] : []),
+          ].slice(0, 100),
         },
       })
       return result
@@ -126,14 +156,15 @@ export async function PATCH(
         id: updated.id,
         diligenciaId: updated.diligenciaId,
         ejecutadoId: updated.ejecutadoId,
+        bancoId: updated.bancoId,
         meta: updated.meta,
         createdAt: updated.createdAt ? updated.createdAt.toISOString() : null,
         updatedAt: updated.updatedAt ? updated.updatedAt.toISOString() : null,
-        step1Done: !!responseMeta.fechaEjecucion,
+        step1Done: hasExecutionDate(responseMeta),
       },
     })
   } catch (error) {
-    return handleApiError(error, { operation: 'notification.update', request: req })
+    return handleApiError(error, { operation: 'notification.update', request: req, user })
   }
   })
 }

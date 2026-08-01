@@ -24,6 +24,7 @@ const NotificacionItemSchema = z.object({
   diligenciaId: z.string(),
   meta: z.unknown().nullable().optional(),
   ejecutadoId: z.string().nullable().optional(),
+  bancoId: z.number().int().positive().nullable().optional(),
   createdAt: z.string().nullable(),
   updatedAt: z.string().nullable(),
   voidedAt: z.string().nullable().optional(),
@@ -49,6 +50,17 @@ const NotificacionItemSchema = z.object({
   step3Done: z.boolean().optional(),
   latestReciboId: z.string().nullable().optional(),
   latestEstampoId: z.string().nullable().optional(),
+})
+
+const NotificationProgressUpdateSchema = NotificacionItemSchema.pick({
+  id: true,
+  diligenciaId: true,
+  meta: true,
+  ejecutadoId: true,
+  bancoId: true,
+  createdAt: true,
+  updatedAt: true,
+  step1Done: true,
 })
 
 const EjecutadoItemSchema = z.object({
@@ -120,12 +132,73 @@ const NotaItemSchema = z.object({
 const ReciboItemSchema = z.object({
   id: z.string(),
   notificacionId: z.string().nullable().optional(),
+  documentoId: z.string().nullable().optional(),
+  documentVersionId: z.string().nullable().optional(),
+  bancoId: z.number().int().positive().nullable().optional(),
+  numeroRecibo: z.string().nullable().optional(),
   monto: z.number(),
   medio: z.string(),
   ref: z.string().nullable().optional(),
   fechaEjecucion: z.string().nullable().optional(),
   fechaRecibo: z.string().nullable().optional(),
+  status: z.enum(['ACTIVE', 'CORRECTED', 'VOIDED']).optional(),
+  supersedesReciboId: z.string().nullable().optional(),
   createdAt: z.string(),
+})
+
+const ReceiptWorkflowSelectionSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('CUSTOM'), estampoId: z.string() }),
+  z.object({ kind: z.literal('WIZARD'), categoria: z.string(), estampoBaseId: z.number().optional() }),
+])
+
+const ReceiptWorkflowSchema = z.object({
+  notification: NotificacionItemSchema,
+  ejecutado: z.object({
+    id: z.string(),
+    nombre: z.string(),
+    direccion: z.string().nullable(),
+    comuna: z.object({ id: z.number(), nombre: z.string() }).nullable(),
+  }),
+  bankContext: z.object({
+    selectedBankId: z.number().int().positive().nullable(),
+    banks: z.array(z.object({ id: z.number().int().positive(), nombre: z.string() })),
+  }),
+  execution: z.object({ fecha: z.string().nullable(), hora: z.string().nullable() }),
+  selectedEstampoTipo: ReceiptWorkflowSelectionSchema.nullable(),
+  monto: z.number().nullable(),
+  estampoOptions: z.array(
+    z.object({
+      selection: ReceiptWorkflowSelectionSchema,
+      label: z.string(),
+      contenido: z.string().nullable().optional(),
+      count: z.number().optional(),
+      aranceles: z.array(
+        z.object({
+          bancoId: z.number().int().positive(),
+          monto: z.number(),
+          source: z.enum(['abogado', 'banco']),
+        })
+      ),
+    })
+  ),
+  receiptState: z
+    .object({
+      receiptId: z.string(),
+      documentoId: z.string().nullable(),
+      numeroRecibo: z.string(),
+      generationFingerprint: z.string().nullable(),
+    })
+    .nullable(),
+  historicalSelection: z
+    .object({ selection: ReceiptWorkflowSelectionSchema, label: z.string(), active: z.literal(false) })
+    .nullable(),
+})
+
+const ReceiptGenerationResponseSchema = z.object({
+  operation: z.enum(['created', 'regenerated', 'corrected']),
+  documento: DocumentoItemSchema,
+  recibo: ReciboItemSchema,
+  notificacion: NotificacionItemSchema,
 })
 
 const RolSummarySchema = z.object({
@@ -260,6 +333,7 @@ async function fetcher<T extends z.ZodTypeAny>(
   if (!response.ok || payload?.ok !== true) {
     const message =
       (payload && typeof payload.error === 'string' && payload.error) ||
+      (payload?.error && typeof payload.error.message === 'string' && payload.error.message) ||
       'Error al comunicarse con el servidor'
     throw new Error(message)
   }
@@ -279,6 +353,15 @@ const diligenciasKey = (rolId: string) => ['rol', rolId, 'diligencias'] as const
 const documentosKey = (rolId: string) => ['rol', rolId, 'documentos'] as const
 const notasKey = (rolId: string) => ['rol', rolId, 'notas'] as const
 const timelineKey = (rolId: string) => ['rol', rolId, 'timeline'] as const
+export const receiptWorkflowKey = (
+  rolId: string,
+  diligenciaId: string,
+  notificacionId: string,
+  includeEstampoContent = false
+) => [
+  'rol', rolId, 'diligencias', diligenciaId, 'notificaciones', notificacionId, 'workflow',
+  includeEstampoContent ? 'stamp-detail' : 'summary',
+] as const
 
 export type RolWorkspaceData = z.infer<typeof RolDataSchema>
 export type RolHeaderData = z.infer<typeof RolHeaderDataSchema>
@@ -287,6 +370,19 @@ export type DocumentoItem = z.infer<typeof DocumentoItemSchema>
 export type NotaItem = z.infer<typeof NotaItemSchema>
 export type TimelineItem = z.infer<typeof TimelineItemSchema>
 export type NotificacionItem = z.infer<typeof NotificacionItemSchema>
+export type ReceiptWorkflowData = z.infer<typeof ReceiptWorkflowSchema>
+export type ReceiptGenerationResponse = z.infer<typeof ReceiptGenerationResponseSchema>
+
+export class ApiClientError extends Error {
+  constructor(
+    message: string,
+    readonly code?: string,
+    readonly details?: Record<string, unknown>
+  ) {
+    super(message)
+    this.name = 'ApiClientError'
+  }
+}
 
 function updateRolWorkspaceSummary(
   current: RolWorkspaceData | undefined,
@@ -342,6 +438,25 @@ export function useDiligencias(rolId: string) {
     queryKey: diligenciasKey(rolId),
     queryFn: () => fetcher(`/api/roles/${rolId}/diligencias`, z.array(DiligenciaItemSchema)),
     enabled: !!rolId,
+    retry: false,
+  })
+}
+
+export function useReceiptWorkflow(
+  rolId: string,
+  diligenciaId: string,
+  notificacionId: string,
+  enabled = true,
+  includeEstampoContent = false
+) {
+  return useQuery({
+    queryKey: receiptWorkflowKey(rolId, diligenciaId, notificacionId, includeEstampoContent),
+    queryFn: () =>
+      fetcher(
+        `/api/roles/${rolId}/diligencias/${diligenciaId}/notificaciones/${notificacionId}/workflow${includeEstampoContent ? '?detail=stamp' : ''}`,
+        ReceiptWorkflowSchema
+      ),
+    enabled: enabled && !!rolId && !!diligenciaId && !!notificacionId,
     retry: false,
   })
 }
@@ -573,33 +688,115 @@ export function useCreateNotificacion(
 export function useGenerateRecibo(
   rolId: string,
   diligenciaId: string
-): UseMutationResult<unknown, Error, z.infer<typeof ReciboGenerateSchema>> {
+): UseMutationResult<
+  ReceiptGenerationResponse,
+  ApiClientError,
+  z.infer<typeof ReciboGenerateSchema>
+> {
   const queryClient = useQueryClient()
 
   return useMutation({
     mutationFn: async (input: z.infer<typeof ReciboGenerateSchema>) => {
       const body = ReciboGenerateSchema.parse(input)
+      const idempotencyKey = `receipt-${crypto.randomUUID()}`
 
       const response = await fetch(`/api/diligencias/${diligenciaId}/recibo`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'Idempotency-Key': idempotencyKey },
         body: JSON.stringify(body),
+        credentials: 'include',
       })
 
       const result = await response.json().catch(() => null)
 
       if (!response.ok || result?.ok !== true) {
-        throw new Error(
-          (result && typeof result.error === 'string' && result.error) ||
-            'Error al generar recibo'
+        throw new ApiClientError(
+          (result?.error && typeof result.error.message === 'string' && result.error.message) ||
+            'Error al generar recibo',
+          typeof result?.error?.code === 'string' ? result.error.code : undefined,
+          result?.error?.details && typeof result.error.details === 'object'
+            ? result.error.details
+            : undefined
         )
       }
 
-      return result.data
+      const parsed = ReceiptGenerationResponseSchema.safeParse(result.data)
+      if (!parsed.success) throw new ApiClientError('Respuesta del servidor invalida')
+      return parsed.data
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: documentosKey(rolId) })
-      queryClient.invalidateQueries({ queryKey: rolQueryKey(rolId) })
+    onSuccess: (generated, variables) => {
+      const workflowKey = receiptWorkflowKey(rolId, diligenciaId, variables.notificacionId)
+      const priorWorkflow = queryClient.getQueryData<ReceiptWorkflowData>(workflowKey)
+      const priorDocumentoId =
+        generated.operation === 'corrected' ? priorWorkflow?.receiptState?.documentoId : null
+
+      queryClient.setQueryData(documentosKey(rolId), (current: DocumentoItem[] | undefined) => {
+        const existing = current ?? []
+        const withoutSuperseded = priorDocumentoId
+          ? existing.filter(item => item.id !== priorDocumentoId)
+          : existing
+        const withoutCurrent = withoutSuperseded.filter(item => item.id !== generated.documento.id)
+        return [generated.documento, ...withoutCurrent]
+      })
+
+      queryClient.setQueryData(diligenciasKey(rolId), (current: DiligenciaItem[] | undefined) =>
+        patchDiligenciasList(current, items =>
+          items.map(item =>
+            item.id !== diligenciaId
+              ? item
+              : {
+                  ...item,
+                  notificaciones: item.notificaciones.map(notification =>
+                    notification.id === generated.notificacion.id
+                      ? generated.notificacion
+                      : notification
+                  ),
+                }
+          )
+        )
+      )
+
+      queryClient.setQueryData(rolQueryKey(rolId), (current: RolWorkspaceData | undefined) => {
+        if (!current) return current
+        const nextDocuments = current.resumen.documentos
+          .filter(item => item.id !== generated.documento.id && item.id !== priorDocumentoId)
+        const nextReceipts = current.resumen.recibos.filter(
+          item => item.id !== generated.recibo.id && item.id !== generated.recibo.supersedesReciboId
+        )
+        return {
+          ...current,
+          ultimaActividad: generated.documento.createdAt,
+          kpis: {
+            ...current.kpis,
+            documentosTotal: current.kpis.documentosTotal + (generated.operation === 'created' ? 1 : 0),
+            recibosTotal: current.kpis.recibosTotal + (generated.operation === 'created' ? 1 : 0),
+          },
+          resumen: {
+            ...current.resumen,
+            documentos: [generated.documento, ...nextDocuments],
+            recibos: [generated.recibo, ...nextReceipts],
+          },
+        }
+      })
+
+      queryClient.setQueryData(workflowKey, (current: ReceiptWorkflowData | undefined) =>
+        current
+          ? {
+              ...current,
+              notification: generated.notificacion,
+              execution: variables.ejecucion,
+              selectedEstampoTipo: variables.estampoTipo,
+              monto: variables.monto,
+              bankContext: { ...current.bankContext, selectedBankId: variables.bancoId },
+              receiptState: {
+                receiptId: generated.recibo.id,
+                documentoId: generated.documento.id,
+                numeroRecibo: generated.recibo.numeroRecibo ?? '',
+                generationFingerprint: null,
+              },
+            }
+          : current
+      )
     },
   })
 }
@@ -672,14 +869,14 @@ async function patchNotificacionMeta(
   rolId: string,
   diligenciaId: string,
   notificacionId: string,
-  metaPatch: Record<string, unknown>
-): Promise<NotificacionItem> {
+  input: { meta: Record<string, unknown>; bancoId?: number }
+): Promise<z.infer<typeof NotificationProgressUpdateSchema>> {
   const response = await fetch(
     `/api/roles/${rolId}/diligencias/${diligenciaId}/notificaciones/${notificacionId}`,
     {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ meta: metaPatch }),
+      body: JSON.stringify(input),
       credentials: 'include',
     }
   )
@@ -688,11 +885,12 @@ async function patchNotificacionMeta(
   if (!response.ok || result?.ok !== true) {
     throw new Error(
       (result && typeof result.error === 'string' && result.error) ||
+        (result?.error && typeof result.error.message === 'string' && result.error.message) ||
         'Error al actualizar notificación'
     )
   }
 
-  const parsed = NotificacionItemSchema.safeParse(result.data)
+  const parsed = NotificationProgressUpdateSchema.safeParse(result.data)
   if (!parsed.success) {
     throw new Error('Respuesta del servidor inválida')
   }
@@ -704,12 +902,15 @@ export function useUpdateNotificacionMeta(
   rolId: string,
   diligenciaId: string,
   notificacionId: string
-): UseMutationResult<NotificacionItem, Error, Record<string, unknown>> {
+): UseMutationResult<
+  z.infer<typeof NotificationProgressUpdateSchema>,
+  Error,
+  { meta: Record<string, unknown>; bancoId?: number }
+> {
   const queryClient = useQueryClient()
 
   return useMutation({
-    mutationFn: (metaPatch: Record<string, unknown>) =>
-      patchNotificacionMeta(rolId, diligenciaId, notificacionId, metaPatch),
+    mutationFn: input => patchNotificacionMeta(rolId, diligenciaId, notificacionId, input),
     onSuccess: updatedNotificacion => {
       queryClient.setQueryData(
         diligenciasKey(rolId),

@@ -4,12 +4,13 @@ import { useEffect, useMemo, useState } from 'react'
 
 import { useQueryClient } from '@tanstack/react-query'
 
-import { useEstamposGrouped } from '@/lib/hooks/useAjustes'
 import {
-  useRolData,
+  ApiClientError,
   type DiligenciaItem,
   type NotificacionItem,
   type RolWorkspaceData,
+  useGenerateRecibo,
+  useReceiptWorkflow,
   useUpdateNotificacionMeta,
 } from '@/lib/hooks/useRolWorkspace'
 import { EstampoGenerateSchema, ReciboGenerateSchema } from '@/lib/validations/rol-workspace'
@@ -27,33 +28,30 @@ interface EjecutarWizardProps {
   onOpenWizard?: (diligenciaId: string, categoria: string, notificacionId: string) => void
 }
 
-interface EstampoCatalogItem {
-  id: string
-  nombre: string
-  tipo?: string | null
-  contenido?: string | null
-}
-
 export default function EjecutarWizard({
   rolId,
   diligencia,
   notificacionId,
-  rolData: rolDataProp,
   initialStep,
   onClose,
   onSuccess,
   onOpenWizard,
 }: EjecutarWizardProps) {
-  // Get rol data if not provided
-  const { data: rolDataFromHook } = useRolData(rolId, !rolDataProp)
-  const rolData = rolDataProp || rolDataFromHook
-
   const queryClient = useQueryClient()
+  const [step, setStep] = useState<1 | 2 | 3>(initialStep ?? 1)
+  const { data: workflow, isLoading: workflowLoading, error: workflowError } = useReceiptWorkflow(
+    rolId,
+    diligencia.id,
+    notificacionId,
+    true,
+    step === 3
+  )
 
   const notificacion = useMemo<NotificacionItem | null>(() => {
+    if (workflow?.notification) return workflow.notification
     const list = diligencia.notificaciones ?? []
     return list.find(n => n.id === notificacionId) ?? null
-  }, [diligencia.notificaciones, notificacionId])
+  }, [diligencia.notificaciones, notificacionId, workflow])
 
   const effectiveMeta = useMemo<Record<string, unknown>>(() => {
     const isPlainObject = (x: unknown): x is Record<string, unknown> =>
@@ -67,22 +65,22 @@ export default function EjecutarWizard({
     return ((notiHasContent ? notiMeta : diliMeta) ?? {}) as Record<string, unknown>
   }, [diligencia.meta, notificacion])
 
-  const { data: estamposGrouped, isLoading: estamposLoading } = useEstamposGrouped()
   const updateMeta = useUpdateNotificacionMeta(rolId, diligencia.id, notificacionId)
-  const [creatingRecibo, setCreatingRecibo] = useState(false)
+  const generateRecibo = useGenerateRecibo(rolId, diligencia.id)
   const [creatingEstampo, setCreatingEstampo] = useState(false)
   const [renderingEstampoPreview, setRenderingEstampoPreview] = useState(false)
-
-  // Step state
-  const [step, setStep] = useState<1 | 2 | 3>(initialStep ?? 1)
 
   // Step I fields
   const [fechaEjecucion, setFechaEjecucion] = useState('')
   const [horaEjecucion, setHoraEjecucion] = useState('')
+  const [bancoId, setBancoId] = useState<number | null>(null)
 
   // Step II fields - nueva estructura unificada
   const [selectedEstampoTipo, setSelectedEstampoTipo] = useState<EstampoTipo | null>(null)
   const [monto, setMonto] = useState('')
+  const [montoManual, setMontoManual] = useState(false)
+  const [receiptOperation, setReceiptOperation] = useState<'GENERATE' | 'REGENERATE' | 'CORRECT'>('GENERATE')
+  const [correctionReason, setCorrectionReason] = useState('')
 
   // Step III fields
   const [contenidoEstampo, setContenidoEstampo] = useState('')
@@ -130,9 +128,15 @@ export default function EjecutarWizard({
     })
   }
 
-  // Initialize from meta using parseEstampoTipo
   useEffect(() => {
-    if (effectiveMeta) {
+    if (workflow) {
+      setFechaEjecucion(workflow.execution.fecha ?? '')
+      setHoraEjecucion(workflow.execution.hora ?? '')
+      setBancoId(workflow.bankContext.selectedBankId)
+      setSelectedEstampoTipo(workflow.selectedEstampoTipo as EstampoTipo | null)
+      setMonto(workflow.monto === null ? '' : String(workflow.monto))
+      setReceiptOperation(workflow.receiptState ? 'REGENERATE' : 'GENERATE')
+    } else if (effectiveMeta) {
       const ejecucion =
         effectiveMeta.ejecucion &&
         typeof effectiveMeta.ejecucion === 'object' &&
@@ -172,87 +176,26 @@ export default function EjecutarWizard({
         setContenidoEstampo(effectiveMeta.estampoDraft as string)
       }
     }
-  }, [effectiveMeta])
+  }, [effectiveMeta, workflow])
 
-  // Get selected estampo (legacy only, for Step 3)
-  const selectedEstampo = useMemo<EstampoCatalogItem | undefined>(() => {
-    if (selectedEstampoTipo?.kind === 'CUSTOM' && estamposGrouped?.custom) {
-      return estamposGrouped.custom.find(
-        item => String(item.id) === selectedEstampoTipo.estampoId
-      )
-    }
-    return undefined
-  }, [selectedEstampoTipo, estamposGrouped])
+  const selectedEstampo = useMemo(() => {
+    if (selectedEstampoTipo?.kind !== 'CUSTOM') return undefined
+    return workflow?.estampoOptions.find(
+      item => item.selection.kind === 'CUSTOM' && item.selection.estampoId === selectedEstampoTipo.estampoId
+    )
+  }, [selectedEstampoTipo, workflow])
 
-  // Auto-fill monto when estampo is selected (Step II) - CUSTOM y WIZARD
   useEffect(() => {
-    // Solo auto-fill si estamos en Step 2 y hay selección válida
-    if (step !== 2 || !selectedEstampoTipo || !rolData) {
-      return
-    }
-
-    // Guard: no sobrescribir si el usuario ya ingresó un monto
-    if (monto && monto.trim() !== '') {
-      return
-    }
-
-    const abogado = rolData.abogado
-    const bancoId = abogado?.bancos?.[0]?.banco.id ?? null
-    const abogadoId = abogado?.id ?? null
-
-    if (!bancoId) {
-      return
-    }
-
-    // Custom estampo path
-    if (selectedEstampoTipo.kind === 'CUSTOM' && selectedEstampoTipo.estampoId) {
-      const params = new URLSearchParams({
-        bancoId: String(bancoId),
-        estampoId: selectedEstampoTipo.estampoId,
-      })
-      if (abogadoId) {
-        params.append('abogadoId', String(abogadoId))
+    if (step !== 2 || !selectedEstampoTipo || !bancoId || montoManual) return
+    const option = workflow?.estampoOptions.find(item => {
+      if (selectedEstampoTipo.kind === 'CUSTOM') {
+        return item.selection.kind === 'CUSTOM' && item.selection.estampoId === selectedEstampoTipo.estampoId
       }
-
-      fetch(`/api/aranceles/lookup?${params.toString()}`, {
-        credentials: 'include',
-      })
-        .then(res => res.json())
-        .then(data => {
-          if (data.ok && data.data?.monto) {
-            setMonto(String(data.data.monto))
-          }
-        })
-        .catch(() => {
-          // Silently fail - user can enter monto manually
-        })
-      return
-    }
-
-    // WIZARD path (NUEVO)
-    if (selectedEstampoTipo.kind === 'WIZARD' && selectedEstampoTipo.categoria) {
-      const params = new URLSearchParams({
-        bancoId: String(bancoId),
-        categoria: selectedEstampoTipo.categoria,
-      })
-      if (abogadoId) {
-        params.append('abogadoId', String(abogadoId))
-      }
-
-      fetch(`/api/aranceles/lookup?${params.toString()}`, {
-        credentials: 'include',
-      })
-        .then(res => res.json())
-        .then(data => {
-          if (data.ok && data.data?.monto) {
-            setMonto(String(data.data.monto))
-          }
-        })
-        .catch(() => {
-          // Silently fail - user can enter monto manually
-        })
-    }
-  }, [step, selectedEstampoTipo, rolData, monto])
+      return item.selection.kind === 'WIZARD' && item.selection.categoria === selectedEstampoTipo.categoria
+    })
+    const arancel = option?.aranceles.find(item => item.bancoId === bancoId)
+    setMonto(arancel ? String(arancel.monto) : '')
+  }, [step, selectedEstampoTipo, bancoId, montoManual, workflow])
 
   // Pre-fill contenidoEstampo with rendered data when entering Step III
   useEffect(() => {
@@ -333,6 +276,11 @@ export default function EjecutarWizard({
       return
     }
 
+    if (!bancoId) {
+      setErrorMsg('Selecciona el banco del recibo.')
+      return
+    }
+
     if (horaEjecucion && !/^([01]\d|2[0-3]):[0-5]\d$/.test(horaEjecucion)) {
       setErrorMsg('La hora debe estar en formato HH:mm (ej: 14:30).')
       return
@@ -348,16 +296,17 @@ export default function EjecutarWizard({
       metaUpdates.horaEjecucion = horaEjecucion
     }
 
-    updateMeta.mutate(metaUpdates, {
+    if (goToNext) {
+      setStep(2)
+      return
+    }
+
+    updateMeta.mutate({ meta: metaUpdates, bancoId }, {
       onSuccess: () => {
-        if (goToNext) {
-          setStep(2)
-        } else {
-          setSuccessMsg('Datos guardados correctamente.')
-          setTimeout(() => {
-            onClose()
-          }, 1500)
-        }
+        setSuccessMsg('Datos guardados correctamente.')
+        setTimeout(() => {
+          onClose()
+        }, 1500)
       },
       onError: error => {
         setErrorMsg(error.message || 'Error al guardar los datos.')
@@ -365,7 +314,6 @@ export default function EjecutarWizard({
     })
   }
 
-  // Handle Step II: Generate Recibo
   const handleStepIIGenerate = async (continueToStep3: boolean) => {
     setErrorMsg(null)
 
@@ -374,36 +322,37 @@ export default function EjecutarWizard({
       return
     }
 
-    // Validar selección (wizard o legacy, no ambos)
+    if (!fechaEjecucion) {
+      setErrorMsg('La fecha de ejecución es requerida.')
+      return
+    }
+
+    if (!bancoId) {
+      setErrorMsg('Selecciona el banco del recibo.')
+      return
+    }
+
     if (!selectedEstampoTipo) {
       setErrorMsg('Selecciona un tipo de estampo.')
       return
     }
 
-    // Validar monto (requerido, pero no depende de lookup exitoso)
     const montoNum = cleanCuantiaInput(monto)
     if (montoNum === null || montoNum < 0) {
       setErrorMsg('El monto es requerido y debe ser mayor o igual a 0.')
       return
     }
 
-    // Obtener nombre del estampo para el recibo
-    let tipoEstampoNombre: string | undefined
-    if (selectedEstampoTipo.kind === 'CUSTOM') {
-      tipoEstampoNombre = selectedEstampo?.nombre
-    } else if (selectedEstampoTipo.kind === 'WIZARD') {
-      // Para wizard, usar el label de la categoría
-      const categoria = estamposGrouped?.wizard.find(
-        cat => cat.categoria === selectedEstampoTipo.categoria
-      )
-      tipoEstampoNombre = categoria?.label
-    }
-
     const validation = ReciboGenerateSchema.safeParse({
+      notificacionId,
+      bancoId,
+      operation: receiptOperation,
+      ejecucion: { fecha: fechaEjecucion, hora: horaEjecucion || '' },
+      estampoTipo: selectedEstampoTipo,
       monto: montoNum,
       medio: 'No especificado',
       referencia: undefined,
-      tipoEstampoNombre,
+      correctionReason: receiptOperation === 'CORRECT' ? correctionReason : undefined,
     })
 
     if (!validation.success) {
@@ -411,102 +360,31 @@ export default function EjecutarWizard({
       return
     }
 
-    setCreatingRecibo(true)
     try {
-      let response = await fetch(`/api/diligencias/${diligencia.id}/recibo`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ ...validation.data, notificacionId }),
-      })
-
-      let result = await response.json().catch(() => null)
-
-      if (response.status === 409 && result?.code === 'RECIBO_EXISTS') {
-        const ok = window.confirm(
-          'Ya existe un recibo para esta notificacion. Quieres regenerarlo y reemplazar el PDF anterior?'
+      await generateRecibo.mutateAsync(validation.data)
+      if (continueToStep3) {
+        if (selectedEstampoTipo.kind === 'WIZARD') {
+          onOpenWizard?.(diligencia.id, selectedEstampoTipo.categoria, notificacionId)
+          onClose()
+        } else {
+          setStep(3)
+        }
+      } else {
+        setSuccessMsg(
+          receiptOperation === 'CORRECT'
+            ? 'Recibo corregido correctamente.'
+            : receiptOperation === 'REGENERATE'
+              ? 'Recibo regenerado correctamente.'
+              : 'Recibo generado correctamente.'
         )
-
-        if (!ok) {
-          return
-        }
-
-        response = await fetch(`/api/diligencias/${diligencia.id}/recibo`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          credentials: 'include',
-          body: JSON.stringify({ ...validation.data, notificacionId, regenerate: true }),
-        })
-
-        result = await response.json().catch(() => null)
+        onSuccess?.()
+        setTimeout(onClose, 1500)
       }
-
-      if (!response.ok || result?.ok !== true) {
-        throw new Error(
-          (result && typeof result.error === 'string' && result.error) ||
-            'No se pudo generar el recibo.'
-        )
-      }
-
-      if (result?.data && typeof result.data === 'object') {
-        appendDocumentoToCaches(result.data as Record<string, unknown>)
-        patchNotificacionProgress({
-          step2Done: true,
-          latestReciboId: typeof result.data.id === 'string' ? result.data.id : null,
-          workflowStatus: 'recibo_generado',
-        })
-        queryClient.invalidateQueries({ queryKey: ['rol', rolId, 'documentos'] })
-        queryClient.invalidateQueries({ queryKey: ['rol', rolId] })
-      }
-
-      // Guardar estampoTipo (nuevo formato) y monto
-        const metaUpdates: Record<string, unknown> = {
-          estampoTipo: selectedEstampoTipo,
-          monto: montoNum,
-        }
-
-        // Mantener compatibilidad: escribir estampoId si es legacy
-        if (selectedEstampoTipo.kind === 'CUSTOM') {
-          metaUpdates.estampoId = selectedEstampoTipo.estampoId
-        }
-
-      updateMeta.mutate(metaUpdates, {
-        onSuccess: () => {
-          if (continueToStep3) {
-            // Si es wizard, abrir modal wizard y cerrar este wizard
-            if (selectedEstampoTipo.kind === 'WIZARD' && selectedEstampoTipo.categoria) {
-                onOpenWizard?.(diligencia.id, selectedEstampoTipo.categoria, notificacionId)
-              onClose()
-            } else if (selectedEstampoTipo.kind === 'CUSTOM') {
-              // Si es legacy, avanzar a Step 3 como antes
-              setStep(3)
-            }
-          } else {
-            setSuccessMsg('Recibo generado correctamente.')
-            onSuccess?.()
-            setTimeout(() => {
-              onClose()
-            }, 1500)
-          }
-        },
-        onError: () => {
-          // Recibo was generated but meta update failed - still continue
-          if (continueToStep3) {
-            if (selectedEstampoTipo.kind === 'WIZARD' && selectedEstampoTipo.categoria) {
-                onOpenWizard?.(diligencia.id, selectedEstampoTipo.categoria, notificacionId)
-              onClose()
-            } else if (selectedEstampoTipo.kind === 'CUSTOM') {
-              setStep(3)
-            }
-          } else {
-            onClose()
-          }
-        },
-      })
     } catch (error) {
+      if (error instanceof ApiClientError && error.code === 'RECEIPT_CORRECTION_REQUIRED') {
+        setReceiptOperation('CORRECT')
+      }
       setErrorMsg(error instanceof Error ? error.message : 'No se pudo generar el recibo.')
-    } finally {
-      setCreatingRecibo(false)
     }
   }
 
@@ -528,7 +406,7 @@ export default function EjecutarWizard({
       estampoDraft: contenidoEstampo.trim(),
     }
 
-    updateMeta.mutate(metaUpdates, {
+    updateMeta.mutate({ meta: metaUpdates }, {
       onSuccess: () => {
         setSuccessMsg('Borrador guardado correctamente.')
         setTimeout(() => {
@@ -619,7 +497,7 @@ export default function EjecutarWizard({
         const metaUpdates: Record<string, unknown> = {
           estampoDraft: contenidoEstampo.trim(),
         }
-        updateMeta.mutate(metaUpdates, {
+        updateMeta.mutate({ meta: metaUpdates }, {
           onSuccess: () => {
             setSuccessMsg('Estampo generado correctamente.')
             onSuccess?.()
@@ -639,7 +517,8 @@ export default function EjecutarWizard({
       .finally(() => setCreatingEstampo(false))
   }
 
-  const isLoading = updateMeta.isPending || creatingRecibo || creatingEstampo || renderingEstampoPreview
+  const isLoading =
+    workflowLoading || updateMeta.isPending || generateRecibo.isPending || creatingEstampo || renderingEstampoPreview
 
   if (!notificacion) {
     return (
@@ -692,6 +571,25 @@ export default function EjecutarWizard({
           {step === 1 && (
             <>
               <div>
+                <label className="block font-medium text-slate-700" htmlFor="banco-recibo">
+                  Banco *
+                </label>
+                <select
+                  id="banco-recibo"
+                  className="mt-1 w-full rounded border border-slate-300 p-2"
+                  value={bancoId ?? ''}
+                  onChange={event => {
+                    setBancoId(event.target.value ? Number(event.target.value) : null)
+                    setMontoManual(false)
+                  }}
+                >
+                  <option value="">Seleccione un banco…</option>
+                  {workflow?.bankContext.banks.map(bank => (
+                    <option key={bank.id} value={bank.id}>{bank.nombre}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
                 <label className="block font-medium text-slate-700" htmlFor="fecha-ejecucion">
                   Fecha de ejecución *
                 </label>
@@ -727,7 +625,7 @@ export default function EjecutarWizard({
                 <label className="block font-medium text-slate-700" htmlFor="tipo-estampo">
                   Tipo de Estampo *
                 </label>
-                {estamposLoading ? (
+                {workflowLoading ? (
                   <p className="mt-2 text-xs text-slate-400">Cargando estampos…</p>
                 ) : (
                   <select
@@ -742,6 +640,7 @@ export default function EjecutarWizard({
                     }
                     onChange={e => {
                       const value = e.target.value
+                      setMontoManual(false)
                       if (value.startsWith('wizard:')) {
                         const categoria = value.replace('wizard:', '')
                         setSelectedEstampoTipo({ kind: 'WIZARD', categoria })
@@ -754,25 +653,38 @@ export default function EjecutarWizard({
                     }}
                   >
                     <option value="">Seleccione un tipo de estampo…</option>
-                    {/* Grupo Wizard */}
-                    {estamposGrouped?.wizard && estamposGrouped.wizard.length > 0 && (
+                    {workflow?.historicalSelection && (
+                      <option
+                        disabled
+                        value={
+                          workflow.historicalSelection.selection.kind === 'CUSTOM'
+                            ? `custom:${workflow.historicalSelection.selection.estampoId}`
+                            : `wizard:${workflow.historicalSelection.selection.categoria}`
+                        }
+                      >
+                        {workflow.historicalSelection.label} (inactivo; solo histórico)
+                      </option>
+                    )}
+                    {workflow?.estampoOptions.some(item => item.selection.kind === 'WIZARD') && (
                       <optgroup label="Wizard (Global)">
-                        {estamposGrouped.wizard.map(cat => (
-                          <option key={`wizard:${cat.categoria}`} value={`wizard:${cat.categoria}`}>
-                            {cat.label}
-                          </option>
-                        ))}
+                        {workflow.estampoOptions
+                          .filter(item => item.selection.kind === 'WIZARD')
+                          .map(item => item.selection.kind === 'WIZARD' ? (
+                            <option key={`wizard:${item.selection.categoria}`} value={`wizard:${item.selection.categoria}`}>
+                              {item.label}
+                            </option>
+                          ) : null)}
                       </optgroup>
                     )}
-                    {/* Grupo Legacy */}
-                    {estamposGrouped?.custom && estamposGrouped.custom.length > 0 && (
+                    {workflow?.estampoOptions.some(item => item.selection.kind === 'CUSTOM') && (
                       <optgroup label="Mis Estampos (Manuales)">
-                        {estamposGrouped.custom.map(item => (
-                          <option key={`custom:${item.id}`} value={`custom:${item.id}`}>
-                            {item.nombre}
-                            {item.tipo ? ` (${item.tipo})` : ''}
-                          </option>
-                        ))}
+                        {workflow.estampoOptions
+                          .filter(item => item.selection.kind === 'CUSTOM')
+                          .map(item => item.selection.kind === 'CUSTOM' ? (
+                            <option key={`custom:${item.selection.estampoId}`} value={`custom:${item.selection.estampoId}`}>
+                              {item.label}
+                            </option>
+                          ) : null)}
                       </optgroup>
                     )}
                   </select>
@@ -788,7 +700,10 @@ export default function EjecutarWizard({
                   className="mt-1 w-full rounded border border-slate-300 p-2"
                   placeholder="Ej: 4.000.000"
                   value={monto}
-                  onChange={e => setMonto(e.target.value)}
+                  onChange={e => {
+                    setMonto(e.target.value)
+                    setMontoManual(true)
+                  }}
                 />
                 <p className="mt-1 text-xs text-slate-500">
                   {selectedEstampoTipo?.kind === 'CUSTOM'
@@ -796,6 +711,39 @@ export default function EjecutarWizard({
                     : 'Ingresa el monto manualmente.'}
                 </p>
               </div>
+              {workflow?.receiptState && (
+                <div className="rounded border border-amber-200 bg-amber-50 p-3">
+                  <label className="block font-medium text-slate-700" htmlFor="receipt-operation">
+                    Recibo activo {workflow.receiptState.numeroRecibo}
+                  </label>
+                  <select
+                    id="receipt-operation"
+                    className="mt-1 w-full rounded border border-slate-300 bg-white p-2"
+                    value={receiptOperation}
+                    onChange={event => setReceiptOperation(event.target.value as 'REGENERATE' | 'CORRECT')}
+                  >
+                    <option value="REGENERATE">Regenerar el mismo recibo</option>
+                    <option value="CORRECT">Corregir y emitir un nuevo número</option>
+                  </select>
+                  <p className="mt-1 text-xs text-slate-600">
+                    Regenerar conserva el número y solo admite los mismos datos legales.
+                  </p>
+                </div>
+              )}
+              {receiptOperation === 'CORRECT' && (
+                <div>
+                  <label className="block font-medium text-slate-700" htmlFor="correction-reason">
+                    Motivo de corrección *
+                  </label>
+                  <textarea
+                    id="correction-reason"
+                    className="mt-1 h-20 w-full rounded border border-slate-300 p-2"
+                    value={correctionReason}
+                    onChange={event => setCorrectionReason(event.target.value)}
+                    maxLength={500}
+                  />
+                </div>
+              )}
             </>
           )}
 
@@ -821,9 +769,14 @@ export default function EjecutarWizard({
         </div>
 
         {errorMsg && <p className="mt-3 text-sm text-rose-600">{errorMsg}</p>}
+        {workflowError && !errorMsg && (
+          <p className="mt-3 text-sm text-rose-600">
+            {workflowError instanceof Error ? workflowError.message : 'No se pudo cargar el flujo.'}
+          </p>
+        )}
         {successMsg && <p className="mt-3 text-sm text-emerald-600">{successMsg}</p>}
 
-        <footer className="mt-6 flex justify-end gap-3">
+        <footer className="mt-6 flex flex-wrap justify-end gap-3">
           <button
             type="button"
             className="rounded bg-slate-200 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-300"
@@ -870,17 +823,29 @@ export default function EjecutarWizard({
                 type="button"
                 className="rounded bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-500 disabled:cursor-not-allowed disabled:bg-emerald-300"
                 onClick={() => handleStepIIGenerate(false)}
-                disabled={isLoading || !selectedEstampoTipo || !monto}
+                disabled={
+                  isLoading || !bancoId || !selectedEstampoTipo || !monto ||
+                  (receiptOperation === 'CORRECT' && correctionReason.trim().length < 3)
+                }
               >
-                {isLoading ? 'Generando…' : 'Generar recibo'}
+                {isLoading
+                  ? 'Generando…'
+                  : receiptOperation === 'CORRECT'
+                    ? 'Emitir corrección'
+                    : receiptOperation === 'REGENERATE'
+                      ? 'Regenerar recibo'
+                      : 'Generar recibo'}
               </button>
               <button
                 type="button"
                 className="rounded bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:cursor-not-allowed disabled:bg-blue-300"
                 onClick={() => handleStepIIGenerate(true)}
-                disabled={isLoading || !selectedEstampoTipo || !monto}
+                disabled={
+                  isLoading || !bancoId || !selectedEstampoTipo || !monto ||
+                  (receiptOperation === 'CORRECT' && correctionReason.trim().length < 3)
+                }
               >
-                {isLoading ? 'Generando…' : 'Generar recibo y continuar'}
+                {isLoading ? 'Generando…' : 'Guardar recibo y continuar'}
               </button>
             </>
           )}

@@ -145,6 +145,7 @@ export async function loadDashboardData(params: {
     }),
     prisma.recibo.findMany({
       where: {
+        status: 'ACTIVE',
         rol: selectedRoleFilter,
         diligenciaId: { not: null },
         documentoId: { not: null },

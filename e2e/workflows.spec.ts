@@ -180,21 +180,32 @@ test('authenticated workflow creates demanda, diligencia, notification, estampos
   expect(wizardDoc.hasPdf).toBe(true)
 
   const receiptResponse = await api.post(`/api/diligencias/${diligence.id}/recibo`, {
+    headers: { 'Idempotency-Key': `qa-receipt-${suffix}` },
     data: {
       notificacionId: notification.id,
+      bancoId: qa.bancoId,
+      operation: 'GENERATE',
+      ejecucion: { fecha: '2026-06-10', hora: '14:15' },
+      estampoTipo: { kind: 'CUSTOM', estampoId: qa.customEstampoId },
       monto: 25000,
       medio: 'TRANSFERENCIA',
       referencia: `QA-BOLETA-${suffix}`,
     },
   })
   const receiptBody = await expectStatus(receiptResponse, 200)
-  const receiptDoc = dataOf<{ id: string; hasPdf: boolean }>(JSON.parse(receiptBody) as JsonRecord)
+  const receiptResult = dataOf<{ documento: { id: string; hasPdf: boolean } }>(JSON.parse(receiptBody) as JsonRecord)
+  const receiptDoc = receiptResult.documento
   expect(receiptDoc.hasPdf).toBe(true)
 
   await expectError(
     await api.post(`/api/diligencias/${diligence.id}/recibo`, {
+      headers: { 'Idempotency-Key': `qa-receipt-conflict-${suffix}` },
       data: {
         notificacionId: notification.id,
+        bancoId: qa.bancoId,
+        operation: 'GENERATE',
+        ejecucion: { fecha: '2026-06-10', hora: '14:15' },
+        estampoTipo: { kind: 'CUSTOM', estampoId: qa.customEstampoId },
         monto: 25000,
         medio: 'TRANSFERENCIA',
         referencia: `QA-BOLETA-${suffix}`,
@@ -284,6 +295,241 @@ test('authenticated workflow creates demanda, diligencia, notification, estampos
   await api.dispose()
 })
 
+test('receipt lifecycle is idempotent and distinguishes regeneration from correction', async ({ baseURL }) => {
+  const api = await createAuthenticatedContext(baseURL)
+  const suffix = qaRequestSuffix().toUpperCase()
+  const startedAt = new Date(Date.now() - 1_000)
+  const { qa, demanda, ejecutadoId } = await createDemand(api, `LIFE-${suffix}`)
+  const diligence = await createDiligence(api, demanda.rolId, qa.diligenciaTipoId, ejecutadoId)
+  const notification = await createNotification(api, demanda.rolId, diligence.id, ejecutadoId)
+  const basePayload = {
+    notificacionId: notification.id,
+    bancoId: qa.bancoId,
+    ejecucion: { fecha: '2026-06-10', hora: '14:15' },
+    estampoTipo: { kind: 'CUSTOM', estampoId: qa.customEstampoId },
+    monto: 25000,
+    medio: 'TRANSFERENCIA',
+    referencia: `QA-LIFECYCLE-${suffix}`,
+  }
+  const createKey = `qa-lifecycle-create-${suffix}`
+
+  const workflowBefore = await api.get(
+    `/api/roles/${demanda.rolId}/diligencias/${diligence.id}/notificaciones/${notification.id}/workflow`
+  )
+  const workflowBeforeBody = dataOf<{ bankContext: { selectedBankId: number | null } }>(
+    JSON.parse(await expectStatus(workflowBefore, 200)) as JsonRecord
+  )
+  expect(workflowBeforeBody.bankContext.selectedBankId).toBe(qa.bancoId)
+
+  const createdResponse = await api.post(`/api/diligencias/${diligence.id}/recibo`, {
+    headers: { 'Idempotency-Key': createKey },
+    data: { ...basePayload, operation: 'GENERATE' },
+  })
+  const created = dataOf<{
+    operation: string
+    documento: { id: string; version: number }
+    recibo: { id: string; numeroRecibo: string }
+    notificacion: { bancoId: number; meta: JsonRecord }
+  }>(JSON.parse(await expectStatus(createdResponse, 200)) as JsonRecord)
+  expect(created.operation).toBe('created')
+  expect(created.notificacion.bancoId).toBe(qa.bancoId)
+  expect((created.notificacion.meta.ejecucion as JsonRecord).fecha).toBe('2026-06-10')
+  expect(created.notificacion.meta.estampoTipo).toEqual(basePayload.estampoTipo)
+  expect(created.notificacion.meta.monto).toBe(25000)
+
+  const replayResponse = await api.post(`/api/diligencias/${diligence.id}/recibo`, {
+    headers: { 'Idempotency-Key': createKey },
+    data: { ...basePayload, operation: 'GENERATE' },
+  })
+  const replay = dataOf<{
+    documento: { id: string; version: number }
+    recibo: { id: string; numeroRecibo: string }
+  }>(JSON.parse(await expectStatus(replayResponse, 200)) as JsonRecord)
+  expect(replay.recibo.id).toBe(created.recibo.id)
+  expect(replay.documento.id).toBe(created.documento.id)
+  expect(replay.documento.version).toBe(1)
+  expect(await prisma.documentoVersion.count({ where: { documentoId: created.documento.id } })).toBe(1)
+
+  const regeneratedResponse = await api.post(`/api/diligencias/${diligence.id}/recibo`, {
+    headers: { 'Idempotency-Key': `qa-lifecycle-regen-${suffix}` },
+    data: { ...basePayload, operation: 'REGENERATE' },
+  })
+  const regenerated = dataOf<{
+    operation: string
+    documento: { id: string; version: number }
+    recibo: { id: string; numeroRecibo: string }
+  }>(JSON.parse(await expectStatus(regeneratedResponse, 200)) as JsonRecord)
+  expect(regenerated.operation).toBe('regenerated')
+  expect(regenerated.recibo.id).toBe(created.recibo.id)
+  expect(regenerated.recibo.numeroRecibo).toBe(created.recibo.numeroRecibo)
+  expect(regenerated.documento).toMatchObject({ id: created.documento.id, version: 2 })
+
+  const changedRegeneration = await expectError(
+    await api.post(`/api/diligencias/${diligence.id}/recibo`, {
+      headers: { 'Idempotency-Key': `qa-lifecycle-invalid-regen-${suffix}` },
+      data: { ...basePayload, operation: 'REGENERATE', monto: 26000 },
+    }),
+    409
+  )
+  expect((changedRegeneration.error as JsonRecord).code).toBe('RECEIPT_CORRECTION_REQUIRED')
+
+  const correctedResponse = await api.post(`/api/diligencias/${diligence.id}/recibo`, {
+    headers: { 'Idempotency-Key': `qa-lifecycle-correct-${suffix}` },
+    data: {
+      ...basePayload,
+      operation: 'CORRECT',
+      monto: 26000,
+      correctionReason: 'Corrección QA por cambio de monto',
+    },
+  })
+  const corrected = dataOf<{
+    operation: string
+    documento: { id: string; version: number }
+    recibo: { id: string; numeroRecibo: string; supersedesReciboId: string }
+    notificacion: { meta: JsonRecord }
+  }>(JSON.parse(await expectStatus(correctedResponse, 200)) as JsonRecord)
+  expect(corrected.operation).toBe('corrected')
+  expect(corrected.recibo.id).not.toBe(created.recibo.id)
+  expect(corrected.recibo.numeroRecibo).not.toBe(created.recibo.numeroRecibo)
+  expect(corrected.recibo.supersedesReciboId).toBe(created.recibo.id)
+  expect(corrected.documento).toMatchObject({ version: 1 })
+  expect(corrected.documento.id).not.toBe(created.documento.id)
+  expect(corrected.notificacion.meta.monto).toBe(26000)
+
+  const [oldReceipt, oldDocument, activeReceipts, events] = await Promise.all([
+    prisma.recibo.findUniqueOrThrow({ where: { id: created.recibo.id } }),
+    prisma.documento.findUniqueOrThrow({ where: { id: created.documento.id } }),
+    prisma.recibo.findMany({ where: { notificacionId: notification.id, status: 'ACTIVE' } }),
+    waitForCanonicalEvents(qa.officeId, startedAt, 3),
+  ])
+  expect(oldReceipt.status).toBe('CORRECTED')
+  expect(oldReceipt.voidReason).toBe('Corrección QA por cambio de monto')
+  expect(oldDocument.voidedAt).toBeTruthy()
+  expect(activeReceipts.map(item => item.id)).toEqual([corrected.recibo.id])
+  expect(events.filter(event => event.eventType === 'receipt.generated' && event.recordId === created.recibo.id)).toHaveLength(1)
+  expect(events.filter(event => event.eventType === 'receipt.regenerated' && event.recordId === created.recibo.id)).toHaveLength(1)
+  expect(events.filter(event => event.eventType === 'receipt.corrected' && event.recordId === corrected.recibo.id)).toHaveLength(1)
+
+  await api.dispose()
+})
+
+test('execution wizard uses one workflow read and keeps Step 1 continuation local', async ({ browser, baseURL }) => {
+  const api = await createAuthenticatedContext(baseURL)
+  const suffix = qaRequestSuffix().toUpperCase()
+  const { qa, demanda, ejecutadoId } = await createDemand(api, `UI-${suffix}`)
+  const diligence = await createDiligence(api, demanda.rolId, qa.diligenciaTipoId, ejecutadoId)
+  const notification = await createNotification(api, demanda.rolId, diligence.id, ejecutadoId)
+  const receiptPayload = {
+    notificacionId: notification.id,
+    bancoId: qa.bancoId,
+    operation: 'GENERATE',
+    ejecucion: { fecha: '2026-06-10', hora: '14:15' },
+    estampoTipo: { kind: 'CUSTOM', estampoId: qa.customEstampoId },
+    monto: 25000,
+    medio: 'TRANSFERENCIA',
+    referencia: `QA-UI-${suffix}`,
+  }
+  const receiptResponse = await api.post(`/api/diligencias/${diligence.id}/recibo`, {
+    headers: { 'Idempotency-Key': `qa-ui-receipt-${suffix}` },
+    data: receiptPayload,
+  })
+  await expectStatus(receiptResponse, 200)
+
+  const workflowResponse = await api.get(
+    `/api/roles/${demanda.rolId}/diligencias/${diligence.id}/notificaciones/${notification.id}/workflow`
+  )
+  const workflowPayload = dataOf<{
+    estampoOptions: Array<{ selection: { kind: string; estampoId?: string } }>
+  }>(JSON.parse(await expectStatus(workflowResponse, 200)) as JsonRecord)
+  expect(
+    workflowPayload.estampoOptions.some(
+      option => option.selection.kind === 'CUSTOM' && option.selection.estampoId === qa.customEstampoId
+    )
+  ).toBe(true)
+
+  const context = await browser.newContext({ storageState: AUTH_STATE_PATH })
+  const page = await context.newPage()
+  const wizardRequests: string[] = []
+  page.on('request', request => {
+    const url = request.url()
+    if (url.includes('/workflow') || url.includes('/aranceles/lookup') || url.includes('/estampos')) {
+      wizardRequests.push(url)
+    }
+  })
+  await page.goto(
+    `/roles/${demanda.rolId}?tab=diligencias&diligenciaId=${diligence.id}&notificacionId=${notification.id}&step=1`
+  )
+
+  await expect(page.getByRole('heading', { name: 'Datos de ejecución' })).toBeVisible()
+  await expect(page.getByLabel('Fecha de ejecución *')).toHaveValue('2026-06-10')
+  await expect(page.getByLabel('Banco *')).toHaveValue(String(qa.bancoId))
+  let progressPatchCount = 0
+  page.on('request', request => {
+    if (
+      request.method() === 'PATCH' &&
+      request.url().includes(`/notificaciones/${notification.id}`)
+    ) {
+      progressPatchCount += 1
+    }
+  })
+  await page.getByRole('button', { name: 'Siguiente' }).click()
+
+  await expect(page.getByRole('heading', { name: 'Datos del recibo' })).toBeVisible()
+  await expect(page.getByLabel('Tipo de Estampo *')).toHaveValue(`custom:${qa.customEstampoId}`)
+  await expect(page.locator('#receipt-operation')).toHaveValue('REGENERATE')
+  expect(progressPatchCount).toBe(0)
+  expect(wizardRequests.filter(url => url.includes('/workflow') && !url.includes('detail=stamp'))).toHaveLength(1)
+  expect(wizardRequests.some(url => url.includes('/aranceles/lookup'))).toBe(false)
+  expect(wizardRequests.some(url => url.includes('/estampos/wizard/categorias'))).toBe(false)
+
+  await page.locator('#receipt-operation').selectOption('CORRECT')
+  await expect(page.getByLabel('Motivo de corrección *')).toBeVisible()
+
+  await page.getByLabel('Motivo de corrección *').fill('Corrección QA para validar caché')
+  await page.getByRole('button', { name: 'Guardar recibo y continuar' }).click()
+  await expect(page.getByRole('heading', { name: 'Generar estampo' })).toBeVisible()
+  await page.getByRole('button', { name: 'Guardar', exact: true }).click()
+  await expect(page.getByRole('heading', { name: 'Generar estampo' })).toBeHidden()
+  await expect(page.getByRole('button', { name: 'Editar recibo' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Continuar con estampo' })).toBeVisible()
+
+  await context.close()
+
+  const mobileContext = await browser.newContext({
+    storageState: AUTH_STATE_PATH,
+    viewport: { width: 390, height: 844 },
+  })
+  const mobilePage = await mobileContext.newPage()
+  await mobilePage.goto(
+    `/roles/${demanda.rolId}?tab=diligencias&diligenciaId=${diligence.id}&notificacionId=${notification.id}&step=1`
+  )
+
+  const expectWizardActionsInsideViewport = async (headingName: string) => {
+    const heading = mobilePage.getByRole('heading', { name: headingName })
+    await expect(heading).toBeVisible()
+    const modal = heading.locator('xpath=../../..')
+    const modalBox = await modal.boundingBox()
+    expect(modalBox).not.toBeNull()
+    expect(modalBox!.x).toBeGreaterThanOrEqual(0)
+    expect(modalBox!.x + modalBox!.width).toBeLessThanOrEqual(390)
+    const buttonBoxes = await modal.locator('footer button').evaluateAll(buttons =>
+      buttons.map(button => {
+        const rect = button.getBoundingClientRect()
+        return { left: rect.left, right: rect.right }
+      })
+    )
+    expect(buttonBoxes.every(box => box.left >= modalBox!.x && box.right <= modalBox!.x + modalBox!.width)).toBe(true)
+  }
+
+  await expectWizardActionsInsideViewport('Datos de ejecución')
+  await expect(mobilePage.getByLabel('Banco *')).toHaveValue(String(qa.bancoId))
+  await mobilePage.getByRole('button', { name: 'Siguiente' }).click()
+  await expectWizardActionsInsideViewport('Datos del recibo')
+
+  await mobileContext.close()
+  await api.dispose()
+})
+
 test('workflow safety cases return expected status codes', async ({ baseURL }) => {
   const api = await createAuthenticatedContext(baseURL)
   const qa = await findQaContext(prisma)
@@ -338,8 +584,12 @@ test('workflow safety cases return expected status codes', async ({ baseURL }) =
 
   await expectError(
     await api.post(`/api/diligencias/${noExecutionDiligence.id}/recibo`, {
+      headers: { 'Idempotency-Key': `qa-receipt-invalid-${suffix}` },
       data: {
         notificacionId: notification.id,
+        bancoId: qa.bancoId,
+        operation: 'GENERATE',
+        estampoTipo: { kind: 'CUSTOM', estampoId: qa.customEstampoId },
         monto: 25000,
         medio: 'TRANSFERENCIA',
         referencia: `QA-BOLETA-MISSING-DATE-${suffix}`,
