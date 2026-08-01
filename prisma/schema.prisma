@@ -1,5 +1,6 @@
 generator client {
-  provider = "prisma-client-js"
+  provider        = "prisma-client-js"
+  previewFeatures = ["relationJoins"]
 }
 
 datasource db {
@@ -545,6 +546,8 @@ model Documento {
 
   @@index([rolId, createdAt])
   @@index([currentVersionId])
+  @@index([notificacionId, tipo, voidedAt, createdAt])
+  @@index([diligenciaId, tipo, voidedAt, createdAt])
 }
 
 model DocumentoVersion {

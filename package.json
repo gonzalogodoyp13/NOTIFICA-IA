@@ -23,7 +23,8 @@
     "db:studio": "prisma studio",
     "db:seed": "prisma db seed",
     "db:backfill:recibos": "ts-node --compiler-options {\"module\":\"commonjs\"} scripts/backfill-recibo-linkage.ts",
-    "db:backfill:auth-users": "ts-node --project scripts/tsconfig.json scripts/backfill-auth-user-ids.ts"
+    "db:backfill:auth-users": "ts-node --project scripts/tsconfig.json scripts/backfill-auth-user-ids.ts",
+    "db:verify:workflow-indexes": "ts-node --project scripts/tsconfig.json scripts/verify-workflow-indexes.ts"
   },
   "prisma": {
     "seed": "ts-node --compiler-options {\"module\":\"commonjs\"} prisma/seed.ts"

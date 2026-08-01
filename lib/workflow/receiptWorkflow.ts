@@ -79,6 +79,7 @@ export async function loadReceiptWorkflow(params: {
   includeEstampoContent?: boolean
 }): Promise<ReceiptWorkflowData | null> {
   const notification = await prisma.notificacion.findFirst({
+    relationLoadStrategy: 'join',
     where: {
       id: params.notificacionId,
       diligenciaId: params.diligenciaId,
