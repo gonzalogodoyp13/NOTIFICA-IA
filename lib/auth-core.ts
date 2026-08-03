@@ -4,6 +4,7 @@ export type AuthUser = {
   email: string
   officeId: number
   officeName: string
+  officeCacheRevision: number
   isOfficeAdmin: boolean
 }
 

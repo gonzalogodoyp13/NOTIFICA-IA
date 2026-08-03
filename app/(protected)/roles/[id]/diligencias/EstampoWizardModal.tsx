@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 
 import type { VariableDef, WizardQuestion } from '@/lib/estampos/types'
+import { applyStampGenerationToCache, StampGenerationResponseSchema } from '@/lib/hooks/useRolWorkspace'
 
 interface EstampoWizardModalProps {
   rolId: string
@@ -11,7 +12,7 @@ interface EstampoWizardModalProps {
   notificacionId: string
   isOpen: boolean
   onClose: () => void
-  onSuccess?: () => void
+  onSuccess?: (message: string) => void
   categoria?: string // Opcional, default "BUSQUEDA_NEGATIVA" para compatibilidad
 }
 
@@ -53,57 +54,6 @@ export default function EstampoWizardModal({
   const [showTextEditor, setShowTextEditor] = useState(false)
   const [textoEditado, setTextoEditado] = useState<string | null>(null)
   const [previewingText, setPreviewingText] = useState(false)
-
-  const appendDocumentoToCaches = (documento: Record<string, unknown>) => {
-    queryClient.setQueryData(['rol', rolId, 'documentos'], (current: any[] | undefined) =>
-      current ? [documento, ...current] : [documento]
-    )
-
-    queryClient.setQueryData(['rol', rolId], (current: any) => {
-      if (!current) return current
-      return {
-        ...current,
-        ultimaActividad: typeof documento.createdAt === 'string' ? documento.createdAt : current.ultimaActividad,
-        kpis: {
-          ...current.kpis,
-          documentosTotal: current.kpis.documentosTotal + 1,
-        },
-        resumen: {
-          ...current.resumen,
-          documentos: [documento, ...(current.resumen?.documentos ?? [])],
-        },
-      }
-    })
-  }
-
-  const patchNotificacionProgress = (patch: Record<string, unknown>) => {
-    queryClient.setQueryData(['rol', rolId, 'diligencias'], (current: any[] | undefined) => {
-      if (!current) return current
-
-      return current.map(diligencia =>
-        diligencia.id !== diligenciaId
-          ? diligencia
-          : {
-              ...diligencia,
-              notificaciones: (diligencia.notificaciones ?? []).map((notif: any) => {
-                if (notif.id !== notificacionId) return notif
-
-                const nextPatch = { ...patch }
-                const hasReciboPdf =
-                  notif.workflowStatus === 'recibo_generado' ||
-                  notif.workflowStatus === 'ejecutada' ||
-                  !!notif.latestReciboId
-
-                if (nextPatch.workflowStatus === 'ejecutada' && !hasReciboPdf) {
-                  nextPatch.workflowStatus = notif.workflowStatus ?? 'nueva'
-                }
-
-                return { ...notif, ...nextPatch }
-              }),
-            }
-      )
-    })
-  }
 
   // Load wizard data when modal opens
   useEffect(() => {
@@ -293,30 +243,10 @@ export default function EstampoWizardModal({
       }
 
       // Success
-      const documento = result?.data?.documento
-      if (documento && typeof documento === 'object') {
-        appendDocumentoToCaches(documento as Record<string, unknown>)
-        patchNotificacionProgress({
-          step3Done: true,
-          latestEstampoId: typeof documento.id === 'string' ? documento.id : null,
-          workflowStatus: 'ejecutada',
-          latestEstampo:
-            documento.estampoBase && typeof documento.estampoBase === 'object'
-              ? {
-                  documentoId: typeof documento.id === 'string' ? documento.id : '',
-                  slug:
-                    typeof (documento.estampoBase as Record<string, unknown>).slug === 'string'
-                      ? ((documento.estampoBase as Record<string, unknown>).slug as string)
-                      : null,
-                  nombreVisible:
-                    typeof (documento.estampoBase as Record<string, unknown>).nombreVisible === 'string'
-                      ? ((documento.estampoBase as Record<string, unknown>).nombreVisible as string)
-                      : 'Estampo',
-                }
-              : null,
-        })
-      }
-      onSuccess?.()
+      const parsed = StampGenerationResponseSchema.safeParse(result?.data)
+      if (!parsed.success) throw new Error('Respuesta del servidor invalida')
+      applyStampGenerationToCache(queryClient, { rolId, diligenciaId, notificacionId }, parsed.data)
+      onSuccess?.('Estampo generado correctamente.')
       onClose()
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : 'Error desconocido')

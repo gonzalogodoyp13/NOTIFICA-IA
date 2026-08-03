@@ -41,6 +41,7 @@ export async function POST(
       loadWizardEstampoTemplate({
         estampoBaseId,
         officeId: user.officeId,
+        officeCacheRevision: user.officeCacheRevision,
       }),
     ])
 

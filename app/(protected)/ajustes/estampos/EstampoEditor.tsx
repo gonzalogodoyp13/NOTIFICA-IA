@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { VariableToolbar } from "./VariableToolbar";
+import { useOfficeCacheContext } from '@/lib/cache/officeCacheContext'
 
 type EstampoEditorProps = {
   estampo: {
@@ -15,6 +16,7 @@ type EstampoEditorProps = {
 };
 
 export function EstampoEditor({ estampo, onSaved }: EstampoEditorProps) {
+  const { advanceCacheRevision } = useOfficeCacheContext()
   const [contenido, setContenido] = useState(estampo?.contenido || "");
   const [saving, setSaving] = useState(false);
   const [previewing, setPreviewing] = useState(false);
@@ -55,9 +57,11 @@ export function EstampoEditor({ estampo, onSaved }: EstampoEditorProps) {
         }),
       });
 
-      if (!res.ok) {
+      const result = await res.json().catch(() => null)
+      if (!res.ok || result?.ok !== true) {
         throw new Error("Error al guardar el estampo");
       }
+      if (typeof result.cacheRevision === 'number') advanceCacheRevision(result.cacheRevision)
 
       alert("Modelo actualizado correctamente");
       onSaved?.();

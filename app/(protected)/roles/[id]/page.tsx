@@ -1,6 +1,3 @@
-'use client'
-
-import RolQueryProvider from './_components/RolQueryProvider'
 import RolWorkspaceClient from './_components/RolWorkspaceClient'
 
 interface RolWorkspacePageProps {
@@ -8,9 +5,5 @@ interface RolWorkspacePageProps {
 }
 
 export default function RolWorkspacePage({ params }: RolWorkspacePageProps) {
-  return (
-    <RolQueryProvider>
-      <RolWorkspaceClient rolId={params.id} />
-    </RolQueryProvider>
-  )
+  return <RolWorkspaceClient rolId={params.id} />
 }

@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 
 import { VariableToolbar } from "./VariableToolbar";
+import { useOfficeCacheContext } from '@/lib/cache/officeCacheContext'
 
 type EstampoFormProps = {
   open: boolean;
@@ -11,6 +12,7 @@ type EstampoFormProps = {
 };
 
 export function EstampoForm({ open, setOpen, onSaved }: EstampoFormProps) {
+  const { advanceCacheRevision } = useOfficeCacheContext()
   const [nombre, setNombre] = useState("");
   const [contenido, setContenido] = useState("");
   const [saving, setSaving] = useState(false);
@@ -59,9 +61,11 @@ export function EstampoForm({ open, setOpen, onSaved }: EstampoFormProps) {
         }),
       });
 
-      if (!response.ok) {
+      const result = await response.json().catch(() => null)
+      if (!response.ok || result?.ok !== true) {
         throw new Error("Error al crear el estampo");
       }
+      if (typeof result.cacheRevision === 'number') advanceCacheRevision(result.cacheRevision)
 
       alert("Estampo creado correctamente");
       setOpen(false);

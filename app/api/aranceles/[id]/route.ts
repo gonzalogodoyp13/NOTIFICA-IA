@@ -7,6 +7,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { ArancelSchema, parseArancelMonto } from '@/lib/zodSchemas'
 import { recordCriticalEvent } from '@/lib/audit/activityEvent'
+import { bumpOfficeCacheRevision } from '@/lib/cache/officeCacheRevision'
+import { invalidateOfficeCaches } from '@/lib/cache/officeCache'
 
 export const dynamic = 'force-dynamic'
 
@@ -132,7 +134,7 @@ export async function PUT(
 
     // Actualizar arancel
     try {
-      const arancel = await prisma.$transaction(async tx => {
+      const { arancel, cacheRevision } = await prisma.$transaction(async tx => {
        const updated = await tx.arancel.update({
         where: { id },
         data: updateData,
@@ -159,10 +161,12 @@ export async function PUT(
            nextStatus: updated.activo ? 'active' : 'inactive',
          },
        })
-       return updated
+       const cacheRevision = await bumpOfficeCacheRevision(tx, user.officeId)
+       return { arancel: updated, cacheRevision }
       })
+      invalidateOfficeCaches(user.officeId)
 
-      return NextResponse.json({ ok: true, data: arancel })
+      return NextResponse.json({ ok: true, data: arancel, cacheRevision })
     } catch (error: any) {
       // Capturar error de constraint violation
       if (error.code === 'P2002') {
@@ -220,16 +224,18 @@ export async function DELETE(
     }
 
     // Hard delete
-    await prisma.$transaction(async tx => {
+    const cacheRevision = await prisma.$transaction(async tx => {
       await tx.arancel.delete({ where: { id } })
       await recordCriticalEvent(tx, user, {
         eventType: 'settings.tariff.deleted', module: 'settings', result: 'success',
         recordType: 'Arancel', recordId: id, description: 'Arancel eliminado.',
         metadata: { tariffId: id, amount: Number(existingArancel.monto) },
       })
+      return bumpOfficeCacheRevision(tx, user.officeId)
     })
+    invalidateOfficeCaches(user.officeId)
 
-    return NextResponse.json({ ok: true, message: 'Arancel eliminado correctamente' })
+    return NextResponse.json({ ok: true, message: 'Arancel eliminado correctamente', cacheRevision })
   } catch (error) {
     console.error('Error deleting arancel:', error)
     const errorMessage = error instanceof Error ? error.message : 'Error al eliminar el arancel'

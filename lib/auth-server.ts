@@ -16,10 +16,24 @@ export async function resolveAuthenticatedUser(): Promise<AuthUser> {
     const { data, error } = await supabase.auth.getUser()
       return { user: data.user ? { id: data.user.id } : null, error }
     },
-    findUserByAuthUserId: authUserId => prisma.user.findUnique({
-      where: { authUserId },
-      select: { id: true, authUserId: true, email: true, officeId: true, officeName: true, isOfficeAdmin: true, isActive: true },
-    }),
+    findUserByAuthUserId: async authUserId => {
+      const user = await prisma.user.findUnique({
+        where: { authUserId },
+        select: {
+          id: true,
+          authUserId: true,
+          email: true,
+          officeId: true,
+          officeName: true,
+          isOfficeAdmin: true,
+          isActive: true,
+          office: { select: { cacheRevision: true } },
+        },
+      })
+      if (!user) return null
+      const { office, ...localUser } = user
+      return { ...localUser, officeCacheRevision: office.cacheRevision }
+    },
   })
 }
 

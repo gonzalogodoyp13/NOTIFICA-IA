@@ -4,6 +4,7 @@ import type { Metadata } from 'next'
 import { Manrope, Source_Serif_4 } from 'next/font/google'
 import './globals.css'
 import Navbar from '@/components/Navbar'
+import ServiceWorkerRegister from '@/components/ServiceWorkerRegister'
 
 const manrope = Manrope({
   subsets: ['latin'],
@@ -30,6 +31,7 @@ export default function RootLayout({
       <body className={`${manrope.variable} ${sourceSerif.variable} font-sans`}>
         <Navbar />
         <main>{children}</main>
+        <ServiceWorkerRegister />
       </body>
     </html>
   )

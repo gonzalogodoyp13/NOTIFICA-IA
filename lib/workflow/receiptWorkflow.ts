@@ -2,6 +2,7 @@ import 'server-only'
 
 import { prisma } from '@/lib/prisma'
 import { parseEstampoTipo } from '@/lib/estampos/selection'
+import { loadActiveArancelRows, loadActiveLegacyEstampos, loadWizardCategoryCounts } from '@/lib/estampos/catalogCache'
 import { serializeNotification } from '@/lib/workflow/notificationView'
 import type {
   ReceiptWorkflowArancel,
@@ -76,6 +77,7 @@ export async function loadReceiptWorkflow(params: {
   diligenciaId: string
   notificacionId: string
   officeId: number
+  officeCacheRevision: number
   includeEstampoContent?: boolean
 }): Promise<ReceiptWorkflowData | null> {
   const notification = await prisma.notificacion.findFirst({
@@ -140,34 +142,9 @@ export async function loadReceiptWorkflow(params: {
   const selectedBankId = notification.bancoId ?? (banks.length === 1 ? banks[0].id : null)
 
   const [customEstampos, wizardCategories, arancelRows, activeReceipt] = await Promise.all([
-    prisma.estampo.findMany({
-      where: { officeId: params.officeId, activo: true },
-      select: { id: true, nombre: true, contenido: params.includeEstampoContent === true },
-      orderBy: [{ nombre: 'asc' }, { id: 'asc' }],
-    }),
-    prisma.estampoBase.groupBy({
-      by: ['categoria'],
-      where: { isActive: true },
-      _count: { id: true },
-      orderBy: { categoria: 'asc' },
-    }),
-    bankIds.length
-      ? prisma.arancel.findMany({
-          where: {
-            officeId: params.officeId,
-            bancoId: { in: bankIds },
-            activo: true,
-            OR: [{ abogadoId: attorney.id }, { abogadoId: null }],
-          },
-          select: {
-            bancoId: true,
-            abogadoId: true,
-            estampoId: true,
-            estampoBaseCategoria: true,
-            monto: true,
-          },
-        })
-      : [],
+    loadActiveLegacyEstampos({ officeId: params.officeId, officeCacheRevision: params.officeCacheRevision, includeContent: params.includeEstampoContent }),
+    loadWizardCategoryCounts(),
+    loadActiveArancelRows({ officeId: params.officeId, officeCacheRevision: params.officeCacheRevision, attorneyId: attorney.id, bankIds }),
     prisma.recibo.findFirst({
       where: { notificacionId: notification.id, status: 'ACTIVE' },
       orderBy: { createdAt: 'desc' },

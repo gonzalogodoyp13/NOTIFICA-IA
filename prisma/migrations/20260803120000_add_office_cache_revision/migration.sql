@@ -1,0 +1,2 @@
+ALTER TABLE offices
+ADD COLUMN "cacheRevision" INTEGER NOT NULL DEFAULT 1;

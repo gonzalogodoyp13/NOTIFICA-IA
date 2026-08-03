@@ -12,6 +12,7 @@ import { computeDerivedVariables, renderEstampoTemplate, type DiligenciaWithRela
 import { buildEstampoPdf } from '@/lib/estampos/pdf'
 import { type HeaderData } from '@/lib/pdf/header'
 import type { VariableDef } from '@/lib/estampos/types'
+import { loadSerializedNotification } from '@/lib/workflow/notificationView'
 
 export const dynamic = 'force-dynamic'
 
@@ -42,6 +43,7 @@ export async function POST(
       loadWizardEstampoTemplate({
         estampoBaseId,
         officeId: user.officeId,
+        officeCacheRevision: user.officeCacheRevision,
       }),
     ])
 
@@ -112,8 +114,8 @@ export async function POST(
     }
 
     const [officeImages, officePdfConfig] = await Promise.all([
-      loadOfficePdfImages(user.officeId),
-      loadOfficePdfConfig(user.officeId, dbUser?.officeName ?? null),
+      loadOfficePdfImages({ officeId: user.officeId, officeCacheRevision: user.officeCacheRevision }),
+      loadOfficePdfConfig({ officeId: user.officeId, officeCacheRevision: user.officeCacheRevision, fallbackReceptorNombre: dbUser?.officeName ?? null }),
     ])
 
     const headerData: HeaderData = {
@@ -201,6 +203,9 @@ export async function POST(
       console.error('[stamp] Immediate activity outbox drain failed:', error)
     })
     const completedDocumento = documentoWithVersion.documento
+    const serializedNotificacion = notificacionId
+      ? await loadSerializedNotification(notificacionId, diligencia.id)
+      : null
 
     return NextResponse.json({
       ok: true,
@@ -234,6 +239,7 @@ export async function POST(
             categoria: estampoBase.categoria,
           },
         },
+        notificacion: serializedNotificacion,
       },
     })
   } catch (error) {

@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { formatCuantiaCLP, cleanCuantiaInput } from '@/lib/utils/cuantia'
+import { useOfficeCacheContext } from '@/lib/cache/officeCacheContext'
 
 interface ArancelesModalProps {
   bancoId: number
@@ -63,6 +64,7 @@ interface WizardCategoria {
 }
 
 export function ArancelesModal({ bancoId, bancoNombre, isOpen, onClose }: ArancelesModalProps) {
+  const { advanceCacheRevision } = useOfficeCacheContext()
   const [activeTab, setActiveTab] = useState<'banco' | 'abogado'>('banco')
   const [selectedAbogadoId, setSelectedAbogadoId] = useState<number | null>(null)
   const [aranceles, setAranceles] = useState<ArancelRow[]>([])
@@ -359,6 +361,7 @@ export function ArancelesModal({ bancoId, bancoNombre, isOpen, onClose }: Arance
         ;(error as any).errorCode = data.errorCode
         throw error
       }
+      if (typeof data.cacheRevision === 'number') advanceCacheRevision(data.cacheRevision)
 
       // Actualizar la fila con los datos del servidor
       const updated = [...aranceles]
@@ -429,6 +432,7 @@ export function ArancelesModal({ bancoId, bancoNombre, isOpen, onClose }: Arance
       if (!data.ok) {
         throw new Error(data.message || 'Error al eliminar el arancel')
       }
+      if (typeof data.cacheRevision === 'number') advanceCacheRevision(data.cacheRevision)
 
       // Remover de la lista
       const updated = aranceles.filter((_, i) => i !== index)

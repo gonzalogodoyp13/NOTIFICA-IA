@@ -3,6 +3,7 @@
 import { redirect } from 'next/navigation'
 import { AuthResolutionError, getCachedAuthenticatedUser } from '@/lib/auth-server'
 import TopBar from './_components/TopBar'
+import ProtectedQueryProvider from './_components/ProtectedQueryProvider'
 
 export const dynamic = 'force-dynamic'
 
@@ -12,8 +13,9 @@ export default async function ProtectedLayout({
   children: React.ReactNode
 }) {
   // Check if user is authenticated
+  let user
   try {
-    await getCachedAuthenticatedUser()
+    user = await getCachedAuthenticatedUser()
   } catch (error) {
     if (error instanceof AuthResolutionError) {
       if (error.code === 'ACCOUNT_DISABLED') redirect('/auth/disabled')
@@ -25,10 +27,10 @@ export default async function ProtectedLayout({
 
   // Render children if authenticated
   return (
-    <>
+    <ProtectedQueryProvider officeId={user.officeId} initialCacheRevision={user.officeCacheRevision}>
       <TopBar />
       <main>{children}</main>
-    </>
+    </ProtectedQueryProvider>
   )
 }
 

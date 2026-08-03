@@ -512,8 +512,8 @@ export async function generateReceipt(params: {
       meta: mergedMeta,
     } as DiligenciaWithReciboRelations
     const [stampBytes, officePdfConfig] = await Promise.all([
-      loadOfficeReciboStampForPdf(params.context.officeId),
-      loadOfficePdfConfig(params.context.officeId, params.context.officeName),
+      loadOfficeReciboStampForPdf(params.context.officeId, params.context.officeCacheRevision),
+      loadOfficePdfConfig({ officeId: params.context.officeId, officeCacheRevision: params.context.officeCacheRevision, fallbackReceptorNombre: params.context.officeName }),
     ])
     variables = buildReciboVariables(
       diligenciaForPdf,

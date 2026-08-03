@@ -31,8 +31,11 @@ test('workflow read p95 stays below 500 ms across 20 authenticated requests', as
 
   try {
     // Exclude connection/JIT cold start so this measures the steady-state workflow-read target.
+    const warmupDurations: number[] = []
     for (let warmup = 0; warmup < 5; warmup += 1) {
+      const startedAt = performance.now()
       const response = await api.get(endpoint)
+      warmupDurations.push(performance.now() - startedAt)
       expect(response.status(), await response.text()).toBe(200)
     }
 
@@ -49,7 +52,9 @@ test('workflow read p95 stays below 500 ms across 20 authenticated requests', as
     const median = ordered[Math.floor(SAMPLE_COUNT / 2)]
 
     console.log(
-      `Workflow read (${SAMPLE_COUNT} requests): median=${median.toFixed(1)} ms, ` +
+      `Workflow read: cold=${warmupDurations[0].toFixed(1)} ms, ` +
+      `warmup5=${warmupDurations.map(value => value.toFixed(1)).join('/')} ms; ` +
+      `steady (${SAMPLE_COUNT} requests): median=${median.toFixed(1)} ms, ` +
       `p95=${p95.toFixed(1)} ms, min=${ordered[0].toFixed(1)} ms, ` +
       `max=${ordered[ordered.length - 1].toFixed(1)} ms.`
     )

@@ -1,5 +1,6 @@
 import { deriveNotificationCompleteness } from '@/lib/workflow/completeness'
 import { deriveNotificationWorkflowState } from '@/lib/workflow/notificationStatus'
+import { prisma } from '@/lib/prisma'
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === 'object' && !Array.isArray(value)
@@ -53,5 +54,43 @@ export function serializeNotification(notificacion: any, diligenciaContext?: any
     latestEstampoId: workflow.latestEstampo?.id ?? null,
     latestEstampo: latestEstampoView(workflow.latestEstampo),
   }
+}
+
+export async function loadSerializedNotification(notificacionId: string, diligenciaId: string) {
+  const notificacion = await prisma.notificacion.findFirst({
+    where: { id: notificacionId, diligenciaId },
+    include: {
+      ejecutado: { include: { comunas: true } },
+      diligencia: {
+        include: {
+          tipo: true,
+          rol: {
+            include: {
+              demanda: {
+                include: {
+                  abogados: { include: { bancos: { include: { banco: true } } } },
+                  ejecutados: { include: { comunas: true } },
+                },
+              },
+            },
+          },
+        },
+      },
+      documentos: {
+        where: {
+          tipo: { in: ['Recibo', 'Estampo'] },
+          voidedAt: null,
+          OR: [{ pdfId: { not: null } }, { currentVersion: { is: { deletedAt: null } } }],
+        },
+        orderBy: { createdAt: 'desc' },
+        include: {
+          currentVersion: true,
+          estampoBase: { select: { id: true, slug: true, nombreVisible: true } },
+          estampo: { select: { id: true, nombre: true } },
+        },
+      },
+    },
+  })
+  return notificacion ? serializeNotification(notificacion, notificacion.diligencia) : null
 }
 

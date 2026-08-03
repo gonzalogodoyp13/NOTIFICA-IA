@@ -7,12 +7,13 @@ import {
   Landmark,
   MapPinned,
   Printer,
+  FileCog,
   Scale,
   ScrollText,
   UserRoundCog,
   UsersRound,
 } from 'lucide-react'
-import { getSession } from '@/lib/auth-server'
+import { getCurrentUserWithOffice } from '@/lib/auth-server'
 import Topbar from '@/components/Topbar'
 import Link from 'next/link'
 
@@ -82,9 +83,9 @@ const configAreas = [
 ]
 
 export default async function AjustesPage() {
-  const session = await getSession()
+  const user = await getCurrentUserWithOffice()
 
-  if (!session) {
+  if (!user) {
     return null
   }
 
@@ -113,7 +114,10 @@ export default async function AjustesPage() {
         </section>
 
         <section className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-3">
-          {configAreas.map((area, index) => {
+          {[
+            ...configAreas,
+            ...(user.isOfficeAdmin ? [{ id: 'pdf', title: 'Configuracion PDF', description: 'Receptor, firma, sello y timbre de recibos.', icon: FileCog }] : []),
+          ].map((area, index) => {
             const Icon = area.icon
             const tones = [
               'from-blue-700 to-blue-500',

@@ -9,6 +9,8 @@ import {
   type DiligenciaItem,
   type NotificacionItem,
   type RolWorkspaceData,
+  applyStampGenerationToCache,
+  StampGenerationResponseSchema,
   useGenerateRecibo,
   useReceiptWorkflow,
   useUpdateNotificacionMeta,
@@ -24,7 +26,7 @@ interface EjecutarWizardProps {
   rolData?: RolWorkspaceData
   initialStep?: 1 | 2 | 3
   onClose: () => void
-  onSuccess?: () => void
+  onSuccess?: (message: string) => void
   onOpenWizard?: (diligenciaId: string, categoria: string, notificacionId: string) => void
 }
 
@@ -87,46 +89,6 @@ export default function EjecutarWizard({
 
   // UI state
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
-  const [successMsg, setSuccessMsg] = useState<string | null>(null)
-
-  const appendDocumentoToCaches = (documento: Record<string, unknown>) => {
-    queryClient.setQueryData(['rol', rolId, 'documentos'], (current: any[] | undefined) =>
-      current ? [documento, ...current] : [documento]
-    )
-
-    queryClient.setQueryData(['rol', rolId], (current: any) => {
-      if (!current) return current
-      return {
-        ...current,
-        ultimaActividad: typeof documento.createdAt === 'string' ? documento.createdAt : current.ultimaActividad,
-        kpis: {
-          ...current.kpis,
-          documentosTotal: current.kpis.documentosTotal + 1,
-        },
-        resumen: {
-          ...current.resumen,
-          documentos: [documento, ...(current.resumen?.documentos ?? [])],
-        },
-      }
-    })
-  }
-
-  const patchNotificacionProgress = (patch: Partial<NotificacionItem>) => {
-    queryClient.setQueryData(['rol', rolId, 'diligencias'], (current: DiligenciaItem[] | undefined) => {
-      if (!current) return current
-
-      return current.map(item =>
-        item.id !== diligencia.id
-          ? item
-          : {
-              ...item,
-              notificaciones: item.notificaciones.map(notif =>
-                notif.id === notificacionId ? { ...notif, ...patch } : notif
-              ),
-            }
-      )
-    })
-  }
 
   useEffect(() => {
     if (workflow) {
@@ -303,10 +265,8 @@ export default function EjecutarWizard({
 
     updateMeta.mutate({ meta: metaUpdates, bancoId }, {
       onSuccess: () => {
-        setSuccessMsg('Datos guardados correctamente.')
-        setTimeout(() => {
-          onClose()
-        }, 1500)
+        onSuccess?.('Datos guardados correctamente.')
+        onClose()
       },
       onError: error => {
         setErrorMsg(error.message || 'Error al guardar los datos.')
@@ -370,15 +330,13 @@ export default function EjecutarWizard({
           setStep(3)
         }
       } else {
-        setSuccessMsg(
-          receiptOperation === 'CORRECT'
+        const message = receiptOperation === 'CORRECT'
             ? 'Recibo corregido correctamente.'
             : receiptOperation === 'REGENERATE'
               ? 'Recibo regenerado correctamente.'
               : 'Recibo generado correctamente.'
-        )
-        onSuccess?.()
-        setTimeout(onClose, 1500)
+        onSuccess?.(message)
+        onClose()
       }
     } catch (error) {
       if (error instanceof ApiClientError && error.code === 'RECEIPT_CORRECTION_REQUIRED') {
@@ -408,10 +366,8 @@ export default function EjecutarWizard({
 
     updateMeta.mutate({ meta: metaUpdates }, {
       onSuccess: () => {
-        setSuccessMsg('Borrador guardado correctamente.')
-        setTimeout(() => {
-          onClose()
-        }, 1500)
+        onSuccess?.('Borrador guardado correctamente.')
+        onClose()
       },
       onError: error => {
         setErrorMsg(error.message || 'Error al guardar el borrador.')
@@ -469,47 +425,14 @@ export default function EjecutarWizard({
               'No se pudo generar el estampo.'
           )
         }
-        if (result?.data && typeof result.data === 'object') {
-          appendDocumentoToCaches(result.data as Record<string, unknown>)
-          patchNotificacionProgress({
-            step3Done: true,
-            latestEstampoId: typeof result.data.id === 'string' ? result.data.id : null,
-            workflowStatus:
-              notificacion.workflowStatus === 'recibo_generado' || notificacion.latestReciboId
-                ? 'ejecutada'
-                : notificacion.workflowStatus,
-            latestEstampo:
-              result.data.estampo && typeof result.data.estampo === 'object'
-                ? {
-                    documentoId: typeof result.data.id === 'string' ? result.data.id : '',
-                    slug: null,
-                    nombreVisible:
-                      typeof (result.data.estampo as Record<string, unknown>).nombre === 'string'
-                        ? ((result.data.estampo as Record<string, unknown>).nombre as string)
-                        : 'Estampo',
-                  }
-                : null,
-          })
-        }
-        return result.data
+        const parsed = StampGenerationResponseSchema.safeParse(result?.data)
+        if (!parsed.success) throw new Error('Respuesta del servidor invalida.')
+        applyStampGenerationToCache(queryClient, { rolId, diligenciaId: diligencia.id, notificacionId }, parsed.data)
+        return parsed.data
       })
       .then(() => {
-        const metaUpdates: Record<string, unknown> = {
-          estampoDraft: contenidoEstampo.trim(),
-        }
-        updateMeta.mutate({ meta: metaUpdates }, {
-          onSuccess: () => {
-            setSuccessMsg('Estampo generado correctamente.')
-            onSuccess?.()
-            setTimeout(() => {
-              onClose()
-            }, 1500)
-          },
-          onError: () => {
-            onSuccess?.()
-            onClose()
-          },
-        })
+        onSuccess?.('Estampo generado correctamente.')
+        onClose()
       })
       .catch(error => {
         setErrorMsg(error?.message || 'No se pudo generar el estampo.')
@@ -522,8 +445,8 @@ export default function EjecutarWizard({
 
   if (!notificacion) {
     return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
-        <div className="w-full max-w-lg rounded-lg bg-white p-6 shadow-lg">
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4 py-4">
+        <div className="max-h-[calc(100dvh-2rem)] w-full max-w-lg overflow-y-auto rounded-lg bg-white p-6 shadow-lg">
           <header className="flex items-center justify-between">
             <h2 className="text-lg font-semibold text-slate-800">Ejecución</h2>
             <button
@@ -543,8 +466,8 @@ export default function EjecutarWizard({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
-      <div className="w-full max-w-lg rounded-lg bg-white p-6 shadow-lg">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4 py-4">
+      <div className="max-h-[calc(100dvh-2rem)] w-full max-w-lg overflow-y-auto rounded-lg bg-white p-6 shadow-lg">
         <header className="flex items-center justify-between">
           <div>
             <h2 className="text-lg font-semibold text-slate-800">
@@ -774,7 +697,6 @@ export default function EjecutarWizard({
             {workflowError instanceof Error ? workflowError.message : 'No se pudo cargar el flujo.'}
           </p>
         )}
-        {successMsg && <p className="mt-3 text-sm text-emerald-600">{successMsg}</p>}
 
         <footer className="mt-6 flex flex-wrap justify-end gap-3">
           <button

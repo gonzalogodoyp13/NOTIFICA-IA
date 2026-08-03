@@ -2,6 +2,7 @@ import { prisma } from '@/lib/prisma'
 import type { EstampoBase, EstampoCustom } from '@prisma/client'
 import type { VariableDef, WizardQuestion } from '@/lib/estampos/types'
 import { buildInitialVariables, type DiligenciaWithRelations } from '@/lib/estampos/runtime'
+import { loadActiveWizardBases, loadOfficeWizardCustoms } from '@/lib/estampos/catalogCache'
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === 'object' && !Array.isArray(value)
@@ -116,27 +117,17 @@ export async function loadWizardDiligenciaContext(params: {
 export async function loadWizardEstampoTemplate(params: {
   estampoBaseId: number
   officeId: number
+  officeCacheRevision: number
 }) {
-  const { estampoBaseId, officeId } = params
+  const { estampoBaseId, officeId, officeCacheRevision } = params
 
-  const estampoBase = await prisma.estampoBase.findFirst({
-    where: {
-      id: estampoBaseId,
-      isActive: true,
-    },
-  })
+  const estampoBase = (await loadActiveWizardBases()).find(item => item.id === estampoBaseId) ?? null
 
   if (!estampoBase) {
     return null
   }
 
-  const estampoCustom = await prisma.estampoCustom.findFirst({
-    where: {
-      baseId: estampoBase.id,
-      officeId,
-      isActive: true,
-    },
-  })
+  const estampoCustom = (await loadOfficeWizardCustoms({ officeId, officeCacheRevision, baseIds: [estampoBase.id] }))[0] ?? null
 
   return {
     estampoBase,
@@ -148,29 +139,16 @@ export async function loadWizardEstampoTemplate(params: {
 export async function loadWizardCatalog(params: {
   categoria: string
   officeId: number
+  officeCacheRevision: number
 }) {
-  const { categoria, officeId } = params
+  const { categoria, officeId, officeCacheRevision } = params
 
-  const estamposBase = await prisma.estampoBase.findMany({
-    where: {
-      categoria,
-      isActive: true,
-    },
-    orderBy: {
-      nombreVisible: 'asc',
-    },
-  })
+  const estamposBase = await loadActiveWizardBases(categoria)
 
   const baseIds = estamposBase.map(item => item.id)
   const estamposCustom =
     baseIds.length > 0
-      ? await prisma.estampoCustom.findMany({
-          where: {
-            officeId,
-            isActive: true,
-            baseId: { in: baseIds },
-          },
-        })
+      ? await loadOfficeWizardCustoms({ officeId, officeCacheRevision, category: categoria, baseIds })
       : []
 
   const customMap = new Map<number, EstampoCustom>()

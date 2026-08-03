@@ -1,71 +1,25 @@
-import { withApiUser } from '@/lib/api/server'
 import { NextRequest, NextResponse } from 'next/server'
 
-import { prisma } from '@/lib/prisma'
+import { withApiUser } from '@/lib/api/server'
+import { loadWizardCategoryCounts } from '@/lib/estampos/catalogCache'
 
 export const dynamic = 'force-dynamic'
 
-// Helper para generar label legible desde categoria
-function categoriaToLabel(categoria: string): string {
-  // Convertir SNAKE_CASE a título legible
-  return categoria
-    .split('_')
-    .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
-    .join(' ')
+function categoriaToLabel(categoria: string) {
+  return categoria.split('_').map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()).join(' ')
 }
 
-export async function GET(_req: NextRequest) {
-  return withApiUser(_req, 'get.estampos.wizard.categorias', async user => {
-  try {
-
-    // Obtener categorías únicas desde EstampoBase activos
-    const estamposBase = await prisma.estampoBase.findMany({
-      where: {
-        isActive: true,
-      },
-      select: {
-        categoria: true,
-      },
-      distinct: ['categoria'],
-    })
-
-    // Agrupar por categoría y contar templates activos
-    const categoriaCounts = await prisma.estampoBase.groupBy({
-      by: ['categoria'],
-      where: {
-        isActive: true,
-      },
-      _count: {
-        id: true,
-      },
-    })
-
-    // Crear mapa de conteos
-    const countMap = new Map(
-      categoriaCounts.map(item => [item.categoria, item._count.id])
-    )
-
-    // Formatear respuesta
-    const categorias = estamposBase.map(eb => ({
-      categoria: eb.categoria,
-      label: `${categoriaToLabel(eb.categoria)} (Wizard)`,
-      count: countMap.get(eb.categoria) ?? 0,
-    }))
-
-    // Ordenar alfabéticamente por label
-    categorias.sort((a, b) => a.label.localeCompare(b.label))
-
-    return NextResponse.json({
-      ok: true,
-      data: categorias,
-    })
-  } catch (error) {
-    console.error('Error obteniendo categorías wizard:', error)
-    return NextResponse.json(
-      { ok: false, error: 'Error al obtener las categorías wizard' },
-      { status: 500 }
-    )
-  }
-
+export async function GET(req: NextRequest) {
+  return withApiUser(req, 'get.estampos.wizard.categorias', async () => {
+    try {
+      const counts = await loadWizardCategoryCounts()
+      const data = counts
+        .map(item => ({ categoria: item.categoria, label: `${categoriaToLabel(item.categoria)} (Wizard)`, count: item._count.id }))
+        .sort((left, right) => left.label.localeCompare(right.label))
+      return NextResponse.json({ ok: true, data })
+    } catch (error) {
+      console.error('Error obteniendo categorias wizard:', error)
+      return NextResponse.json({ ok: false, error: 'Error al obtener las categorias wizard' }, { status: 500 })
+    }
   })
 }

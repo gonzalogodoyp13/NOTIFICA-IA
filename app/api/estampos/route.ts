@@ -4,6 +4,8 @@ import { prisma } from "@/lib/prisma";
 import type { NextRequest } from "next/server";
 import { EstampoSchema } from "@/lib/zodSchemas";
 import { recordSettingsEvent } from '@/lib/audit/businessEvents'
+import { bumpOfficeCacheRevision } from '@/lib/cache/officeCacheRevision'
+import { invalidateOfficeCaches } from '@/lib/cache/officeCache'
 
 export const dynamic = 'force-dynamic'
 
@@ -45,7 +47,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const estampo = await prisma.$transaction(async tx => {
+    const { estampo, cacheRevision } = await prisma.$transaction(async tx => {
       const created = await tx.estampo.create({ data: {
         officeId: user.officeId,
         nombre: parsed.data.nombre,
@@ -54,10 +56,12 @@ export async function POST(req: NextRequest) {
         fileUrl: parsed.data.fileUrl ?? "",
       } })
       await recordSettingsEvent(tx, user, { resource: 'Estampo', action: 'created', recordId: created.id })
-      return created
+      const cacheRevision = await bumpOfficeCacheRevision(tx, user.officeId)
+      return { estampo: created, cacheRevision }
     });
+    invalidateOfficeCaches(user.officeId)
 
-    return NextResponse.json({ ok: true, data: estampo });
+    return NextResponse.json({ ok: true, data: estampo, cacheRevision });
   } catch (error) {
     console.error("Error creando estampo:", error);
     const errorMessage = error instanceof Error ? error.message : "Error al crear el estampo";

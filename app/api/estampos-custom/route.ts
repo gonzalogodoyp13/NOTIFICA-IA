@@ -6,6 +6,8 @@ import { prisma } from '@/lib/prisma'
 import { validateRequiredVariables } from '@/lib/estampos/variables'
 import type { VariableDef, WizardQuestion } from '@/lib/estampos/types'
 import { recordSettingsEvent } from '@/lib/audit/businessEvents'
+import { bumpOfficeCacheRevision } from '@/lib/cache/officeCacheRevision'
+import { invalidateOfficeCaches } from '@/lib/cache/officeCache'
 
 export const dynamic = 'force-dynamic'
 
@@ -101,7 +103,7 @@ async function handleCreateOrUpdate(
 
   // Upsert EstampoCustom
   // Security: Always use officeId from session
-  const estampoCustom = await prisma.$transaction(async tx => {
+  const { estampoCustom, cacheRevision } = await prisma.$transaction(async tx => {
    const updated = await tx.estampoCustom.upsert({
     where: {
       EstampoCustom_base_office_unique: {
@@ -124,8 +126,10 @@ async function handleCreateOrUpdate(
     },
    })
    await recordSettingsEvent(tx, context, { resource: 'EstampoCustom', action: 'updated', recordId: updated.id, changedFields: ['textoTemplate', 'version', 'isActive'] })
-   return updated
+   const cacheRevision = await bumpOfficeCacheRevision(tx, officeId)
+   return { estampoCustom: updated, cacheRevision }
   })
+  invalidateOfficeCaches(officeId)
 
   return NextResponse.json({
     ok: true,
@@ -135,6 +139,7 @@ async function handleCreateOrUpdate(
       textoTemplate: estampoCustom.textoTemplate,
       version: estampoCustom.version,
     },
+    cacheRevision,
   })
 }
 

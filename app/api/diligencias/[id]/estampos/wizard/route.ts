@@ -33,6 +33,7 @@ export async function GET(
     const estamposWithCustoms = await loadWizardCatalog({
       categoria,
       officeId: user.officeId,
+      officeCacheRevision: user.officeCacheRevision,
     })
 
     const firstEstampo = estamposWithCustoms[0]

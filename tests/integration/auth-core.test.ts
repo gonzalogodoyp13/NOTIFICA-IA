@@ -8,6 +8,7 @@ const activeUser = {
   email: 'qa@example.com',
   officeId: 1,
   officeName: 'QA',
+  officeCacheRevision: 1,
   isOfficeAdmin: false,
   isActive: true,
 }

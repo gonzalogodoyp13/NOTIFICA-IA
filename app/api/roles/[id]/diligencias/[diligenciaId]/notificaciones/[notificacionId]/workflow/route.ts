@@ -16,6 +16,7 @@ export async function GET(
         diligenciaId: params.diligenciaId,
         notificacionId: params.notificacionId,
         officeId: user.officeId,
+        officeCacheRevision: user.officeCacheRevision,
         includeEstampoContent: req.nextUrl.searchParams.get('detail') === 'stamp',
       })
       if (!workflow) {

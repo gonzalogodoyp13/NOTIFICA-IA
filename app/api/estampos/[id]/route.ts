@@ -4,6 +4,8 @@ import { prisma } from "@/lib/prisma";
 import type { NextRequest } from "next/server";
 import { EstampoSchema } from "@/lib/zodSchemas";
 import { recordSettingsEvent } from '@/lib/audit/businessEvents'
+import { bumpOfficeCacheRevision } from '@/lib/cache/officeCacheRevision'
+import { invalidateOfficeCaches } from '@/lib/cache/officeCache'
 
 export const dynamic = 'force-dynamic'
 
@@ -49,7 +51,7 @@ export async function PUT(
       );
     }
 
-    const estampo = await prisma.$transaction(async tx => {
+    const { estampo, cacheRevision } = await prisma.$transaction(async tx => {
       const updated = await tx.estampo.update({ where: { id }, data: {
         nombre: parsed.data.nombre,
         tipo: parsed.data.tipo,
@@ -57,10 +59,12 @@ export async function PUT(
         fileUrl: parsed.data.fileUrl ?? "",
       } })
       await recordSettingsEvent(tx, user, { resource: 'Estampo', action: 'updated', recordId: id, changedFields: Object.keys(parsed.data) })
-      return updated
+      const cacheRevision = await bumpOfficeCacheRevision(tx, user.officeId)
+      return { estampo: updated, cacheRevision }
     });
+    invalidateOfficeCaches(user.officeId)
 
-    return NextResponse.json({ ok: true, data: estampo });
+    return NextResponse.json({ ok: true, data: estampo, cacheRevision });
   } catch (error) {
     console.error("Error actualizando estampo:", error);
     const errorMessage = error instanceof Error ? error.message : "Error al actualizar el estampo";
@@ -104,12 +108,14 @@ export async function DELETE(
       );
     }
 
-    await prisma.$transaction(async tx => {
+    const cacheRevision = await prisma.$transaction(async tx => {
       await tx.estampo.delete({ where: { id } })
       await recordSettingsEvent(tx, user, { resource: 'Estampo', action: 'deleted', recordId: id })
+      return bumpOfficeCacheRevision(tx, user.officeId)
     });
+    invalidateOfficeCaches(user.officeId)
 
-    return NextResponse.json({ ok: true, message: "Estampo eliminado correctamente" });
+    return NextResponse.json({ ok: true, message: "Estampo eliminado correctamente", cacheRevision });
   } catch (error) {
     console.error("Error eliminando estampo:", error);
     const errorMessage = error instanceof Error ? error.message : "Error al eliminar el estampo";

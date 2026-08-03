@@ -16,6 +16,7 @@ import { loadOfficePdfConfig, loadOfficePdfImages, type OfficePdfConfig } from '
 import { asJsonObject, getString } from '@/lib/utils/json'
 import type { EstampoEjecutado } from '@/lib/estampos/runtime'
 import { enqueueExternalEvent, processActivityOutbox } from '@/lib/audit/outbox'
+import { loadSerializedNotification } from '@/lib/workflow/notificationView'
 
 export const dynamic = 'force-dynamic'
 
@@ -157,6 +158,7 @@ export async function POST(
 
     // Store ejecutado from notificación if available
     let ejecutadoFromNotificacion: EstampoEjecutado | undefined
+    let notificacionMeta: Prisma.JsonObject = {}
 
     if (notificacionId) {
       const noti = await prisma.notificacion.findFirst({
@@ -184,6 +186,7 @@ export async function POST(
       }
 
       ejecutadoFromNotificacion = noti.ejecutado
+      notificacionMeta = (asJsonObject(noti.meta) ?? {}) as Prisma.JsonObject
     }
 
     const estampo = await prisma.estampo.findFirst({
@@ -202,8 +205,8 @@ export async function POST(
       : (estampo.contenido || 'Estampo generado para $rol')
 
     const [officeImages, officePdfConfig] = await Promise.all([
-      loadOfficePdfImages(user.officeId),
-      loadOfficePdfConfig(user.officeId, user.officeName),
+      loadOfficePdfImages({ officeId: user.officeId, officeCacheRevision: user.officeCacheRevision }),
+      loadOfficePdfConfig({ officeId: user.officeId, officeCacheRevision: user.officeCacheRevision, fallbackReceptorNombre: user.officeName }),
     ])
 
     // Build complete variable map from diligencia data
@@ -263,6 +266,12 @@ export async function POST(
       const updated = await tx.documento.update({
         where: { id: documento.id }, data: { currentVersionId: documentVersion.id }, include: { currentVersion: true },
       })
+      if (notificacionId) {
+        await tx.notificacion.update({
+          where: { id: notificacionId },
+          data: { meta: { ...notificacionMeta, estampoDraft: filled } },
+        })
+      }
       const queuedEvent = await enqueueExternalEvent(tx, user, {
         eventType: 'stamp.generated', module: 'documents', result: 'success',
         recordType: 'Documento', recordId: updated.id, rolId: diligencia.rolId, rol: diligencia.rol.rol,
@@ -273,36 +282,35 @@ export async function POST(
     })
     await processActivityOutbox(1, documentoWithVersion.outboxId).catch(() => undefined)
     const completedDocumento = documentoWithVersion.documento
+    const serializedNotificacion = notificacionId
+      ? await loadSerializedNotification(notificacionId, diligencia.id)
+      : null
 
     return NextResponse.json({
       ok: true,
       data: {
-        id: completedDocumento.id,
-        nombre: completedDocumento.nombre,
-        tipo: completedDocumento.tipo,
-        version: completedDocumento.version,
-        hasPdf: hasStoredPdf(completedDocumento),
-        createdAt: completedDocumento.createdAt.toISOString(),
-        diligenciaId: completedDocumento.diligenciaId,
-        notificacionId: completedDocumento.notificacionId,
-        voidedAt: null,
-        voidReason: null,
-        voidedByUserId: null,
-        generatedByUserId: completedDocumento.generatedByUserId,
-        generatedAt: completedDocumento.generatedAt ? completedDocumento.generatedAt.toISOString() : null,
-        sourceTemplate: completedDocumento.sourceTemplate,
-        generationVariables: completedDocumento.generationVariables,
-        generationVersion: completedDocumento.generationVersion,
-        diligencia: {
-          id: diligencia.id,
-          tipo: null,
+        documento: {
+          id: completedDocumento.id,
+          nombre: completedDocumento.nombre,
+          tipo: completedDocumento.tipo,
+          version: completedDocumento.version,
+          hasPdf: hasStoredPdf(completedDocumento),
+          createdAt: completedDocumento.createdAt.toISOString(),
+          diligenciaId: completedDocumento.diligenciaId,
+          notificacionId: completedDocumento.notificacionId,
+          voidedAt: null,
+          voidReason: null,
+          voidedByUserId: null,
+          generatedByUserId: completedDocumento.generatedByUserId,
+          generatedAt: completedDocumento.generatedAt ? completedDocumento.generatedAt.toISOString() : null,
+          sourceTemplate: completedDocumento.sourceTemplate,
+          generationVariables: completedDocumento.generationVariables,
+          generationVersion: completedDocumento.generationVersion,
+          diligencia: { id: diligencia.id, tipo: null },
+          estampo: { id: estampo.id, nombre: estampo.nombre, tipo: estampo.tipo },
+          estampoBase: null,
         },
-        estampo: {
-          id: estampo.id,
-          nombre: estampo.nombre,
-          tipo: estampo.tipo,
-        },
-        estampoBase: null,
+        notificacion: serializedNotificacion,
       },
     })
   } catch (error) {

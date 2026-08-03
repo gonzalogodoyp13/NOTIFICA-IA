@@ -4,6 +4,8 @@ import { z } from 'zod'
 
 import { prisma } from '@/lib/prisma'
 import { recordSettingsEvent } from '@/lib/audit/businessEvents'
+import { bumpOfficeCacheRevision } from '@/lib/cache/officeCacheRevision'
+import { invalidateOfficeCaches } from '@/lib/cache/officeCache'
 
 export const dynamic = 'force-dynamic'
 
@@ -46,13 +48,16 @@ export async function POST(req: NextRequest) {
     }
 
     // Delete custom (soft delete by setting isActive: false)
-    await prisma.$transaction(async tx => {
+    const cacheRevision = await prisma.$transaction(async tx => {
       await tx.estampoCustom.update({ where: { id: estampoCustom.id }, data: { isActive: false } })
       await recordSettingsEvent(tx, user, { resource: 'EstampoCustom', action: 'reset', recordId: estampoCustom.id, changedFields: ['isActive'] })
+      return bumpOfficeCacheRevision(tx, user.officeId)
     })
+    invalidateOfficeCaches(user.officeId)
 
     return NextResponse.json({
       ok: true,
+      cacheRevision,
       message: 'Versión personalizada restablecida a versión oficial',
     })
   } catch (error) {

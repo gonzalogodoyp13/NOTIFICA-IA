@@ -1,10 +1,10 @@
 import { useMemo } from 'react'
-import { useMutation, useQuery, useQueryClient, type UseMutationResult } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient, type QueryClient, type UseMutationResult } from '@tanstack/react-query'
 import { z } from 'zod'
+import { useOfficeCacheContext } from '@/lib/cache/officeCacheContext'
 
 import {
   DiligenciaCreateSchema,
-  EstampoGenerateSchema,
   NotaCreateSchema,
   ReciboGenerateSchema,
 } from '@/lib/validations/rol-workspace'
@@ -201,6 +201,11 @@ const ReceiptGenerationResponseSchema = z.object({
   notificacion: NotificacionItemSchema,
 })
 
+export const StampGenerationResponseSchema = z.object({
+  documento: DocumentoItemSchema,
+  notificacion: NotificacionItemSchema.nullable(),
+})
+
 const RolSummarySchema = z.object({
   diligencias: z.array(DiligenciaItemSchema),
   documentos: z.array(DocumentoItemSchema),
@@ -357,10 +362,12 @@ export const receiptWorkflowKey = (
   rolId: string,
   diligenciaId: string,
   notificacionId: string,
-  includeEstampoContent = false
+  includeEstampoContent = false,
+  officeId?: number,
+  cacheRevision?: number
 ) => [
   'rol', rolId, 'diligencias', diligenciaId, 'notificaciones', notificacionId, 'workflow',
-  includeEstampoContent ? 'stamp-detail' : 'summary',
+  includeEstampoContent ? 'stamp-detail' : 'summary', officeId, cacheRevision,
 ] as const
 
 export type RolWorkspaceData = z.infer<typeof RolDataSchema>
@@ -372,6 +379,50 @@ export type TimelineItem = z.infer<typeof TimelineItemSchema>
 export type NotificacionItem = z.infer<typeof NotificacionItemSchema>
 export type ReceiptWorkflowData = z.infer<typeof ReceiptWorkflowSchema>
 export type ReceiptGenerationResponse = z.infer<typeof ReceiptGenerationResponseSchema>
+export type StampGenerationResponse = z.infer<typeof StampGenerationResponseSchema>
+
+export function applyStampGenerationToCache(
+  queryClient: QueryClient,
+  params: { rolId: string; diligenciaId: string; notificacionId: string },
+  generated: StampGenerationResponse
+) {
+  const { rolId, diligenciaId, notificacionId } = params
+  queryClient.setQueryData(documentosKey(rolId), (current: DocumentoItem[] | undefined) => {
+    const existing = current ?? []
+    return [generated.documento, ...existing.filter(item => item.id !== generated.documento.id)]
+  })
+  queryClient.setQueryData(diligenciasKey(rolId), (current: DiligenciaItem[] | undefined) =>
+    generated.notificacion
+      ? patchDiligenciasList(current, items => items.map(item => item.id !== diligenciaId ? item : {
+          ...item,
+          notificaciones: item.notificaciones.map(notification => notification.id === notificacionId ? generated.notificacion! : notification),
+        }))
+      : current
+  )
+  queryClient.setQueryData(rolQueryKey(rolId), (current: RolWorkspaceData | undefined) => {
+    if (!current) return current
+    const existed = current.resumen.documentos.some(item => item.id === generated.documento.id)
+    return {
+      ...current,
+      ultimaActividad: generated.documento.createdAt,
+      kpis: { ...current.kpis, documentosTotal: current.kpis.documentosTotal + (existed ? 0 : 1) },
+      resumen: {
+        ...current.resumen,
+        documentos: [generated.documento, ...current.resumen.documentos.filter(item => item.id !== generated.documento.id)],
+        diligencias: generated.notificacion
+          ? current.resumen.diligencias.map(item => item.id !== diligenciaId ? item : {
+              ...item,
+              notificaciones: item.notificaciones.map(notification => notification.id === notificacionId ? generated.notificacion! : notification),
+            })
+          : current.resumen.diligencias,
+      },
+    }
+  })
+  queryClient.setQueriesData<ReceiptWorkflowData>(
+    { queryKey: ['rol', rolId, 'diligencias', diligenciaId, 'notificaciones', notificacionId, 'workflow'] },
+    current => current && generated.notificacion ? { ...current, notification: generated.notificacion } : current
+  )
+}
 
 export class ApiClientError extends Error {
   constructor(
@@ -449,8 +500,9 @@ export function useReceiptWorkflow(
   enabled = true,
   includeEstampoContent = false
 ) {
+  const { officeId, cacheRevision } = useOfficeCacheContext()
   return useQuery({
-    queryKey: receiptWorkflowKey(rolId, diligenciaId, notificacionId, includeEstampoContent),
+    queryKey: receiptWorkflowKey(rolId, diligenciaId, notificacionId, includeEstampoContent, officeId, cacheRevision),
     queryFn: () =>
       fetcher(
         `/api/roles/${rolId}/diligencias/${diligenciaId}/notificaciones/${notificacionId}/workflow${includeEstampoContent ? '?detail=stamp' : ''}`,
@@ -458,6 +510,8 @@ export function useReceiptWorkflow(
       ),
     enabled: enabled && !!rolId && !!diligenciaId && !!notificacionId,
     retry: false,
+    staleTime: 5 * 60 * 1000,
+    gcTime: 30 * 60 * 1000,
   })
 }
 
@@ -725,8 +779,8 @@ export function useGenerateRecibo(
       return parsed.data
     },
     onSuccess: (generated, variables) => {
-      const workflowKey = receiptWorkflowKey(rolId, diligenciaId, variables.notificacionId)
-      const priorWorkflow = queryClient.getQueryData<ReceiptWorkflowData>(workflowKey)
+      const workflowPrefix = ['rol', rolId, 'diligencias', diligenciaId, 'notificaciones', variables.notificacionId, 'workflow'] as const
+      const priorWorkflow = queryClient.getQueriesData<ReceiptWorkflowData>({ queryKey: workflowPrefix }).find(([, value]) => !!value)?.[1]
       const priorDocumentoId =
         generated.operation === 'corrected' ? priorWorkflow?.receiptState?.documentoId : null
 
@@ -779,7 +833,7 @@ export function useGenerateRecibo(
         }
       })
 
-      queryClient.setQueryData(workflowKey, (current: ReceiptWorkflowData | undefined) =>
+      queryClient.setQueriesData<ReceiptWorkflowData>({ queryKey: workflowPrefix }, current =>
         current
           ? {
               ...current,
@@ -797,70 +851,6 @@ export function useGenerateRecibo(
             }
           : current
       )
-    },
-  })
-}
-
-export function useGenerateEstampo(
-  rolId: string,
-  diligenciaId: string
-): UseMutationResult<unknown, Error, z.infer<typeof EstampoGenerateSchema>> {
-  const queryClient = useQueryClient()
-
-  return useMutation({
-    mutationFn: async (input: z.infer<typeof EstampoGenerateSchema>) => {
-      const body = EstampoGenerateSchema.parse(input)
-
-      const response = await fetch(`/api/diligencias/${diligenciaId}/estampo`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      })
-
-      const result = await response.json().catch(() => null)
-
-      if (!response.ok || result?.ok !== true) {
-        throw new Error(
-          (result && typeof result.error === 'string' && result.error) ||
-            'Error al generar estampo'
-        )
-      }
-
-      return result.data
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: documentosKey(rolId) })
-      queryClient.invalidateQueries({ queryKey: rolQueryKey(rolId) })
-    },
-  })
-}
-
-export function useUpdateDiligenciaMeta(
-  rolId: string,
-  diligenciaId: string
-): UseMutationResult<unknown, Error, Record<string, unknown>> {
-  const queryClient = useQueryClient()
-
-  return useMutation({
-    mutationFn: async (metaUpdates: Record<string, unknown>) => {
-      const response = await fetch(`/api/diligencias/${diligenciaId}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ meta: metaUpdates }),
-        credentials: 'include',
-      })
-
-      const result = await response.json().catch(() => null)
-      if (!response.ok || result?.ok !== true) {
-        throw new Error(
-          (result && typeof result.error === 'string' && result.error) ||
-            'Error al actualizar diligencia'
-        )
-      }
-      return result.data
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: diligenciasKey(rolId) })
     },
   })
 }
@@ -1009,56 +999,6 @@ export function useDeleteNotificacion(
             ),
           }))
       )
-    },
-  })
-}
-
-export function useGenerateEstampoWizard(
-  rolId: string,
-  diligenciaId: string
-): UseMutationResult<
-  unknown,
-  Error,
-  { estampoBaseId: number; wizardAnswers: Record<string, string> }
-> {
-  const queryClient = useQueryClient()
-
-  return useMutation({
-    mutationFn: async (input: { estampoBaseId: number; wizardAnswers: Record<string, string> }) => {
-      const response = await fetch(`/api/diligencias/${diligenciaId}/estampos/generate`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(input),
-        credentials: 'include',
-      })
-
-      const result = await response.json().catch(() => null)
-
-      if (!response.ok || result?.ok !== true) {
-        const errorMsg = result?.error || 'Error al generar estampo'
-        const missing = result?.missing as string[] | undefined
-        throw new Error(
-          missing && missing.length > 0 ? `${errorMsg}: ${missing.join(', ')}` : errorMsg
-        )
-      }
-
-      return result.data
-    },
-    onSuccess: generated => {
-      if (
-        generated &&
-        typeof generated === 'object' &&
-        'documento' in generated &&
-        generated.documento &&
-        typeof generated.documento === 'object'
-      ) {
-        const documento = generated.documento as DocumentoItem
-        queryClient.setQueryData(
-          documentosKey(rolId),
-          (current: DocumentoItem[] | undefined) =>
-            current ? [documento, ...current] : [documento]
-        )
-      }
     },
   })
 }

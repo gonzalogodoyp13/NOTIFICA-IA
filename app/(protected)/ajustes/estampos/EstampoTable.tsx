@@ -1,4 +1,5 @@
 "use client";
+import { useOfficeCacheContext } from '@/lib/cache/officeCacheContext'
 
 type EstampoTableProps = {
   data: {
@@ -14,6 +15,7 @@ type EstampoTableProps = {
 };
 
 export function EstampoTable({ data, onRefresh, onEdit }: EstampoTableProps) {
+  const { advanceCacheRevision } = useOfficeCacheContext()
   if (!data || data.length === 0)
     return <p className="text-gray-500">No hay estampos registrados.</p>;
 
@@ -29,9 +31,11 @@ export function EstampoTable({ data, onRefresh, onEdit }: EstampoTableProps) {
         method: "DELETE",
       });
 
-      if (!res.ok) {
+      const result = await res.json().catch(() => null)
+      if (!res.ok || result?.ok !== true) {
         throw new Error("Error eliminando estampo");
       }
+      if (typeof result.cacheRevision === 'number') advanceCacheRevision(result.cacheRevision)
 
       alert("Estampo eliminado");
       onRefresh();

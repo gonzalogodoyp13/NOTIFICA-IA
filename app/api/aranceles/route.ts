@@ -6,6 +6,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { ArancelSchema, parseArancelMonto } from '@/lib/zodSchemas'
 import { recordCriticalEvent } from '@/lib/audit/activityEvent'
+import { bumpOfficeCacheRevision } from '@/lib/cache/officeCacheRevision'
+import { invalidateOfficeCaches } from '@/lib/cache/officeCache'
 
 export const dynamic = 'force-dynamic'
 
@@ -254,7 +256,7 @@ export async function POST(req: NextRequest) {
 
     // Crear arancel
     try {
-      const arancel = await prisma.$transaction(async tx => {
+      const { arancel, cacheRevision } = await prisma.$transaction(async tx => {
        const created = await tx.arancel.create({
         data: {
           officeId: user.officeId,
@@ -281,10 +283,12 @@ export async function POST(req: NextRequest) {
          recordType: 'Arancel', recordId: created.id, description: 'Arancel creado.',
          metadata: { tariffId: created.id, amount: Number(created.monto), active: created.activo, bankId: created.bancoId },
        })
-       return created
+       const cacheRevision = await bumpOfficeCacheRevision(tx, user.officeId)
+       return { arancel: created, cacheRevision }
       })
+      invalidateOfficeCaches(user.officeId)
 
-      return NextResponse.json({ ok: true, data: arancel })
+      return NextResponse.json({ ok: true, data: arancel, cacheRevision })
     } catch (error: any) {
       // Capturar error de constraint violation
       if (error.code === 'P2002') {

@@ -106,7 +106,7 @@ export async function POST(
       ejecutadoFromNotificacion = noti.ejecutado
     }
 
-    const officePdfConfig = await loadOfficePdfConfig(user.officeId, user.officeName)
+    const officePdfConfig = await loadOfficePdfConfig({ officeId: user.officeId, officeCacheRevision: user.officeCacheRevision, fallbackReceptorNombre: user.officeName })
     const variableMap = buildCustomEstampoVariables(
       diligencia,
       user,

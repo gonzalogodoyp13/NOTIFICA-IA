@@ -44,8 +44,8 @@ export async function POST(req: NextRequest) {
     const lineHeight = fontSize + 4;
     let y = page.getSize().height - margin;
     const [officeImages, officePdfConfig] = await Promise.all([
-          loadOfficePdfImages(user.officeId),
-          loadOfficePdfConfig(user.officeId, user.officeName),
+          loadOfficePdfImages({ officeId: user.officeId, officeCacheRevision: user.officeCacheRevision }),
+          loadOfficePdfConfig({ officeId: user.officeId, officeCacheRevision: user.officeCacheRevision, fallbackReceptorNombre: user.officeName }),
         ]);
 
     // Draw header before content

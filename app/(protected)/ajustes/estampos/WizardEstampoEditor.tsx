@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { validateRequiredVariables } from "@/lib/estampos/variables";
 import type { VariableDef } from "@/lib/estampos/types";
+import { useOfficeCacheContext } from '@/lib/cache/officeCacheContext'
 
 type WizardEstampoItem = {
   id: number;
@@ -28,6 +29,7 @@ export function WizardEstampoEditor({
   onSaved,
   onReset,
 }: WizardEstampoEditorProps) {
+  const { advanceCacheRevision } = useOfficeCacheContext()
   const [textoTemplate, setTextoTemplate] = useState(estampo?.textoTemplate || "");
   const [saving, setSaving] = useState(false);
   const [resetting, setResetting] = useState(false);
@@ -111,6 +113,7 @@ export function WizardEstampoEditor({
             : errorMsg
         );
       }
+      if (typeof result.cacheRevision === 'number') advanceCacheRevision(result.cacheRevision)
 
       onSaved?.();
     } catch (err) {
@@ -147,6 +150,7 @@ export function WizardEstampoEditor({
       if (!res.ok || result?.ok !== true) {
         throw new Error(result?.error || "Error al restablecer el estampo");
       }
+      if (typeof result.cacheRevision === 'number') advanceCacheRevision(result.cacheRevision)
 
       onReset?.();
     } catch (err) {

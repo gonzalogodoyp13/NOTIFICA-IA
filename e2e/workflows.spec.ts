@@ -161,8 +161,10 @@ test('authenticated workflow creates demanda, diligencia, notification, estampos
     },
   })
   const customBody = await expectStatus(customResponse, 200)
-  const customDoc = dataOf<{ id: string; hasPdf: boolean }>(JSON.parse(customBody) as JsonRecord)
+  const customResult = dataOf<{ documento: { id: string; hasPdf: boolean }; notificacion: JsonRecord | null }>(JSON.parse(customBody) as JsonRecord)
+  const customDoc = customResult.documento
   expect(customDoc.hasPdf).toBe(true)
+  expect(customResult.notificacion?.id).toBe(notification.id)
 
   const wizard = await prisma.estampoBase.findUniqueOrThrow({ where: { id: qa.wizardEstampoBaseId } })
   const wizardResponse = await api.post(`/api/diligencias/${diligence.id}/estampos/generate`, {

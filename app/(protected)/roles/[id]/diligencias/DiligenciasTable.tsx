@@ -132,6 +132,12 @@ export default function DiligenciasTable({ rolId }: DiligenciasTableProps) {
     if (highlightTimerRef.current) window.clearTimeout(highlightTimerRef.current)
   }, [])
 
+  useEffect(() => {
+    if (!flashMessage) return
+    const timer = window.setTimeout(() => setFlashMessage(null), 4_000)
+    return () => window.clearTimeout(timer)
+  }, [flashMessage])
+
   const createNotificacionForDiligencia = (diligencia: DiligenciaItem, options?: { startImmediately?: boolean; ejecutadoId?: string }) => {
     const ejecutados = diligencia.ejecutados ?? []
     const startImmediately = options?.startImmediately ?? false
@@ -485,8 +491,8 @@ export default function DiligenciasTable({ rolId }: DiligenciasTableProps) {
             setEjecutarNotificacionId(null)
             setEjecutarInitialStep(undefined)
           }}
-          onSuccess={() => {
-            setFlashMessage(`Ejecucion completada para ${ejecutarTarget.tipo.nombre}.`)
+          onSuccess={(message) => {
+            setFlashMessage(message)
             setEjecutarTarget(null)
             setEjecutarNotificacionId(null)
             setEjecutarInitialStep(undefined)
@@ -505,8 +511,8 @@ export default function DiligenciasTable({ rolId }: DiligenciasTableProps) {
           notificacionId={wizardModalOpen.notificacionId}
           isOpen={true}
           onClose={() => setWizardModalOpen(null)}
-          onSuccess={() => {
-            setFlashMessage('Estampo generado correctamente.')
+          onSuccess={(message) => {
+            setFlashMessage(message)
             setWizardModalOpen(null)
           }}
         />

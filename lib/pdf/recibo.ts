@@ -424,10 +424,10 @@ export async function buildReciboPdf(
 }
 
 export async function loadReciboStamp(): Promise<Uint8Array | undefined> {
-  return loadOfficeReciboStamp(0)
+  return loadOfficeReciboStamp({ officeId: 0, officeCacheRevision: 0 })
 }
 
-export async function loadOfficeReciboStampForPdf(officeId: number): Promise<Uint8Array | undefined> {
-  return loadOfficeReciboStamp(officeId)
+export async function loadOfficeReciboStampForPdf(officeId: number, officeCacheRevision: number): Promise<Uint8Array | undefined> {
+  return loadOfficeReciboStamp({ officeId, officeCacheRevision })
 }
 
