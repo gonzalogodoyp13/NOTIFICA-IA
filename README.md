@@ -8,15 +8,14 @@ Management system for receiver offices. The app runs on Next.js, uses Supabase f
 - React 18 and TailwindCSS
 - Prisma ORM with PostgreSQL
 - Supabase Auth through `@supabase/ssr`
-- Vercel for the web app and Railway/Supabase-compatible PostgreSQL for the database
+- Vercel for the web app; Supabase PostgreSQL, Auth, and Storage are the target canonical production topology once the deployment-owner dashboard check is complete
 - `pdf-lib` for generated document workflows
 
 ## Prerequisites
 
 - Node.js 18+
 - npm
-- A PostgreSQL database URL
-- A Supabase project for authentication
+- One isolated Supabase project per environment for PostgreSQL, Auth, and Storage
 
 ## Environment
 
@@ -26,12 +25,15 @@ Create `.env` from `.env.example` and fill in the active values:
 NEXT_PUBLIC_SUPABASE_URL=
 NEXT_PUBLIC_SUPABASE_ANON_KEY=
 DATABASE_URL=
+DIRECT_URL=
 NEXT_PUBLIC_APP_NAME=NOTIFICA IA
 DEBUG_LOGS=false
-NEXT_PUBLIC_ENVIRONMENT=development
+NEXT_PUBLIC_ENVIRONMENT=local
 ```
 
-`DATABASE_URL` must point to the application PostgreSQL database. Supabase is used for authentication; the application data remains in PostgreSQL through Prisma.
+`DATABASE_URL` is the runtime-only Supavisor transaction-pooler URL on port 6543. It must include `pgbouncer=true`, `connection_limit=1`, `pool_timeout=10`, `connect_timeout=10`, and `sslmode=require`. `DIRECT_URL` is used only by Prisma migrations and administrative commands; copy either the direct endpoint or Supavisor session-mode URL on port 5432 from Supabase Connect. Never derive one URL by editing the other, and never print either value.
+
+Production, Preview, and QA must use separate Supabase projects and credentials. Preview and QA must never use production PostgreSQL, Auth, or Storage.
 
 Set `DEBUG_LOGS=true` only while troubleshooting locally. Leave it disabled in production so Prisma, auth, and API diagnostic logs stay quiet unless they are true operational errors.
 
@@ -95,6 +97,9 @@ npm run build             # Build the app for production
 npm start                 # Start the production server
 npm run lint              # Run Next.js linting
 npm run check:utf8        # Check source files for UTF-8 issues
+npm run check:auth-audit  # Enforce authentication and audit architecture
+npm run check:infrastructure # Enforce region, pooling, Prisma, and timing architecture
+npm run verify:infrastructure # Safely verify local infrastructure connectivity
 
 npm run db:status         # Check Prisma migration status
 npm run db:migrate        # Apply committed Prisma migrations with migrate deploy
@@ -162,9 +167,12 @@ public/                 Static assets
 
 ## Deployment Notes
 
-- Configure `DATABASE_URL`, `NEXT_PUBLIC_SUPABASE_URL`, and `NEXT_PUBLIC_SUPABASE_ANON_KEY` in the deployment environment.
-- Apply committed Prisma migrations with `prisma migrate deploy`.
-- Generate Prisma Client during install/build as required by the deployment platform.
+- Follow [the infrastructure co-location runbook](docs/INFRASTRUCTURE_COLOCATION_RUNBOOK.md). It defines region selection, pooled connections, release approval, monitoring, and rollback.
+- The exact Supabase AWS region must be read from the production dashboard before committing `vercel.json`. Configure exactly one matching Vercel function region and enable Fluid Compute.
+- Configure `DATABASE_URL`, `DIRECT_URL`, Supabase service values, and `NEXT_PUBLIC_ENVIRONMENT` separately for Production, Preview, and QA.
+- Dispatch `.github/workflows/release.yml` with an exact commit SHA. The QA job must pass before a protected `production` environment reviewer can approve release.
+- Migrations run only in that controlled job, through `DIRECT_URL`, in the required `status` → `deploy` → `generate` order. Vercel functions must not run migrations.
+- Disable Vercel Git integration's automatic production promotion. Isolated Preview builds may remain enabled.
 - For daily audit emails, configure `AUDIT_REPORT_SYNC_SECRET`, `AUDIT_FAILURE_EMAIL`, and the normal mail provider variables. Schedule an external cron/Vercel Cron call to `POST /api/internal/reports/daily/send` at 7:00 AM America/Santiago with `Authorization: Bearer <AUDIT_REPORT_SYNC_SECRET>`.
 - For monthly billing report emails, schedule an external cron/Vercel Cron call to `POST /api/internal/reports/monthly/send` at 7:00 AM America/Santiago on the first day of each month with the same bearer secret. Daily and monthly endpoints are separate and may both run on the first day; idempotency prevents duplicate successful sends.
 - Monthly billing reports use `reportType = "monthly"`, `periodDate = YYYY-MM`, are stored permanently with `expiresAt = null`, and can also be generated or sent manually by office admins from `Ajustes > Reportes`.

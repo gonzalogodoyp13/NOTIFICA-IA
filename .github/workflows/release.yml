@@ -1,0 +1,190 @@
+name: Controlled release
+
+on:
+  workflow_dispatch:
+    inputs:
+      git_ref:
+        description: Exact commit SHA to validate and release
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: controlled-production-release
+  cancel-in-progress: false
+
+jobs:
+  qa:
+    name: QA validation
+    runs-on: ubuntu-latest
+    environment: qa
+    env:
+      CI: true
+      DATABASE_URL: ${{ secrets.QA_DATABASE_URL }}
+      DIRECT_URL: ${{ secrets.QA_DIRECT_URL }}
+      NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.QA_SUPABASE_URL }}
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.QA_SUPABASE_ANON_KEY }}
+      SUPABASE_URL: ${{ secrets.QA_SUPABASE_URL }}
+      SUPABASE_ANON_KEY: ${{ secrets.QA_SUPABASE_ANON_KEY }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.QA_SUPABASE_SERVICE_ROLE_KEY }}
+      NEXT_PUBLIC_ENVIRONMENT: qa
+      QA_ALLOW_MUTATIONS: true
+    steps:
+      - name: Check out exact commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.git_ref }}
+
+      - name: Record tested commit
+        id: commit
+        shell: bash
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Apply committed migrations to QA
+        run: |
+          npx prisma migrate status
+          npx prisma migrate deploy
+          npx prisma generate
+
+      - name: Validate code and architecture
+        run: |
+          npx prisma validate
+          npm run check:utf8
+          npm run lint
+          npx tsc --noEmit
+          npm run check:auth-audit
+          npm run check:infrastructure
+          npm run test:integration
+          npm run build
+
+      - name: Pull isolated Vercel QA configuration
+        run: npx vercel@latest pull --yes --environment=preview --token=${{ secrets.VERCEL_TOKEN }}
+        env:
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_QA_PROJECT_ID }}
+
+      - name: Build isolated Vercel QA deployment
+        run: npx vercel@latest build --token=${{ secrets.VERCEL_TOKEN }}
+        env:
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_QA_PROJECT_ID }}
+
+      - name: Deploy isolated Vercel QA build
+        id: deploy
+        shell: bash
+        run: |
+          url=$(npx vercel@latest deploy --prebuilt --token=${{ secrets.VERCEL_TOKEN }})
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+        env:
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_QA_PROJECT_ID }}
+
+      - name: Install browser
+        run: npx playwright install --with-deps chromium
+
+      - name: Run guarded deployed QA suite
+        run: npm run test:qa
+        env:
+          NEXT_PUBLIC_BASE_URL: ${{ steps.deploy.outputs.url }}
+
+      - name: Verify deployed infrastructure
+        run: npm run verify:infrastructure -- --mode=qa --allow-mutations
+        env:
+          NEXT_PUBLIC_BASE_URL: ${{ steps.deploy.outputs.url }}
+
+      - name: Reset QA unconditionally
+        if: always()
+        run: npm run db:seed:qa:reset
+
+      - name: Publish QA evidence
+        if: always()
+        run: |
+          echo "Commit: ${{ steps.commit.outputs.sha }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "QA deployment: ${{ steps.deploy.outputs.url }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "Infrastructure region is verified by the guarded deployment checks." >> "$GITHUB_STEP_SUMMARY"
+
+  production:
+    name: Protected production release
+    needs: qa
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      CI: true
+      DATABASE_URL: ${{ secrets.PRODUCTION_DATABASE_URL }}
+      DIRECT_URL: ${{ secrets.PRODUCTION_DIRECT_URL }}
+      NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.PRODUCTION_SUPABASE_URL }}
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.PRODUCTION_SUPABASE_ANON_KEY }}
+      SUPABASE_URL: ${{ secrets.PRODUCTION_SUPABASE_URL }}
+      SUPABASE_ANON_KEY: ${{ secrets.PRODUCTION_SUPABASE_ANON_KEY }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.PRODUCTION_SUPABASE_SERVICE_ROLE_KEY }}
+      NEXT_PUBLIC_ENVIRONMENT: production
+      QA_ALLOW_MUTATIONS: false
+    steps:
+      - name: Check out tested commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.git_ref }}
+
+      - name: Record release commit
+        id: commit
+        shell: bash
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Apply committed migrations under release control
+        run: |
+          npx prisma migrate status
+          npx prisma migrate deploy
+          npx prisma generate
+
+      - name: Pull production Vercel configuration
+        run: npx vercel@latest pull --yes --environment=production --token=${{ secrets.VERCEL_TOKEN }}
+        env:
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PRODUCTION_PROJECT_ID }}
+
+      - name: Build tested commit for production
+        run: npx vercel@latest build --prod --token=${{ secrets.VERCEL_TOKEN }}
+        env:
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PRODUCTION_PROJECT_ID }}
+
+      - name: Deploy tested commit to production
+        id: deploy
+        shell: bash
+        run: |
+          url=$(npx vercel@latest deploy --prebuilt --prod --token=${{ secrets.VERCEL_TOKEN }})
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+        env:
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PRODUCTION_PROJECT_ID }}
+
+      - name: Run read-only production verification
+        run: npm run verify:infrastructure -- --mode=production-read-only --confirm-production
+        env:
+          NEXT_PUBLIC_BASE_URL: ${{ steps.deploy.outputs.url }}
+
+      - name: Publish production evidence
+        run: |
+          echo "Commit: ${{ steps.commit.outputs.sha }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "Deployment: ${{ steps.deploy.outputs.url }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "Migration status, response timing, and function region checks passed." >> "$GITHUB_STEP_SUMMARY"

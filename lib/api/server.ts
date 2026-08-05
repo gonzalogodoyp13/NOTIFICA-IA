@@ -5,6 +5,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 
 import { AuthResolutionError, resolveAuthenticatedUser, type AuthUser } from '@/lib/auth-server'
+import { createRequestTiming } from '@/lib/api/requestTimingCore'
+import { finishTimedResponse, requestIdFor } from '@/lib/api/requestTiming'
 import { recordActivityEvent, recordBestEffortEvent } from '@/lib/audit/activityEvent'
 import { requestEventWasRecorded, runWithAuditRequestState } from '@/lib/audit/requestState'
 import { debugLog, toSafeErrorMessage } from '@/lib/debugLog'
@@ -169,11 +171,6 @@ export async function handleApiError(
   return apiFailure(new ApiError('INTERNAL_ERROR', 'Ocurrió un error inesperado', 500))
 }
 
-function requestIdFor(request?: NextRequest) {
-  const value = request?.headers.get('x-request-id')?.trim()
-  return value && /^[A-Za-z0-9._:-]{1,128}$/.test(value) ? value : crypto.randomUUID()
-}
-
 export async function requireApiUser(request?: NextRequest): Promise<RequestContext> {
   const user = await resolveAuthenticatedUser()
   return {
@@ -191,10 +188,12 @@ export async function withApiUser(
   handler: (context: RequestContext) => Promise<Response>
 ) {
   let user: RequestContext | null = null
+  const timing = createRequestTiming()
+  const requestId = requestIdFor(request)
   try {
-    user = await requireApiUser(request)
+    user = await timing.measureAuth(() => requireApiUser(request))
     const response = await runWithAuditRequestState(async () => {
-      const result = await handler(user!)
+      const result = await timing.measureHandler(() => handler(user!))
       const isReadLikeOperation = /(?:^|[. ])(?:preview|lookup)(?:$|[. ])/i.test(operation)
       const isMutation = !['GET', 'HEAD', 'OPTIONS'].includes(request.method)
       if (!requestEventWasRecorded() && ((!isReadLikeOperation && isMutation) || result.status === 403)) {
@@ -213,8 +212,7 @@ export async function withApiUser(
       }
       return result
     })
-    response.headers.set('x-request-id', user.requestId)
-    return response
+    return finishTimedResponse({ request, operation, requestId: user.requestId, timing, response })
   } catch (error) {
     if (error instanceof AuthResolutionError && error.code === 'ACCOUNT_DISABLED') {
       if (error.user) {
@@ -228,7 +226,6 @@ export async function withApiUser(
       await createServerSupabaseClient().auth.signOut({ scope: 'local' }).catch(() => undefined)
     }
     const response = await handleApiError(error, { operation, request, user })
-    response.headers.set('x-request-id', user?.requestId ?? requestIdFor(request))
-    return response
+    return finishTimedResponse({ request, operation, requestId: user?.requestId ?? requestId, timing, response })
   }
 }

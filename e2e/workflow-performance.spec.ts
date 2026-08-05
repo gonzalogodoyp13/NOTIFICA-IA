@@ -8,6 +8,16 @@ import { AUTH_STATE_PATH, authStateExists } from '../scripts/qa-support'
 const prisma = new PrismaClient()
 const SAMPLE_COUNT = 20
 const WORKFLOW_P95_TARGET_MS = 500
+const COLD_BASELINE_MS = 1_573.6
+const COLD_IMPROVEMENT_TARGET_MS = COLD_BASELINE_MS * 0.75
+
+function expectTimingHeaders(response: { headers(): Record<string, string> }) {
+  const headers = response.headers()
+  expect(headers['x-request-id']).toMatch(/^[A-Za-z0-9._:-]{1,128}$/)
+  expect(headers['server-timing']).toMatch(
+    /^auth;dur=\d+\.\d, handler;dur=\d+\.\d, total;dur=\d+\.\d$/
+  )
+}
 
 test.afterAll(async () => {
   await prisma.$disconnect()
@@ -37,6 +47,7 @@ test('workflow read p95 stays below 500 ms across 20 authenticated requests', as
       const response = await api.get(endpoint)
       warmupDurations.push(performance.now() - startedAt)
       expect(response.status(), await response.text()).toBe(200)
+      expectTimingHeaders(response)
     }
 
     const durations: number[] = []
@@ -45,6 +56,7 @@ test('workflow read p95 stays below 500 ms across 20 authenticated requests', as
       const response = await api.get(endpoint)
       durations.push(performance.now() - startedAt)
       expect(response.status(), await response.text()).toBe(200)
+      expectTimingHeaders(response)
     }
 
     const ordered = [...durations].sort((left, right) => left - right)
@@ -58,6 +70,7 @@ test('workflow read p95 stays below 500 ms across 20 authenticated requests', as
       `p95=${p95.toFixed(1)} ms, min=${ordered[0].toFixed(1)} ms, ` +
       `max=${ordered[ordered.length - 1].toFixed(1)} ms.`
     )
+    expect(warmupDurations[0]).toBeLessThan(COLD_IMPROVEMENT_TARGET_MS)
     expect(p95).toBeLessThan(WORKFLOW_P95_TARGET_MS)
   } finally {
     await api.dispose()

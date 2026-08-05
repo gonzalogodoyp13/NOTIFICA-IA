@@ -550,14 +550,14 @@ test('workflow safety cases return expected status codes', async ({ baseURL }) =
   expect(listedSeededRole).toMatchObject({ id: seededRole.id, demandaId: seededRole.demandaId })
   await expectStatus(await api.get(`/api/roles/${seededRole.id}`), 200)
 
-  await expectError(
-    await unauthenticated.post('/api/demandas', {
+  const unauthenticatedResponse = await unauthenticated.post('/api/demandas', {
       data: {
         rol: qaRol('UNAUTH'),
       },
-    }),
-    401
-  )
+    })
+  await expectError(unauthenticatedResponse, 401)
+  expect(unauthenticatedResponse.headers()['server-timing']).toMatch(/auth;dur=.*handler;dur=.*total;dur=/)
+  expect(unauthenticatedResponse.headers()['x-request-id']).toBeTruthy()
 
   const invalidDemand = await api.post('/api/demandas', {
     data: {
@@ -568,6 +568,8 @@ test('workflow safety cases return expected status codes', async ({ baseURL }) =
     },
   })
   await expectError(invalidDemand, 400)
+  expect(invalidDemand.headers()['server-timing']).toMatch(/auth;dur=.*handler;dur=.*total;dur=/)
+  expect(invalidDemand.headers()['x-request-id']).toBeTruthy()
 
   await expectError(
     await api.post('/api/roles/qa-p9-missing-role/diligencias', {
