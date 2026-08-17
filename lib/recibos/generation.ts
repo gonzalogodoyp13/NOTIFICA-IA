@@ -10,7 +10,10 @@ import {
 
 import { ApiError, type RequestContext } from '@/lib/api/server'
 import { recordBestEffortEvent } from '@/lib/audit/activityEvent'
+import { recordSettingsEvent } from '@/lib/audit/businessEvents'
 import { enqueueExternalEvent, processActivityOutbox } from '@/lib/audit/outbox'
+import { invalidateOfficeCaches } from '@/lib/cache/officeCache'
+import { bumpOfficeCacheRevision } from '@/lib/cache/officeCacheRevision'
 import { buildDocumentGenerationMetadata } from '@/lib/documents/generationMetadata'
 import { hasStoredPdf, uploadPdfToDocumentStorage } from '@/lib/documents/storage'
 import { parseEstampoTipo } from '@/lib/estampos/selection'
@@ -229,6 +232,7 @@ async function loadGenerationContext(
     notification,
     diligencia: notification.diligencia as unknown as DiligenciaWithReciboRelations,
     selectedBank: selectedBankLink.banco as Banco,
+    attorneyId: attorney.id,
     estampoLabel,
     currentMeta,
   }
@@ -574,7 +578,7 @@ export async function generateReceipt(params: {
     const currentReservation = await tx.receiptGenerationReservation.findUnique({ where: { id: reservation.id } })
     if (!currentReservation) throw new ApiError('NOT_FOUND', 'Reserva de recibo no encontrada', 404)
     if (currentReservation.status === 'COMPLETED') {
-      return { replay: true as const, outboxId: null, reservationId: currentReservation.id }
+      return { replay: true as const, outboxId: null, reservationId: currentReservation.id, tariffChanged: false }
     }
     if (currentReservation.status !== 'UPLOADED') {
       throw new ApiError('RECEIPT_GENERATION_IN_PROGRESS', 'El PDF todavía no está listo para finalizar', 409)
@@ -637,6 +641,92 @@ export async function generateReceipt(params: {
           ...generationMetadata,
         },
       })
+    }
+
+    let tariffChanged = false
+    let cacheRevision: number | null = null
+    if (params.input.saveManualArancelAsDefault) {
+      const effectiveTariff = await tx.arancel.findFirst({
+        where: {
+          officeId: params.context.officeId,
+          bancoId: params.input.bancoId,
+          activo: true,
+          OR: [{ abogadoId: generationContext.attorneyId }, { abogadoId: null }],
+          ...(params.input.estampoTipo.kind === 'CUSTOM'
+            ? { estampoId: params.input.estampoTipo.estampoId }
+            : { estampoBaseCategoria: params.input.estampoTipo.categoria }),
+        },
+        select: { id: true },
+      })
+
+      // The opt-in is only for a genuinely missing effective tariff. A stale or
+      // forged client request must not overwrite an existing lawyer or bank default.
+      if (!effectiveTariff) {
+        const baseData = {
+          officeId: params.context.officeId,
+          bancoId: params.input.bancoId,
+          abogadoId: generationContext.attorneyId,
+          monto: Math.floor(params.input.monto),
+          activo: true,
+        }
+        const existingTariff = await tx.arancel.findFirst({
+          where: params.input.estampoTipo.kind === 'CUSTOM'
+            ? {
+                officeId: params.context.officeId,
+                bancoId: params.input.bancoId,
+                abogadoId: generationContext.attorneyId,
+                estampoId: params.input.estampoTipo.estampoId,
+              }
+            : {
+                officeId: params.context.officeId,
+                bancoId: params.input.bancoId,
+                abogadoId: generationContext.attorneyId,
+                estampoBaseCategoria: params.input.estampoTipo.categoria,
+              },
+          select: { id: true },
+        })
+        const tariff = params.input.estampoTipo.kind === 'CUSTOM'
+          ? await tx.arancel.upsert({
+              where: {
+                aranceles_legacy_unique: {
+                  officeId: params.context.officeId,
+                  bancoId: params.input.bancoId,
+                  abogadoId: generationContext.attorneyId,
+                  estampoId: params.input.estampoTipo.estampoId,
+                },
+              },
+              create: {
+                ...baseData,
+                estampoId: params.input.estampoTipo.estampoId,
+                estampoBaseCategoria: null,
+              },
+              update: { monto: Math.floor(params.input.monto), activo: true },
+            })
+          : await tx.arancel.upsert({
+              where: {
+                aranceles_wizard_unique: {
+                  officeId: params.context.officeId,
+                  bancoId: params.input.bancoId,
+                  abogadoId: generationContext.attorneyId,
+                  estampoBaseCategoria: params.input.estampoTipo.categoria,
+                },
+              },
+              create: {
+                ...baseData,
+                estampoId: null,
+                estampoBaseCategoria: params.input.estampoTipo.categoria,
+              },
+              update: { monto: Math.floor(params.input.monto), activo: true },
+            })
+        await recordSettingsEvent(tx, params.context, {
+          resource: 'Arancel',
+          action: existingTariff ? 'updated' : 'created',
+          recordId: tariff.id,
+          changedFields: ['monto', 'activo'],
+        })
+        cacheRevision = await bumpOfficeCacheRevision(tx, params.context.officeId)
+        tariffChanged = true
+      }
     }
 
     const documentVersion = await tx.documentoVersion.create({
@@ -752,16 +842,20 @@ export async function generateReceipt(params: {
       replay: false as const,
       outboxId: queuedEvent.id,
       reservationId: currentReservation.id,
+      tariffChanged,
       response: {
         operation: operationResult(currentReservation.operation),
         documento: receiptDocumentView(documento, notification.diligencia),
         recibo: receiptView(receipt),
         notificacion: serializeNotification(notification, notification.diligencia),
+        defaultArancelSaved: tariffChanged,
+        cacheRevision,
       },
     }
   })
 
   if (finalized.replay) return loadCompletedResult(finalized.reservationId)
+  if (finalized.tariffChanged) invalidateOfficeCaches(params.context.officeId)
   await processActivityOutbox(1, finalized.outboxId).catch(() => undefined)
   return finalized.response
 }

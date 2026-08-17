@@ -1,8 +1,9 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { useQueryClient } from '@tanstack/react-query'
+import { CalendarDays } from 'lucide-react'
 
 import {
   ApiClientError,
@@ -17,7 +18,9 @@ import {
 } from '@/lib/hooks/useRolWorkspace'
 import { EstampoGenerateSchema, ReciboGenerateSchema } from '@/lib/validations/rol-workspace'
 import { cleanCuantiaInput } from '@/lib/utils/cuantia'
+import { dmyDateToIso, formatDmyDateInput, isoDateToDmy, localDateToDmy } from '@/lib/utils/dateInput'
 import { parseEstampoTipo, type EstampoTipo } from '@/lib/estampos/selection'
+import { ModalPortal } from '@/components/ui/modal-portal'
 
 interface EjecutarWizardProps {
   rolId: string
@@ -69,6 +72,7 @@ export default function EjecutarWizard({
 
   const updateMeta = useUpdateNotificacionMeta(rolId, diligencia.id, notificacionId)
   const generateRecibo = useGenerateRecibo(rolId, diligencia.id)
+  const calendarInputRef = useRef<HTMLInputElement>(null)
   const [creatingEstampo, setCreatingEstampo] = useState(false)
   const [renderingEstampoPreview, setRenderingEstampoPreview] = useState(false)
 
@@ -81,6 +85,7 @@ export default function EjecutarWizard({
   const [selectedEstampoTipo, setSelectedEstampoTipo] = useState<EstampoTipo | null>(null)
   const [monto, setMonto] = useState('')
   const [montoManual, setMontoManual] = useState(false)
+  const [saveManualArancelAsDefault, setSaveManualArancelAsDefault] = useState(false)
   const [receiptOperation, setReceiptOperation] = useState<'GENERATE' | 'REGENERATE' | 'CORRECT'>('GENERATE')
   const [correctionReason, setCorrectionReason] = useState('')
 
@@ -90,9 +95,22 @@ export default function EjecutarWizard({
   // UI state
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
 
+  const openExecutionDatePicker = () => {
+    const picker = calendarInputRef.current
+    if (!picker) return
+
+    try {
+      if (typeof picker.showPicker === 'function') picker.showPicker()
+      else picker.click()
+    } catch {
+      picker.focus()
+      picker.click()
+    }
+  }
+
   useEffect(() => {
     if (workflow) {
-      setFechaEjecucion(workflow.execution.fecha ?? '')
+      setFechaEjecucion(isoDateToDmy(workflow.execution.fecha ?? ''))
       setHoraEjecucion(workflow.execution.hora ?? '')
       setBancoId(workflow.bankContext.selectedBankId)
       setSelectedEstampoTipo(workflow.selectedEstampoTipo as EstampoTipo | null)
@@ -114,7 +132,7 @@ export default function EjecutarWizard({
       if (fechaRaw) {
         const date = new Date(fechaRaw)
         if (!Number.isNaN(date.getTime())) {
-          setFechaEjecucion(date.toISOString().split('T')[0])
+          setFechaEjecucion(isoDateToDmy(date.toISOString().split('T')[0]))
         }
       }
 
@@ -147,17 +165,41 @@ export default function EjecutarWizard({
     )
   }, [selectedEstampoTipo, workflow])
 
-  useEffect(() => {
-    if (step !== 2 || !selectedEstampoTipo || !bancoId || montoManual) return
-    const option = workflow?.estampoOptions.find(item => {
+  const selectedEstampoOption = useMemo(() => {
+    if (!selectedEstampoTipo) return undefined
+    return workflow?.estampoOptions.find(item => {
       if (selectedEstampoTipo.kind === 'CUSTOM') {
         return item.selection.kind === 'CUSTOM' && item.selection.estampoId === selectedEstampoTipo.estampoId
       }
       return item.selection.kind === 'WIZARD' && item.selection.categoria === selectedEstampoTipo.categoria
     })
-    const arancel = option?.aranceles.find(item => item.bancoId === bancoId)
-    setMonto(arancel ? String(arancel.monto) : '')
-  }, [step, selectedEstampoTipo, bancoId, montoManual, workflow])
+  }, [selectedEstampoTipo, workflow])
+
+  const selectedArancel = useMemo(
+    () => selectedEstampoOption?.aranceles.find(item => item.bancoId === bancoId),
+    [bancoId, selectedEstampoOption]
+  )
+
+  const canSaveManualArancel =
+    step === 2 &&
+    !!selectedEstampoTipo &&
+    !!bancoId &&
+    !selectedArancel &&
+    montoManual &&
+    cleanCuantiaInput(monto) !== null
+
+  useEffect(() => {
+    if (step !== 2 || !selectedEstampoTipo || !bancoId || montoManual) return
+    setMonto(selectedArancel ? String(selectedArancel.monto) : '')
+  }, [step, selectedEstampoTipo, bancoId, montoManual, selectedArancel])
+
+  useEffect(() => {
+    setSaveManualArancelAsDefault(false)
+  }, [bancoId, selectedEstampoTipo])
+
+  useEffect(() => {
+    if (selectedArancel || !montoManual) setSaveManualArancelAsDefault(false)
+  }, [montoManual, selectedArancel])
 
   // Pre-fill contenidoEstampo with rendered data when entering Step III
   useEffect(() => {
@@ -233,8 +275,9 @@ export default function EjecutarWizard({
       return
     }
 
-    if (!fechaEjecucion) {
-      setErrorMsg('La fecha de ejecución es requerida.')
+    const fechaEjecucionIso = dmyDateToIso(fechaEjecucion)
+    if (!fechaEjecucionIso) {
+      setErrorMsg('La fecha de ejecución debe tener el formato DD/MM/AAAA.')
       return
     }
 
@@ -249,10 +292,9 @@ export default function EjecutarWizard({
     }
 
     const metaUpdates: Record<string, unknown> = {
-      // Importante: fechaEjecucion en UI es "YYYY-MM-DD". Evitar shift por timezone.
-      fechaEjecucion: new Date(`${fechaEjecucion}T00:00:00`).toISOString(),
+      fechaEjecucion: new Date(`${fechaEjecucionIso}T00:00:00`).toISOString(),
       // opcional (nuevo)
-      ejecucion: { fecha: fechaEjecucion, hora: horaEjecucion || '' },
+      ejecucion: { fecha: fechaEjecucionIso, hora: horaEjecucion || '' },
     }
     if (horaEjecucion) {
       metaUpdates.horaEjecucion = horaEjecucion
@@ -282,8 +324,9 @@ export default function EjecutarWizard({
       return
     }
 
-    if (!fechaEjecucion) {
-      setErrorMsg('La fecha de ejecución es requerida.')
+    const fechaEjecucionIso = dmyDateToIso(fechaEjecucion)
+    if (!fechaEjecucionIso) {
+      setErrorMsg('La fecha de ejecución debe tener el formato DD/MM/AAAA.')
       return
     }
 
@@ -307,10 +350,11 @@ export default function EjecutarWizard({
       notificacionId,
       bancoId,
       operation: receiptOperation,
-      ejecucion: { fecha: fechaEjecucion, hora: horaEjecucion || '' },
+      ejecucion: { fecha: fechaEjecucionIso, hora: horaEjecucion || '' },
       estampoTipo: selectedEstampoTipo,
       monto: montoNum,
       medio: 'No especificado',
+      saveManualArancelAsDefault,
       referencia: undefined,
       correctionReason: receiptOperation === 'CORRECT' ? correctionReason : undefined,
     })
@@ -321,7 +365,7 @@ export default function EjecutarWizard({
     }
 
     try {
-      await generateRecibo.mutateAsync(validation.data)
+      const generated = await generateRecibo.mutateAsync(validation.data)
       if (continueToStep3) {
         if (selectedEstampoTipo.kind === 'WIZARD') {
           onOpenWizard?.(diligencia.id, selectedEstampoTipo.categoria, notificacionId)
@@ -335,7 +379,11 @@ export default function EjecutarWizard({
             : receiptOperation === 'REGENERATE'
               ? 'Recibo regenerado correctamente.'
               : 'Recibo generado correctamente.'
-        onSuccess?.(message)
+        onSuccess?.(
+          generated.defaultArancelSaved
+            ? `${message} El monto quedó guardado como arancel predeterminado para este abogado.`
+            : message
+        )
         onClose()
       }
     } catch (error) {
@@ -445,7 +493,8 @@ export default function EjecutarWizard({
 
   if (!notificacion) {
     return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4 py-4">
+      <ModalPortal>
+      <div className="absolute inset-0 flex items-center justify-center bg-black/40 px-4 py-4">
         <div className="max-h-[calc(100dvh-2rem)] w-full max-w-lg overflow-y-auto rounded-lg bg-white p-6 shadow-lg">
           <header className="flex items-center justify-between">
             <h2 className="text-lg font-semibold text-slate-800">Ejecución</h2>
@@ -462,11 +511,13 @@ export default function EjecutarWizard({
           </div>
         </div>
       </div>
+      </ModalPortal>
     )
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4 py-4">
+    <ModalPortal>
+    <div className="absolute inset-0 flex items-center justify-center bg-black/40 px-4 py-4">
       <div className="max-h-[calc(100dvh-2rem)] w-full max-w-lg overflow-y-auto rounded-lg bg-white p-6 shadow-lg">
         <header className="flex items-center justify-between">
           <div>
@@ -516,14 +567,55 @@ export default function EjecutarWizard({
                 <label className="block font-medium text-slate-700" htmlFor="fecha-ejecucion">
                   Fecha de ejecución *
                 </label>
-                <input
-                  id="fecha-ejecucion"
-                  type="date"
-                  className="mt-1 w-full rounded border border-slate-300 p-2"
-                  value={fechaEjecucion}
-                  onChange={e => setFechaEjecucion(e.target.value)}
-                  max={new Date().toISOString().split('T')[0]}
-                />
+                <div className="mt-1 flex items-stretch gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setFechaEjecucion(localDateToDmy())
+                      setErrorMsg(null)
+                    }}
+                    className="rounded border border-sky-200 bg-sky-50 px-3 text-sm font-semibold text-sky-800 transition hover:border-sky-300 hover:bg-sky-100 focus:outline-none focus:ring-2 focus:ring-sky-300"
+                  >
+                    Hoy
+                  </button>
+                  <div className="relative flex min-w-0 flex-1">
+                    <input
+                      id="fecha-ejecucion"
+                      type="text"
+                      inputMode="numeric"
+                      autoComplete="off"
+                      placeholder="DD/MM/AAAA"
+                      maxLength={10}
+                      className="min-w-0 flex-1 rounded-l border border-r-0 border-slate-300 p-2 outline-none focus:border-sky-400 focus:ring-1 focus:ring-sky-300"
+                      value={fechaEjecucion}
+                      onChange={e => setFechaEjecucion(formatDmyDateInput(e.target.value))}
+                    />
+                    <button
+                      type="button"
+                      aria-label="Abrir calendario"
+                      aria-controls="fecha-ejecucion-calendar"
+                      title="Abrir calendario"
+                      onClick={openExecutionDatePicker}
+                      className="flex w-11 items-center justify-center rounded-r border border-slate-300 bg-white text-slate-600 transition hover:border-sky-300 hover:bg-sky-50 hover:text-sky-800 focus:outline-none focus:ring-2 focus:ring-sky-300"
+                    >
+                      <CalendarDays aria-hidden="true" className="h-5 w-5" />
+                    </button>
+                    <input
+                      ref={calendarInputRef}
+                      id="fecha-ejecucion-calendar"
+                      type="date"
+                      tabIndex={-1}
+                      aria-hidden="true"
+                      className="pointer-events-none absolute h-px w-px opacity-0"
+                      value={dmyDateToIso(fechaEjecucion) ?? ''}
+                      onChange={event => {
+                        setFechaEjecucion(isoDateToDmy(event.target.value))
+                        setErrorMsg(null)
+                      }}
+                    />
+                  </div>
+                </div>
+                <p className="mt-1 text-xs text-slate-500">Formato: DD/MM/AAAA (día/mes/año)</p>
               </div>
               <div>
                 <label className="block font-medium text-slate-700" htmlFor="hora-ejecucion">
@@ -633,6 +725,17 @@ export default function EjecutarWizard({
                     ? 'El monto se auto-completará si existe un arancel configurado.'
                     : 'Ingresa el monto manualmente.'}
                 </p>
+                {canSaveManualArancel && (
+                  <label className="mt-3 flex items-start gap-2 rounded border border-sky-200 bg-sky-50 p-3 text-sm text-slate-700">
+                    <input
+                      type="checkbox"
+                      className="mt-0.5 h-4 w-4 rounded border-slate-300 text-sky-700"
+                      checked={saveManualArancelAsDefault}
+                      onChange={event => setSaveManualArancelAsDefault(event.target.checked)}
+                    />
+                    <span>Guardar este monto como arancel predeterminado para este abogado</span>
+                  </label>
+                )}
               </div>
               {workflow?.receiptState && (
                 <div className="rounded border border-amber-200 bg-amber-50 p-3">
@@ -804,6 +907,7 @@ export default function EjecutarWizard({
         </footer>
       </div>
     </div>
+    </ModalPortal>
   )
 }
 

@@ -69,6 +69,7 @@ export async function loadWizardDiligenciaContext(params: {
 
   let ejecutadoFromNotificacion: any = undefined
   let notificacionMeta: Record<string, unknown> | null = null
+  let activeReceiptAmount: number | null = null
 
   if (notificacionId) {
     const notificacion = await prisma.notificacion.findFirst({
@@ -104,6 +105,12 @@ export async function loadWizardDiligenciaContext(params: {
     notificacionMeta = isPlainObject(notificacion.meta)
       ? (notificacion.meta as Record<string, unknown>)
       : null
+    const activeReceipt = await prisma.recibo.findFirst({
+      where: { notificacionId: String((notificacion as any).id), status: 'ACTIVE' },
+      orderBy: { createdAt: 'desc' },
+      select: { monto: true },
+    })
+    activeReceiptAmount = activeReceipt ? Number(activeReceipt.monto) : null
   }
 
   return {
@@ -111,6 +118,7 @@ export async function loadWizardDiligenciaContext(params: {
     diligencia,
     ejecutadoFromNotificacion,
     notificacionMeta,
+    activeReceiptAmount,
   }
 }
 
@@ -183,6 +191,7 @@ export function buildWizardInitialVariables(params: {
   dbUser: { officeName: string } | null
   notificacionMeta?: Record<string, unknown> | null
   ejecutadoFromNotificacion?: any
+  activeReceiptAmount?: number | null
 }) {
   const {
     diligencia,
@@ -192,16 +201,17 @@ export function buildWizardInitialVariables(params: {
     dbUser,
     notificacionMeta,
     ejecutadoFromNotificacion,
+    activeReceiptAmount,
   } = params
 
   const diligenciaMeta = isPlainObject(diligencia.meta)
     ? (diligencia.meta as Record<string, unknown>)
     : null
 
-  const effectiveMeta =
-    notificacionMeta && Object.keys(notificacionMeta).length > 0
-      ? notificacionMeta
-      : (diligenciaMeta ?? {})
+  const effectiveMeta = {
+    ...(diligenciaMeta ?? {}),
+    ...(notificacionMeta ?? {}),
+  }
 
   const diligenciaForVars = { ...diligencia, meta: effectiveMeta }
 
@@ -212,5 +222,6 @@ export function buildWizardInitialVariables(params: {
     estampoCustom,
     dbUser,
     ejecutadoFromNotificacion,
+    chargedAmount: activeReceiptAmount,
   })
 }

@@ -58,7 +58,8 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({
         ok: false,
         error: 'NOT_FOUND',
-        message: `Sin Resultados. No se registran causas con el rol ${rol}. Crear causa con ROL ${rol}.`,
+        data: { rol: rol.trim() },
+        message: `No se registran causas con el rol ${rol.trim()}.`,
       })
     }
 

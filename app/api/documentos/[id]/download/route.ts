@@ -3,7 +3,9 @@ import { NextRequest, NextResponse } from 'next/server'
 
 import { recordActivityEvent } from '@/lib/audit/activityEvent'
 import { downloadPdfFromDocumentStorage, hasStoredPdf, pdfBase64ToBuffer } from '@/lib/documents/storage'
+import { buildPdfDownloadFileName, contentDispositionForPdf } from '@/lib/documents/downloadFileName'
 import { prisma } from '@/lib/prisma'
+import { asJsonObject, getString } from '@/lib/utils/json'
 
 export const dynamic = 'force-dynamic'
 
@@ -32,6 +34,10 @@ export async function GET(
           },
         },
         currentVersion: true,
+        estampo: { select: { nombre: true } },
+        estampoBase: { select: { nombreVisible: true } },
+        notificacion: { select: { meta: true } },
+        diligencia: { select: { meta: true } },
       },
     })
 
@@ -79,14 +85,41 @@ export async function GET(
         )
       : pdfBase64ToBuffer(documento.pdfId ?? '')
 
-    // Sanitizar nombre de archivo para evitar problemas
-    const fileName = documento.currentVersion?.fileName ??
+    const fallbackFileName = documento.currentVersion?.fileName ??
       documento.nombre.replace(/[^a-zA-Z0-9._-]/g, '_') + '.pdf'
+    const notificationMeta = asJsonObject(documento.notificacion?.meta)
+    const diligenceMeta = asJsonObject(documento.diligencia?.meta)
+    const execution = asJsonObject(notificationMeta?.ejecucion) ?? asJsonObject(diligenceMeta?.ejecucion)
+    const executionDateText =
+      getString(execution?.fecha) ??
+      getString(notificationMeta?.fechaEjecucion) ??
+      getString(diligenceMeta?.fechaEjecucion)
+    const receipt = documento.tipo.toLowerCase() === 'recibo'
+      ? await prisma.recibo.findFirst({
+          where: { documentoId: documento.id },
+          orderBy: { createdAt: 'desc' },
+          select: { fechaEjecucion: true },
+        })
+      : null
+    const generationVariables = asJsonObject(documento.generationVariables)
+    const sourceTemplate = asJsonObject(documento.sourceTemplate)
+    const estampoName =
+      documento.estampo?.nombre ??
+      documento.estampoBase?.nombreVisible ??
+      getString(generationVariables?.resultado) ??
+      getString(sourceTemplate?.name)
+    const executionDate = receipt?.fechaEjecucion ??
+      (executionDateText ? new Date(`${executionDateText.slice(0, 10)}T12:00:00`) : null)
+    const fileName = buildPdfDownloadFileName({
+      documentType: documento.tipo,
+      rol: documento.rol.rol,
+      estampoName,
+      executionDate,
+      fallbackFileName,
+    })
 
     // Determine Content-Disposition based on mode parameter
-    const disposition = mode === 'inline' || mode === 'view'
-      ? `inline; filename="${fileName}"`
-      : `attachment; filename="${fileName}"`
+    const disposition = contentDispositionForPdf(mode, fileName)
     const isInline = mode === 'inline' || mode === 'view'
 
     await recordActivityEvent({

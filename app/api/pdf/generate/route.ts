@@ -1,10 +1,7 @@
 import { withApiUser } from '@/lib/api/server'
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
-import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
-import { wrapText } from "@/lib/pdf/textLayout";
-import { embedSignatureImages } from "@/lib/pdf/imageUtils";
-import { drawRolHeader } from "@/lib/pdf/header";
+import { buildEstampoPdf } from '@/lib/estampos/pdf'
 import { formatCuantiaCLP } from "@/lib/utils/cuantia";
 import { loadOfficePdfConfig, loadOfficePdfImages } from "@/lib/pdf/officeConfig";
 
@@ -35,20 +32,11 @@ export async function POST(req: NextRequest) {
       filled = filled.replaceAll(`$${key}`, String(val ?? ""));
     });
 
-    const pdf = await PDFDocument.create();
-    let page = pdf.addPage();
-    const margin = 50;
-    const font = await pdf.embedFont(StandardFonts.TimesRoman);
-    const fontBold = await pdf.embedFont(StandardFonts.TimesRomanBold);
-    const fontSize = 12;
-    const lineHeight = fontSize + 4;
-    let y = page.getSize().height - margin;
     const [officeImages, officePdfConfig] = await Promise.all([
           loadOfficePdfImages({ officeId: user.officeId, officeCacheRevision: user.officeCacheRevision }),
           loadOfficePdfConfig({ officeId: user.officeId, officeCacheRevision: user.officeCacheRevision, fallbackReceptorNombre: user.officeName }),
         ]);
 
-    // Draw header before content
     const headerData = {
       receptorNombre: officePdfConfig?.receptorNombre ?? user.officeName ?? "Receptor Judicial",
       tribunalNombre: (variables.tribunal as string | undefined) ?? sample.tribunal,
@@ -56,51 +44,9 @@ export async function POST(req: NextRequest) {
       bancoNombre: "Banco de Chile", // Mock for preview
       ejecutadoNombre: "Ejecutado Ejemplo", // Mock for preview
     };
+    const pdfBase64 = await buildEstampoPdf(filled, headerData, officeImages)
 
-    y = drawRolHeader(pdf, page, headerData, { font, fontBold }, y, margin);
-
-    const lines = wrapText(
-      filled,
-      page.getSize().width - margin * 2,
-      font,
-      fontSize
-    );
-
-    for (const line of lines) {
-      if (y <= margin + 50) {
-        page = pdf.addPage();
-        y = page.getSize().height - margin;
-      }
-
-      if (line === "__BLANK__") {
-        y -= fontSize * 1.5;
-        continue;
-      }
-
-      const adjustedText = await embedSignatureImages(
-        pdf,
-        page,
-        line,
-        y,
-        officeImages
-      );
-
-      if (adjustedText.trim()) {
-        page.drawText(adjustedText, {
-          x: margin,
-          y,
-          size: fontSize,
-          font,
-          color: rgb(0, 0, 0),
-        });
-      }
-
-      y -= lineHeight;
-    }
-
-    const pdfBytes = await pdf.save();
-
-    return new NextResponse(Buffer.from(pdfBytes), {
+    return new NextResponse(Buffer.from(pdfBase64, 'base64'), {
       headers: {
         "Content-Type": "application/pdf",
         "Content-Disposition": "inline; filename=preview.pdf",

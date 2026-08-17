@@ -21,49 +21,61 @@ export async function buildEstampoPdf(
   const lineHeight = fontSize + 4
   let y = page.getSize().height - margin
 
-  // Draw header on first page
-  y = drawRolHeader(pdf, page, headerData, { font, fontBold }, y, margin)
-
-  // Wrap text for proper line breaking
-  const lines = wrapText(
-    content,
-    page.getSize().width - margin * 2,
-    font,
-    fontSize
-  )
-
-  // Draw content lines with pagination
-  for (const line of lines) {
-    if (y <= margin + 50) {
-      page = pdf.addPage()
-      y = page.getSize().height - margin
-      // Header only appears on first page, so no header on subsequent pages
-    }
-
-    if (line === '__BLANK__') {
-      y -= fontSize * 1.5
-      continue
-    }
-
-    const adjustedText = await embedSignatureImages(
+  const drawPageHeader = () => {
+    y = drawRolHeader(
       pdf,
       page,
-      line,
-      y,
-      officeImages || {}
+      headerData,
+      { font, fontBold },
+      page.getSize().height - margin,
+      margin
+    )
+  }
+  const addPageWithHeader = () => {
+    page = pdf.addPage([595, 842])
+    drawPageHeader()
+  }
+
+  drawPageHeader()
+
+  const pageSections = content.split('$Pagina')
+  for (let sectionIndex = 0; sectionIndex < pageSections.length; sectionIndex += 1) {
+    if (sectionIndex > 0) addPageWithHeader()
+    const lines = wrapText(
+      pageSections[sectionIndex],
+      page.getSize().width - margin * 2,
+      font,
+      fontSize
     )
 
-    if (adjustedText.trim()) {
-      page.drawText(adjustedText, {
-        x: margin,
-        y,
-        size: fontSize,
-        font,
-        color: rgb(0, 0, 0),
-      })
-    }
+    for (const line of lines) {
+      if (y <= margin + 50) addPageWithHeader()
 
-    y -= lineHeight
+      if (line === '__BLANK__') {
+        y -= fontSize * 1.5
+        continue
+      }
+
+      const adjustedText = await embedSignatureImages(
+        pdf,
+        page,
+        line,
+        y,
+        officeImages || {}
+      )
+
+      if (adjustedText.trim()) {
+        page.drawText(adjustedText, {
+          x: margin,
+          y,
+          size: fontSize,
+          font,
+          color: rgb(0, 0, 0),
+        })
+      }
+
+      y -= lineHeight
+    }
   }
 
   const pdfBytes = await pdf.save()

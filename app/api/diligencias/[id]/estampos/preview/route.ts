@@ -11,6 +11,7 @@ export const dynamic = 'force-dynamic'
 const PreviewEstampoSchema = z.object({
   estampoBaseId: z.number().int().positive(),
   wizardAnswers: z.record(z.string(), z.string()),
+  notificacionId: z.string().min(1).optional(),
 })
 
 export async function POST(
@@ -30,13 +31,14 @@ export async function POST(
       )
     }
 
-    const { estampoBaseId, wizardAnswers } = parsed.data
+    const { estampoBaseId, wizardAnswers, notificacionId } = parsed.data
 
     const [context, templateBundle] = await Promise.all([
       loadWizardDiligenciaContext({
         diligenciaId: params.id,
         officeId: user.officeId,
         userId: user.id,
+        notificacionId,
       }),
       loadWizardEstampoTemplate({
         estampoBaseId,
@@ -59,7 +61,7 @@ export async function POST(
       )
     }
 
-    const { dbUser, diligencia } = context
+    const { dbUser, diligencia, ejecutadoFromNotificacion, notificacionMeta, activeReceiptAmount } = context
     const { estampoBase, estampoCustom, textoTemplate } = templateBundle
 
     const initialVariables = buildWizardInitialVariables({
@@ -68,6 +70,9 @@ export async function POST(
       estampoBase,
       estampoCustom,
       dbUser,
+      notificacionMeta,
+      ejecutadoFromNotificacion,
+      activeReceiptAmount,
     })
 
     const combined = {

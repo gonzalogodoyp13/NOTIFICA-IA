@@ -75,43 +75,38 @@ export function drawRolHeader(
 
   y -= lineAfterSeparator + lineSpacing;
 
-  // Draw Tribunal line
-  if (tribunalNombre) {
-    const tribunalText = `Tribunal     : ${tribunalNombre}`;
-    page.drawText(tribunalText, {
+  const colonX = headerMargin + 78;
+  const valueX = colonX + 14;
+  const drawInfoRow = (label: string, value: string) => {
+    page.drawText(label, {
       x: headerMargin,
       y,
       size: infoFontSize,
       font,
       color: rgb(0, 0, 0),
     });
-  } else {
-    const tribunalText = "Tribunal     : N/A";
-    page.drawText(tribunalText, {
-      x: headerMargin,
+    page.drawText(":", {
+      x: colonX,
       y,
       size: infoFontSize,
       font,
       color: rgb(0, 0, 0),
     });
-  }
+    page.drawText(value, {
+      x: valueX,
+      y,
+      size: infoFontSize,
+      font,
+      color: rgb(0, 0, 0),
+    });
+  };
 
+  drawInfoRow("Tribunal", tribunalNombre || "N/A");
+  y -= lineSpacing;
+  drawInfoRow("N° ROL", rolNumero);
   y -= lineSpacing;
 
-  // Draw ROL line
-  const rolText = `N° ROL       : ${rolNumero}`;
-  page.drawText(rolText, {
-    x: headerMargin,
-    y,
-    size: infoFontSize,
-    font,
-    color: rgb(0, 0, 0),
-  });
-
-  y -= lineSpacing;
-
-  // Draw Caratulado line
-  let caratuladoText = "Caratulado   :   ";
+  let caratuladoText = "";
   if (bancoNombre && ejecutadoNombre) {
     caratuladoText += `${bancoNombre} / ${ejecutadoNombre}`;
   } else if (bancoNombre) {
@@ -122,13 +117,7 @@ export function drawRolHeader(
     caratuladoText += "N/A";
   }
 
-  page.drawText(caratuladoText, {
-    x: headerMargin,
-    y,
-    size: infoFontSize,
-    font,
-    color: rgb(0, 0, 0),
-  });
+  drawInfoRow("Caratulado", caratuladoText);
 
   y -= blankLineAfter;
 

@@ -41,12 +41,19 @@ interface Comuna {
   nombre: string
 }
 
-export default function NuevaDemandaPage() {
+export default function NuevaDemandaPage({
+  searchParams,
+}: {
+  searchParams?: { rol?: string }
+}) {
   const router = useRouter()
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [bancos, setBancos] = useState<Banco[]>([])
   const [bancoId, setBancoId] = useState<string>('')
+  const [caratulaDetalle, setCaratulaDetalle] = useState('')
+  const [manualBankEnabled, setManualBankEnabled] = useState(false)
+  const [manualBankName, setManualBankName] = useState('')
   const [abogados, setAbogados] = useState<Abogado[]>([])
   const [allAbogados, setAllAbogados] = useState<Abogado[]>([]) // Store all abogados for filtering
   const [tribunales, setTribunales] = useState<Tribunal[]>([])
@@ -60,7 +67,7 @@ export default function NuevaDemandaPage() {
   }>>([{ nombre: '', rut: '', direccion: '', comunaId: '' }])
 
   const [formData, setFormData] = useState({
-    rol: '',
+    rol: searchParams?.rol?.trim() ?? '',
     tribunalId: '',
     cuantia: '',
     abogadoId: '',
@@ -68,14 +75,16 @@ export default function NuevaDemandaPage() {
     procuradorId: '',
   })
 
-  // Calculate caratula from selected banco
-  const caratula = useMemo(() => {
-    if (bancoId) {
-      const banco = bancos.find(b => b.id === Number(bancoId))
-      return banco?.nombre || ''
-    }
-    return ''
+  const selectedBancoName = useMemo(() => {
+    if (!bancoId) return ''
+    return bancos.find(b => b.id === Number(bancoId))?.nombre || ''
   }, [bancoId, bancos])
+
+  const caratulaPrefix = manualBankEnabled ? manualBankName.trim() : selectedBancoName.trim()
+  const caratula = useMemo(() => {
+    const detail = caratulaDetalle.trim()
+    return caratulaPrefix && detail ? `${caratulaPrefix}/${detail}` : ''
+  }, [caratulaDetalle, caratulaPrefix])
 
   useEffect(() => {
     fetchOptions()
@@ -196,17 +205,14 @@ export default function NuevaDemandaPage() {
     setError(null)
 
     try {
-      // Calculate caratula from banco if not already set
-      const finalCaratula = caratula || (bancoId ? bancos.find(b => b.id === Number(bancoId))?.nombre || '' : '')
-      
-      if (!formData.rol || !formData.tribunalId || !finalCaratula) {
-        throw new Error('ROL, Tribunal y Banco son requeridos')
+      if (!formData.rol || !formData.tribunalId || !bancoId || !caratula) {
+        throw new Error('ROL, Tribunal, Banco y Carátula son requeridos')
       }
       
       const payload = {
         rol: formData.rol,
         tribunalId: formData.tribunalId,
-        caratula: finalCaratula,
+        caratula,
         cuantia: formData.cuantia ? cleanCuantiaInput(formData.cuantia) : null,
         abogadoId: formData.abogadoId ? Number(formData.abogadoId) : null,
         materiaId: formData.materiaId ? Number(formData.materiaId) : null,
@@ -303,13 +309,70 @@ export default function NuevaDemandaPage() {
                 )}
               </div>
 
-              {/* Carátula (hidden, auto-calculated) */}
-              <input
-                type="hidden"
-                id="caratula"
-                required
-                value={caratula}
-              />
+              {/* Carátula compuesta */}
+              <div className="rounded-2xl border border-sky-100 bg-sky-50/60 p-4 sm:p-5">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <label htmlFor="caratula-detalle" className="text-sm font-semibold text-slate-800">
+                    Carátula *
+                  </label>
+                  <label
+                    htmlFor="caratula-banco-manual-toggle"
+                    className="inline-flex cursor-pointer items-center gap-2 text-xs font-semibold text-sky-800"
+                  >
+                    <input
+                      id="caratula-banco-manual-toggle"
+                      type="checkbox"
+                      checked={manualBankEnabled}
+                      onChange={(event) => {
+                        setManualBankEnabled(event.target.checked)
+                        setManualBankName('')
+                      }}
+                      className="h-4 w-4 rounded border-sky-300 text-blue-700 focus:ring-sky-400"
+                    />
+                    Ingresar banco manualmente
+                  </label>
+                </div>
+
+                <div className="mt-3 grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2">
+                  {manualBankEnabled ? (
+                    <input
+                      type="text"
+                      aria-label="Banco manual de la carátula"
+                      required
+                      value={manualBankName}
+                      onChange={(event) => setManualBankName(event.target.value)}
+                      className="min-w-0 rounded-lg border border-sky-200 bg-white px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                      placeholder="Escriba el banco"
+                    />
+                  ) : (
+                    <input
+                      type="text"
+                      aria-label="Banco de la carátula"
+                      readOnly
+                      value={selectedBancoName}
+                      className="min-w-0 rounded-lg border border-sky-200 bg-white/80 px-3 py-2 text-sm font-medium text-slate-700"
+                      placeholder="Seleccione un banco arriba"
+                    />
+                  )}
+                  <span aria-hidden="true" className="text-xl font-light text-slate-400">/</span>
+                  <input
+                    id="caratula-detalle"
+                    type="text"
+                    required
+                    value={caratulaDetalle}
+                    onChange={(event) => setCaratulaDetalle(event.target.value)}
+                    className="min-w-0 rounded-lg border border-sky-200 bg-white px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                    placeholder="Complete la carátula"
+                  />
+                </div>
+
+                <p className="mt-3 text-xs text-slate-500">
+                  Vista final:{' '}
+                  <strong className="font-semibold text-slate-700">
+                    {caratula || 'Banco/Detalle de la carátula'}
+                  </strong>
+                </p>
+              </div>
 
               {/* Tribunal */}
               <div>
@@ -426,10 +489,11 @@ export default function NuevaDemandaPage() {
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                       <div>
-                        <label className="block text-xs font-medium text-gray-600 mb-1">
+                        <label htmlFor={`ejecutado-${index}-nombre`} className="block text-xs font-medium text-gray-600 mb-1">
                           Nombre *
                         </label>
                         <input
+                          id={`ejecutado-${index}-nombre`}
                           type="text"
                           required
                           value={ejecutado.nombre}
@@ -438,10 +502,11 @@ export default function NuevaDemandaPage() {
                         />
                       </div>
                       <div>
-                        <label className="block text-xs font-medium text-gray-600 mb-1">
+                        <label htmlFor={`ejecutado-${index}-rut`} className="block text-xs font-medium text-gray-600 mb-1">
                           RUT *
                         </label>
                         <input
+                          id={`ejecutado-${index}-rut`}
                           type="text"
                           required
                           value={ejecutado.rut}
@@ -450,10 +515,11 @@ export default function NuevaDemandaPage() {
                         />
                       </div>
                       <div>
-                        <label className="block text-xs font-medium text-gray-600 mb-1">
+                        <label htmlFor={`ejecutado-${index}-direccion`} className="block text-xs font-medium text-gray-600 mb-1">
                           Dirección
                         </label>
                         <input
+                          id={`ejecutado-${index}-direccion`}
                           type="text"
                           value={ejecutado.direccion}
                           onChange={(e) => updateEjecutado(index, 'direccion', e.target.value)}
@@ -461,10 +527,11 @@ export default function NuevaDemandaPage() {
                         />
                       </div>
                       <div>
-                        <label className="block text-xs font-medium text-gray-600 mb-1">
+                        <label htmlFor={`ejecutado-${index}-comuna`} className="block text-xs font-medium text-gray-600 mb-1">
                           Comuna
                         </label>
                         <select
+                          id={`ejecutado-${index}-comuna`}
                           value={ejecutado.comunaId}
                           onChange={(e) => updateEjecutado(index, 'comunaId', e.target.value)}
                           className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 text-sm"

@@ -4,6 +4,7 @@ import { useCreateNotificacion, useDeleteNotificacion, useDiligencias, type Dili
 import EjecutarWizard from './EjecutarWizard'
 import EstampoWizardModal from './EstampoWizardModal'
 import NuevaDiligenciaWizard from './NuevaDiligenciaWizard'
+import { ModalPortal } from '@/components/ui/modal-portal'
 
 interface DiligenciasTableProps { rolId: string }
 
@@ -519,8 +520,9 @@ export default function DiligenciasTable({ rolId }: DiligenciasTableProps) {
       )}
 
       {ejecutadoModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
-          <div className="w-full max-w-md rounded-[24px] border border-sky-200 bg-white p-6 shadow-xl">
+        <ModalPortal>
+        <div className="absolute inset-0 flex items-center justify-center bg-black/40 px-4 py-4">
+          <div data-testid="viewport-modal-card" className="w-full max-w-md rounded-[24px] border border-sky-200 bg-white p-6 shadow-xl">
             <h3 className="mb-4 text-lg font-semibold text-slate-800">Seleccionar Ejecutado</h3>
             <div className="space-y-3">
               <label className="block text-sm font-medium text-slate-700">Ejecutado *</label>
@@ -559,6 +561,7 @@ export default function DiligenciasTable({ rolId }: DiligenciasTableProps) {
             </div>
           </div>
         </div>
+        </ModalPortal>
       )}
     </section>
   )

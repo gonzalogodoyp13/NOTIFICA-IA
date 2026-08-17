@@ -12,10 +12,14 @@ export async function GET(
   return withApiUser(req, 'get.diligencias.id.estampos.wizard', async user => {
   try {
 
+    const searchParams = req.nextUrl.searchParams
+    const notificacionId = searchParams.get('notificacionId')
+
     const context = await loadWizardDiligenciaContext({
       diligenciaId: params.id,
       officeId: user.officeId,
       userId: user.id,
+      notificacionId,
     })
 
     if (!context || 'error' in context) {
@@ -25,9 +29,8 @@ export async function GET(
       )
     }
 
-    const { dbUser, diligencia } = context
+    const { dbUser, diligencia, ejecutadoFromNotificacion, notificacionMeta, activeReceiptAmount } = context
 
-    const searchParams = req.nextUrl.searchParams
     const categoria = searchParams.get('categoria') || 'BUSQUEDA_NEGATIVA'
 
     const estamposWithCustoms = await loadWizardCatalog({
@@ -46,6 +49,9 @@ export async function GET(
         estampoBase: firstEstampo.estampoBase,
         estampoCustom: firstEstampo.estampoCustom,
         dbUser,
+        notificacionMeta,
+        ejecutadoFromNotificacion,
+        activeReceiptAmount,
       })
     }
 

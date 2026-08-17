@@ -5,6 +5,7 @@ import { useQueryClient } from '@tanstack/react-query'
 
 import type { VariableDef, WizardQuestion } from '@/lib/estampos/types'
 import { applyStampGenerationToCache, StampGenerationResponseSchema } from '@/lib/hooks/useRolWorkspace'
+import { ModalPortal } from '@/components/ui/modal-portal'
 
 interface EstampoWizardModalProps {
   rolId: string
@@ -68,6 +69,7 @@ export default function EstampoWizardModal({
       try {
         const url = new URL(`/api/diligencias/${diligenciaId}/estampos/wizard`, window.location.origin)
         url.searchParams.set('categoria', categoria)
+        url.searchParams.set('notificacionId', notificacionId)
         const response = await fetch(url.toString(), {
           credentials: 'include',
           cache: 'no-store',
@@ -123,7 +125,7 @@ export default function EstampoWizardModal({
     return () => {
       active = false
     }
-  }, [isOpen, diligenciaId, categoria])
+  }, [isOpen, diligenciaId, categoria, notificacionId])
 
   // Reset state when modal closes
   useEffect(() => {
@@ -189,6 +191,7 @@ export default function EstampoWizardModal({
         body: JSON.stringify({
           estampoBaseId: selectedEstampoId,
           wizardAnswers: answers,
+          notificacionId,
         }),
         credentials: 'include',
       })
@@ -258,7 +261,8 @@ export default function EstampoWizardModal({
   if (!isOpen) return null
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+    <ModalPortal>
+    <div className="absolute inset-0 flex items-center justify-center bg-black/40 px-4 py-4">
       <div className="w-full max-w-2xl rounded-lg bg-white p-6 shadow-lg max-h-[90vh] overflow-y-auto">
         <header className="flex items-center justify-between mb-4">
           <div>
@@ -491,7 +495,7 @@ export default function EstampoWizardModal({
 
       {/* Text Editor Modal */}
       {showTextEditor && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 px-4">
+        <div className="absolute inset-0 z-[60] flex items-center justify-center bg-black/50 px-4 py-4">
           <div className="w-full max-w-3xl rounded-lg bg-white p-6 shadow-lg max-h-[90vh] overflow-y-auto">
             <h3 className="text-lg font-semibold mb-4">Editar texto del estampo</h3>
             <p className="text-xs text-slate-500 mb-3">
@@ -537,6 +541,7 @@ export default function EstampoWizardModal({
         </div>
       )}
     </div>
+    </ModalPortal>
   )
 }
 

@@ -206,6 +206,14 @@ export function WizardEstampoEditor({
               </button>
             );
           })}
+          <button
+            type="button"
+            onClick={() => insertVariable("Pagina")}
+            className="rounded border border-purple-300 bg-purple-50 px-2 py-1 text-sm text-purple-800 transition hover:bg-purple-100"
+            title="Inserta un salto de pagina y repite el encabezado"
+          >
+            Pagina
+          </button>
         </div>
       </div>
 

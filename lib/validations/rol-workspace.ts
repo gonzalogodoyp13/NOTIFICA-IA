@@ -42,7 +42,10 @@ export const DiligenciaScheduleSchema = z.object({
 
 const receiptExecutionSchema = z.object({
   fecha: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'La fecha debe usar el formato YYYY-MM-DD'),
-  hora: z.string().regex(timeRegex, 'Hora inválida, use el formato HH:mm').optional().default(''),
+  hora: z
+    .union([z.literal(''), z.string().regex(timeRegex, 'Hora inválida, use el formato HH:mm')])
+    .optional()
+    .default(''),
 })
 
 const receiptEstampoSelectionSchema = z.discriminatedUnion('kind', [
@@ -65,6 +68,7 @@ export const ReciboGenerateSchema = z
     medio: z.string().min(1, 'El medio de pago es requerido'),
     referencia: z.string().max(120).optional(),
     otros: z.number().min(0, 'Otros debe ser mayor o igual a 0').optional(),
+    saveManualArancelAsDefault: z.boolean().optional().default(false),
     correctionReason: z.string().trim().min(3).max(500).optional(),
   })
   .superRefine((value, ctx) => {

@@ -85,3 +85,13 @@ export function formatDateToSpanishWords(date: Date): string {
 
   return `${day} de ${month} de ${year}`
 }
+
+/** Formats receipt dates with a numeric day/year and a written Spanish month. */
+export function formatReceiptDate(date: Date): string {
+  const months = [
+    'enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio',
+    'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre',
+  ]
+
+  return `${date.getDate()} de ${months[date.getMonth()]} de ${date.getFullYear()}`
+}

@@ -61,7 +61,7 @@ export async function POST(
       return apiFailure(new ApiError('NOT_FOUND', 'Estampo no encontrado o inactivo', 404))
     }
 
-    const { dbUser, diligencia, ejecutadoFromNotificacion, notificacionMeta } = context
+    const { dbUser, diligencia, ejecutadoFromNotificacion, notificacionMeta, activeReceiptAmount } = context
     const { estampoBase, estampoCustom, textoTemplate } = templateBundle
 
     const initialVariables = buildWizardInitialVariables({
@@ -72,6 +72,7 @@ export async function POST(
       dbUser,
       notificacionMeta,
       ejecutadoFromNotificacion,
+      activeReceiptAmount,
     })
 
     const combined = {

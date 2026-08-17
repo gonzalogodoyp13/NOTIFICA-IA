@@ -1,11 +1,13 @@
 import { withApiUser } from '@/lib/api/server'
 import { NextRequest, NextResponse } from 'next/server'
+import type { Prisma } from '@prisma/client'
 import { z } from 'zod'
 
 import { prisma } from '@/lib/prisma'
 import { replaceVariables } from '@/lib/estampos/text'
 import { loadOfficePdfConfig } from '@/lib/pdf/officeConfig'
 import type { EstampoEjecutado } from '@/lib/estampos/runtime'
+import { asJsonObject } from '@/lib/utils/json'
 import {
   buildCustomEstampoVariables,
   customEstampoDiligenciaInclude,
@@ -71,6 +73,8 @@ export async function POST(
     }
 
     let ejecutadoFromNotificacion: EstampoEjecutado | undefined
+    let notificacionMeta: Record<string, unknown> = {}
+    let chargedAmount: number | null = null
 
     if (notificacionId) {
       const noti = await prisma.notificacion.findFirst({
@@ -104,14 +108,26 @@ export async function POST(
       }
 
       ejecutadoFromNotificacion = noti.ejecutado
+      notificacionMeta = asJsonObject(noti.meta) ?? {}
+      const activeReceipt = await prisma.recibo.findFirst({
+        where: { notificacionId: noti.id, status: 'ACTIVE' },
+        orderBy: { createdAt: 'desc' },
+        select: { monto: true },
+      })
+      chargedAmount = activeReceipt ? Number(activeReceipt.monto) : null
     }
 
     const officePdfConfig = await loadOfficePdfConfig({ officeId: user.officeId, officeCacheRevision: user.officeCacheRevision, fallbackReceptorNombre: user.officeName })
+    const effectiveDiligencia = {
+      ...diligencia,
+      meta: { ...(asJsonObject(diligencia.meta) ?? {}), ...notificacionMeta } as Prisma.JsonObject,
+    }
     const variableMap = buildCustomEstampoVariables(
-      diligencia,
+      effectiveDiligencia,
       user,
       officePdfConfig,
-      ejecutadoFromNotificacion
+      ejecutadoFromNotificacion,
+      chargedAmount
     )
     const template = parsed.data.contenidoPersonalizado ?? estampo.contenido ?? 'Estampo generado para $rol'
 

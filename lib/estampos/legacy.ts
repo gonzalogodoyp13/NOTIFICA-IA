@@ -24,7 +24,8 @@ export function buildCustomEstampoVariables(
   diligencia: CustomEstampoDiligenciaWithRelations,
   dbUser: { officeName: string } | null,
   officePdfConfig: Pick<OfficePdfConfig, 'receptorNombre'> | null,
-  ejecutadoFromNotificacion?: EstampoEjecutado | null
+  ejecutadoFromNotificacion?: EstampoEjecutado | null,
+  chargedAmount?: number | null
 ): Record<string, string> {
   const meta = asJsonObject(diligencia.meta)
   const ejecutadoId = getString(meta?.ejecutadoId)
@@ -50,7 +51,9 @@ export function buildCustomEstampoVariables(
   const horaEjecucion = (meta?.horaEjecucion as string) ?? ''
 
   const montoSeleccionadoRaw =
-    typeof meta?.monto === 'number'
+    typeof chargedAmount === 'number'
+      ? chargedAmount
+      : typeof meta?.monto === 'number'
       ? meta.monto
       : typeof meta?.monto === 'string'
         ? Number(meta.monto.toString().replace(/\./g, '').replace(/\s/g, ''))
@@ -64,7 +67,7 @@ export function buildCustomEstampoVariables(
   const montoEjecutadoFormatted =
     montoSeleccionado !== null
       ? `$${formatCuantiaCLP(montoSeleccionado)}`
-      : cuantiaFormatted
+      : ''
 
   return {
     nombre_ejecutado: ejecutado?.nombre ?? '',

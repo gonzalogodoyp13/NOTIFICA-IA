@@ -16,6 +16,7 @@ export function extractVariables(template: string): string[] {
 
   while ((match = regex.exec(template)) !== null) {
     const varName = match[1]
+    if (varName === 'Pagina') continue
     if (!matches.includes(varName)) {
       matches.push(varName)
     }

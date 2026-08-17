@@ -1,7 +1,7 @@
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib'
 import type { Diligencia, RolCausa, Demanda, Abogado, Banco, Ejecutado, Comuna, Tribunal, DiligenciaTipo } from '@prisma/client'
 import { formatCuantiaCLP } from '@/lib/utils/cuantia'
-import { formatDateToSpanishWords } from '@/lib/utils/dateFormat'
+import { formatReceiptDate } from '@/lib/utils/dateFormat'
 import { wrapText } from '@/lib/pdf/textLayout'
 import { loadOfficeReciboStamp, type OfficePdfConfig } from '@/lib/pdf/officeConfig'
 
@@ -137,7 +137,7 @@ export function buildReciboVariables(
   return {
     receptor_nombre: receptorNombre,
     receptor_direccion_linea: receptorDireccion,
-    fecha_recibo: formatDateToSpanishWords(fechaEjecucion),
+    fecha_recibo: formatReceiptDate(fechaEjecucion),
     numero_recibo: numeroRecibo,
     nombre_abogado: nombreAbogado,
     direccion_abogado: direccionAbogado,

@@ -50,6 +50,7 @@ export function buildInitialVariables({
   estampoCustom,
   dbUser,
   ejecutadoFromNotificacion,
+  chargedAmount,
 }: {
   diligencia: DiligenciaWithRelations
   rol: DiligenciaWithRelations['rol']
@@ -57,6 +58,7 @@ export function buildInitialVariables({
   estampoCustom?: EstampoCustom | null
   dbUser: { officeName: string } | null
   ejecutadoFromNotificacion?: EstampoEjecutado | null
+  chargedAmount?: number | null
 }): Record<string, string> {
   const variablesSchema = estampoBase.variablesSchema as unknown as VariableDef[]
   const result: Record<string, string> = {}
@@ -94,7 +96,9 @@ export function buildInitialVariables({
 
   // Cuantía formateada
   const montoSeleccionadoRaw =
-    typeof meta?.monto === 'number'
+    typeof chargedAmount === 'number'
+      ? chargedAmount
+      : typeof meta?.monto === 'number'
       ? meta.monto
       : typeof meta?.monto === 'string'
         ? Number(meta.monto.toString().replace(/\./g, '').replace(/\s/g, ''))
@@ -103,8 +107,7 @@ export function buildInitialVariables({
     typeof montoSeleccionadoRaw === 'number' && Number.isFinite(montoSeleccionadoRaw)
       ? montoSeleccionadoRaw
       : null
-  const cuantiaRaw = rol?.demanda?.cuantia
-  const montoEjecutado = montoSeleccionado ?? cuantiaRaw ?? null
+  const montoEjecutado = montoSeleccionado
 
   // Iterar sobre variablesSchema y construir solo las auto-llenadas
   for (const variableDef of variablesSchema) {

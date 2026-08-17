@@ -199,6 +199,8 @@ const ReceiptGenerationResponseSchema = z.object({
   documento: DocumentoItemSchema,
   recibo: ReciboItemSchema,
   notificacion: NotificacionItemSchema,
+  defaultArancelSaved: z.boolean().optional().default(false),
+  cacheRevision: z.number().int().nonnegative().nullable().optional(),
 })
 
 export const StampGenerationResponseSchema = z.object({
@@ -748,6 +750,7 @@ export function useGenerateRecibo(
   z.infer<typeof ReciboGenerateSchema>
 > {
   const queryClient = useQueryClient()
+  const { advanceCacheRevision } = useOfficeCacheContext()
 
   return useMutation({
     mutationFn: async (input: z.infer<typeof ReciboGenerateSchema>) => {
@@ -841,6 +844,21 @@ export function useGenerateRecibo(
               execution: variables.ejecucion,
               selectedEstampoTipo: variables.estampoTipo,
               monto: variables.monto,
+              estampoOptions: generated.defaultArancelSaved
+                ? current.estampoOptions.map(option => {
+                    const matchesSelection = variables.estampoTipo.kind === 'CUSTOM'
+                      ? option.selection.kind === 'CUSTOM' && option.selection.estampoId === variables.estampoTipo.estampoId
+                      : option.selection.kind === 'WIZARD' && option.selection.categoria === variables.estampoTipo.categoria
+                    if (!matchesSelection) return option
+                    return {
+                      ...option,
+                      aranceles: [
+                        ...option.aranceles.filter(arancel => arancel.bancoId !== variables.bancoId),
+                        { bancoId: variables.bancoId, monto: variables.monto, source: 'abogado' as const },
+                      ],
+                    }
+                  })
+                : current.estampoOptions,
               bankContext: { ...current.bankContext, selectedBankId: variables.bancoId },
               receiptState: {
                 receiptId: generated.recibo.id,
@@ -851,6 +869,13 @@ export function useGenerateRecibo(
             }
           : current
       )
+
+      if (generated.defaultArancelSaved) {
+        void queryClient.invalidateQueries({ queryKey: ['rol', rolId, 'diligencias'] })
+      }
+      if (typeof generated.cacheRevision === 'number') {
+        advanceCacheRevision(generated.cacheRevision)
+      }
     },
   })
 }

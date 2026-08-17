@@ -32,6 +32,9 @@ export default function TopBar() {
         // Redirect to the role page
         router.push(`/roles/${data.data.id}`)
         setSearchValue('') // Clear search after successful redirect
+      } else if (data.error === 'NOT_FOUND') {
+        const searchedRol = searchValue.trim()
+        router.push(`/roles/no-encontrado?rol=${encodeURIComponent(searchedRol)}`)
       } else {
         // Show error message
         setError(data.message || 'Error al buscar el rol')
@@ -91,6 +94,7 @@ export default function TopBar() {
             <div className="flex items-center gap-2 flex-1 max-w-md">
               <Input
                 type="text"
+                aria-label="Buscar ROL exacto"
                 placeholder="C-1234-2025"
                 value={searchValue}
                 onChange={(e) => {
@@ -102,6 +106,7 @@ export default function TopBar() {
                 disabled={isSearching}
               />
               <Button
+                aria-label="Buscar ROL"
                 onClick={handleSearch}
                 disabled={isSearching || !searchValue.trim()}
                 size="default"

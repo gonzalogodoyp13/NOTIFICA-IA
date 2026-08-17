@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react'
 
 import { DiligenciaCreateSchema } from '@/lib/validations/rol-workspace'
 import { useCreateDiligencia } from '@/lib/hooks/useRolWorkspace'
+import { ModalPortal } from '@/components/ui/modal-portal'
 
 interface DiligenciaTipo {
   id: string
@@ -120,8 +121,9 @@ export default function NuevaDiligenciaWizard({ rolId, onClose, onCreated }: Nue
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4">
-      <div className="w-full max-w-lg rounded-lg bg-white p-6 shadow-lg">
+    <ModalPortal>
+    <div className="absolute inset-0 flex items-center justify-center overflow-y-auto bg-black/50 px-4 py-4">
+      <div data-testid="viewport-modal-card" className="w-full max-w-lg rounded-lg bg-white p-6 shadow-lg">
         <header className="flex items-center justify-between">
           <h2 className="text-lg font-semibold">
             {step === 1 && 'Tipo de diligencia'}
@@ -242,6 +244,7 @@ export default function NuevaDiligenciaWizard({ rolId, onClose, onCreated }: Nue
         </footer>
       </div>
     </div>
+    </ModalPortal>
   )
 }
 

@@ -37,7 +37,8 @@ function buildEstampoVariables(
   diligencia: DiligenciaWithRelations,
   dbUser: { officeName: string } | null,
   officePdfConfig: Pick<OfficePdfConfig, 'receptorNombre'> | null,
-  ejecutadoFromNotificacion?: EstampoEjecutado | null
+  ejecutadoFromNotificacion?: EstampoEjecutado | null,
+  chargedAmount?: number | null
 ): Record<string, string> {
   const meta = asJsonObject(diligencia.meta)
   const ejecutadoId = getString(meta?.ejecutadoId)
@@ -74,7 +75,9 @@ function buildEstampoVariables(
 
   // Cuantía formateada
   const montoSeleccionadoRaw =
-    typeof meta?.monto === 'number'
+    typeof chargedAmount === 'number'
+      ? chargedAmount
+      : typeof meta?.monto === 'number'
       ? meta.monto
       : typeof meta?.monto === 'string'
         ? Number(meta.monto.toString().replace(/\./g, '').replace(/\s/g, ''))
@@ -88,7 +91,7 @@ function buildEstampoVariables(
   const montoEjecutadoFormatted =
     montoSeleccionado !== null
       ? `$${formatCuantiaCLP(montoSeleccionado)}`
-      : cuantiaFormatted
+      : ''
 
   // Construir mapa de variables
   return {
@@ -159,6 +162,7 @@ export async function POST(
     // Store ejecutado from notificación if available
     let ejecutadoFromNotificacion: EstampoEjecutado | undefined
     let notificacionMeta: Prisma.JsonObject = {}
+    let chargedAmount: number | null = null
 
     if (notificacionId) {
       const noti = await prisma.notificacion.findFirst({
@@ -187,6 +191,12 @@ export async function POST(
 
       ejecutadoFromNotificacion = noti.ejecutado
       notificacionMeta = (asJsonObject(noti.meta) ?? {}) as Prisma.JsonObject
+      const activeReceipt = await prisma.recibo.findFirst({
+        where: { notificacionId: noti.id, status: 'ACTIVE' },
+        orderBy: { createdAt: 'desc' },
+        select: { monto: true },
+      })
+      chargedAmount = activeReceipt ? Number(activeReceipt.monto) : null
     }
 
     const estampo = await prisma.estampo.findFirst({
@@ -210,7 +220,17 @@ export async function POST(
     ])
 
     // Build complete variable map from diligencia data
-    const variableMap = buildEstampoVariables(diligencia, user, officePdfConfig, ejecutadoFromNotificacion)
+    const effectiveDiligencia = {
+      ...diligencia,
+      meta: { ...(asJsonObject(diligencia.meta) ?? {}), ...notificacionMeta } as Prisma.JsonObject,
+    }
+    const variableMap = buildEstampoVariables(
+      effectiveDiligencia,
+      user,
+      officePdfConfig,
+      ejecutadoFromNotificacion,
+      chargedAmount
+    )
     const filled = replaceVariables(template, variableMap)
 
     // Get ejecutadoNombre for header (from variableMap)
