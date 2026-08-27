@@ -1,19 +1,16 @@
 import { NextRequest } from 'next/server'
 
-import { apiSuccess, withApiUser } from '@/lib/api/server'
-import { listReportsForOffice } from '@/lib/reports/dailyReport'
+import { apiSuccess, parseApiInput, withApiUser } from '@/lib/api/server'
+import { assertReportAdmin } from '@/lib/reports/access'
+import { listReportHistory } from '@/lib/reports/history'
+import { ReportHistoryQuerySchema } from '@/lib/reports/historyCore'
 
 export const dynamic = 'force-dynamic'
 
 export async function GET(request: NextRequest) {
   return withApiUser(request, 'reports.list', async (user) => {
-    const reports = await listReportsForOffice(user.officeId)
-    return apiSuccess(reports.map(report => ({
-      ...report,
-      periodStart: report.periodStart.toISOString(),
-      periodEnd: report.periodEnd.toISOString(),
-      generatedAt: report.generatedAt.toISOString(),
-      expiresAt: report.expiresAt?.toISOString() ?? null,
-    })))
+    assertReportAdmin(user)
+    const query = parseApiInput(ReportHistoryQuerySchema, Object.fromEntries(request.nextUrl.searchParams))
+    return apiSuccess(await listReportHistory(user.officeId, query))
   })
 }

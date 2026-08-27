@@ -33,17 +33,18 @@ describe('canonical authentication and audit foundation', () => {
     })).toThrow(/must use module audit/)
   })
 
-  it('keeps AuditLog read-only from application code and removes the old client', () => {
+  it('removes AuditLog runtime access and keeps the canonical client', () => {
     const root = process.cwd()
     const files = [
       'lib/audit/operationalActivity.ts',
       'lib/recibos/bulk.ts',
-      'app/api/logs/route.ts',
     ].map(file => readFileSync(join(root, file), 'utf8'))
-    expect(files.join('\n')).not.toMatch(/auditLog\.(create|update|delete|upsert|createMany|updateMany|deleteMany)/)
+    expect(files.join('\n')).not.toMatch(/prisma\.auditLog/)
     expect(existsSync(join(root, 'lib/prismaNoMiddleware.ts'))).toBe(false)
     expect(existsSync(join(root, 'lib/prisma/auditMiddleware.ts'))).toBe(false)
-    expect(readFileSync(join(root, 'app/api/logs/route.ts'), 'utf8')).not.toContain('export async function POST')
+    for (const route of ['app/api/log/route.ts', 'app/api/logs/route.ts', 'app/api/logs/summary/route.ts', 'app/api/logs/export/route.ts', 'app/api/logs/recent/route.ts']) {
+      expect(existsSync(join(root, route))).toBe(false)
+    }
   })
 
   it('commits append-only triggers and the QA mutation barrier', () => {

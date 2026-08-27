@@ -2,13 +2,19 @@
 
 import {
   AlertTriangle,
+  ArrowUpRight,
   Banknote,
   CalendarClock,
   CheckCircle2,
   ChevronDown,
+  ClipboardList,
+  FilePlus2,
   FileText,
+  PenTool,
+  ReceiptText,
   RefreshCw,
   Search,
+  Settings,
   Stamp,
   WifiOff,
   X,
@@ -46,6 +52,57 @@ type MultiSelectProps = {
   selectedIds: string[]
   onChange: (ids: string[]) => void
 }
+
+const navigationCards = [
+  {
+    title: 'Ingresar Demanda',
+    description: 'Registra una nueva demanda y sus datos principales.',
+    href: '/demandas/nueva',
+    icon: FilePlus2,
+    accent: 'from-blue-600 to-sky-500',
+    iconTone: 'border-blue-200 bg-blue-50 text-blue-700',
+  },
+  {
+    title: 'Gestionar Demandas',
+    description: 'Consulta causas, estados y trabajo pendiente.',
+    href: '/roles',
+    icon: ClipboardList,
+    accent: 'from-slate-800 to-slate-600',
+    iconTone: 'border-slate-200 bg-slate-100 text-slate-700',
+  },
+  {
+    title: 'Gestionar Recibos',
+    description: 'Busca, administra y exporta recibos de la oficina.',
+    href: '/recibos',
+    icon: ReceiptText,
+    accent: 'from-emerald-600 to-teal-500',
+    iconTone: 'border-emerald-200 bg-emerald-50 text-emerald-700',
+  },
+  {
+    title: 'Firmado Digital',
+    description: 'Accede al futuro espacio de firma de estampos.',
+    href: '/firmados',
+    icon: PenTool,
+    accent: 'from-violet-600 to-indigo-500',
+    iconTone: 'border-violet-200 bg-violet-50 text-violet-700',
+  },
+  {
+    title: 'Reportes de Auditoria',
+    description: 'Revisa y descarga reportes de actividad diaria.',
+    href: '/ajustes/reportes',
+    icon: FileText,
+    accent: 'from-amber-600 to-orange-500',
+    iconTone: 'border-amber-200 bg-amber-50 text-amber-700',
+  },
+  {
+    title: 'Ajustes de oficina',
+    description: 'Configura datos maestros y opciones administrativas.',
+    href: '/ajustes',
+    icon: Settings,
+    accent: 'from-rose-600 to-pink-500',
+    iconTone: 'border-rose-200 bg-rose-50 text-rose-700',
+  },
+]
 
 const sectionMeta: Record<DashboardSection, {
   title: string
@@ -332,7 +389,7 @@ function DocumentsTable({ rows }: { rows: DashboardDocumentRow[] }) {
   )
 }
 
-export default function DashboardCockpit() {
+export default function DashboardCockpit({ isOfficeAdmin }: { isOfficeAdmin: boolean }) {
   const router = useRouter()
   const pathname = usePathname()
   const searchParams = useSearchParams()
@@ -448,11 +505,45 @@ export default function DashboardCockpit() {
 
   const activeRows = data?.rows[activeSection] ?? []
   const activeTotal = data?.metrics[activeSection === 'missingEstampos' ? 'missingEstampos' : activeSection === 'recentDocuments' ? 'recentDocuments' : activeSection] ?? 0
+  const reportAccessNotice = searchParams.get('notice') === 'reportes-restringidos'
 
   return (
     <div className="app-shell">
-      <main className="page-frame page-stack">
-        <section className="relative overflow-hidden rounded-[30px] bg-slate-950 px-6 py-7 text-white shadow-[0_32px_90px_-42px_rgba(15,23,42,0.9)] sm:px-8">
+      <main className="page-frame page-stack !pt-12">
+        {reportAccessNotice && (
+          <div role="status" className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+            Los reportes de auditoría están disponibles solo para administradores activos de la oficina.
+          </div>
+        )}
+        <section aria-label="Accesos principales" className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {navigationCards.filter(card => card.href !== '/ajustes/reportes' || isOfficeAdmin).map(card => {
+            const Icon = card.icon
+
+            return (
+              <Link
+                key={card.href}
+                href={card.href}
+                className="group relative flex min-h-[172px] overflow-hidden rounded-[26px] border border-white/80 bg-white/90 p-5 shadow-[0_18px_50px_-34px_rgba(15,23,42,0.65)] transition duration-300 hover:-translate-y-1 hover:border-slate-200 hover:bg-white hover:shadow-[0_24px_60px_-32px_rgba(15,23,42,0.5)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2 sm:p-6"
+              >
+                <div className={`absolute inset-x-0 top-0 h-1 bg-gradient-to-r ${card.accent}`} />
+                <div className="flex w-full flex-col">
+                  <div className="flex items-start justify-between gap-4">
+                    <div className={`rounded-2xl border p-3 shadow-sm ${card.iconTone}`}>
+                      <Icon className="h-5 w-5" />
+                    </div>
+                    <ArrowUpRight className="h-5 w-5 text-slate-300 transition duration-300 group-hover:-translate-y-0.5 group-hover:translate-x-0.5 group-hover:text-slate-700" />
+                  </div>
+                  <div className="mt-auto pt-6">
+                    <h2 className="text-lg font-semibold tracking-tight text-slate-950">{card.title}</h2>
+                    <p className="mt-1.5 text-sm leading-5 text-slate-500">{card.description}</p>
+                  </div>
+                </div>
+              </Link>
+            )
+          })}
+        </section>
+
+        <section className="relative mt-12 overflow-hidden rounded-[30px] bg-slate-950 px-6 py-7 text-white shadow-[0_32px_90px_-42px_rgba(15,23,42,0.9)] sm:px-8">
           <div className="absolute inset-0 opacity-30 soft-grid" />
           <div className="relative flex flex-wrap items-end justify-between gap-6">
             <div>

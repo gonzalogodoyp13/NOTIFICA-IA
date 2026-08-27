@@ -1,0 +1,50 @@
+'use client'
+
+import { Clipboard, Download, FileClock, Inbox, RefreshCw, RotateCcw, X } from 'lucide-react'
+
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import PaginationBar from './PaginationBar'
+import { EmptyBlock, ErrorBlock, formatBytes, formatDateTime, LoadingBlock, reportTypeLabel, selectClassName, StatusBadge } from './reportes-ui'
+import type { Paged, ReportVersion } from './reportes-types'
+
+type Filters = { page: number; reportType: string; status: string; scope: string; dateFrom: string; dateTo: string }
+
+type Props = {
+  data: Paged<ReportVersion> | null
+  loading: boolean
+  error: string | null
+  filters: Filters
+  focusedReportId: string | null
+  busyAction: string | null
+  onFilterChange: (key: keyof Filters, value: string | number) => void
+  onRefresh: () => void
+  onRestore: (version: ReportVersion) => void
+  onCopy: (checksum: string) => void
+  onClearReport: () => void
+}
+
+const emptyPagination = { page: 1, limit: 25, total: 0, totalPages: 0 }
+
+function VersionActions({ version, busy, onRestore, onCopy }: { version: ReportVersion; busy: boolean; onRestore: () => void; onCopy: () => void }) {
+  return <div className="flex flex-wrap gap-2">{version.status === 'READY' && <a href={`/api/reports/${version.reportId}/download?versionId=${encodeURIComponent(version.id)}`} className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-slate-950 px-3 text-xs font-semibold text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"><Download className="h-3.5 w-3.5" />Descargar</a>}{version.checksumSha256 && <button type="button" onClick={onCopy} className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-800"><Clipboard className="h-3.5 w-3.5" />Copiar checksum</button>}{version.report.reportType === 'monthly' && version.status === 'READY' && !version.isCurrent && <button type="button" onClick={onRestore} disabled={busy} className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-blue-200 bg-blue-50 px-3 text-xs font-semibold text-blue-800 disabled:opacity-50"><RotateCcw className="h-3.5 w-3.5" />Restaurar</button>}</div>
+}
+
+function Checksum({ value }: { value: string | null }) {
+  return value ? <code className="block max-w-full break-all rounded-xl bg-slate-950 px-3 py-2 font-mono text-[11px] leading-5 text-slate-200" aria-label={`Checksum SHA-256 ${value}`}>{value}</code> : <span className="text-xs text-slate-400">Sin checksum disponible</span>
+}
+
+export default function VersionsSection(props: Props) {
+  const versions = props.data?.items ?? []
+  return <section id="reports-panel-versions" role="tabpanel" aria-labelledby="reports-tab-versions" className="app-section overflow-hidden">
+    <div className="border-b border-slate-200 bg-slate-50/70 px-5 py-5 sm:px-6"><div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between"><div><div className="page-kicker">Identidad de archivo</div><h2 className="mt-2 text-2xl font-semibold tracking-tight text-slate-950">Historial de versiones</h2><p className="mt-1 max-w-2xl text-sm leading-6 text-slate-600">Archivos inmutables con su origen, estado y huella SHA-256 verificable.</p></div><Button size="sm" variant="outline" onClick={props.onRefresh} disabled={props.loading}><RefreshCw className={`mr-2 h-4 w-4 ${props.loading ? 'animate-spin' : ''}`} />Actualizar</Button></div>
+      {props.focusedReportId && <div className="mt-4 inline-flex items-center gap-2 rounded-full border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-800">Mostrando el reporte seleccionado<button type="button" onClick={props.onClearReport} aria-label="Mostrar versiones de todos los reportes" className="rounded-full p-1 hover:bg-blue-100"><X className="h-3.5 w-3.5" /></button></div>}
+      <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-5"><label className="space-y-1 text-xs font-semibold text-slate-600">Tipo<select className={`${selectClassName} w-full`} value={props.filters.reportType} onChange={event => props.onFilterChange('reportType', event.target.value)}><option value="all">Todos</option><option value="daily">Diarios</option><option value="monthly">Mensuales</option><option value="custom">Personalizados</option></select></label><label className="space-y-1 text-xs font-semibold text-slate-600">Estado<select className={`${selectClassName} w-full`} value={props.filters.status} onChange={event => props.onFilterChange('status', event.target.value)}><option value="all">Todos</option><option value="READY">Disponibles</option><option value="UPLOADING">Generando</option><option value="FAILED">Fallidas</option><option value="CORRUPT">Corruptas</option><option value="DELETE_PENDING">Eliminando</option><option value="DELETE_FAILED">Error al limpiar</option><option value="DELETED">Eliminadas</option></select></label><label className="space-y-1 text-xs font-semibold text-slate-600">Identidad<select className={`${selectClassName} w-full`} value={props.filters.scope} onChange={event => props.onFilterChange('scope', event.target.value)}><option value="all">Actuales e históricas</option><option value="current">Solo actuales</option><option value="historical">Solo históricas</option></select></label><label className="space-y-1 text-xs font-semibold text-slate-600">Desde<Input type="date" value={props.filters.dateFrom} onChange={event => props.onFilterChange('dateFrom', event.target.value)} /></label><label className="space-y-1 text-xs font-semibold text-slate-600">Hasta<Input type="date" value={props.filters.dateTo} onChange={event => props.onFilterChange('dateTo', event.target.value)} /></label></div>
+    </div>
+    <div className="p-4 sm:p-6">{props.error ? <ErrorBlock message={props.error} onRetry={props.onRefresh} /> : props.loading && !props.data ? <LoadingBlock label="Cargando historial de versiones…" /> : !versions.length ? <EmptyBlock icon={<Inbox className="h-6 w-6" />} title="No hay versiones para estos filtros" copy="Amplía el periodo o cambia el estado para revisar otros archivos." /> : <>
+      <div className="space-y-3 xl:hidden">{versions.map(version => <article key={version.id} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"><div className="flex items-start justify-between gap-3"><div><p className="text-xs font-semibold uppercase tracking-wider text-slate-500">{reportTypeLabel(version.report.reportType)} · {version.report.periodDate}</p><h3 className="mt-1 text-lg font-semibold text-slate-950">Versión {version.versionNumber} {version.isCurrent && <span className="text-sm text-blue-700">· Actual</span>}</h3></div><StatusBadge value={version.status} /></div><dl className="mt-4 grid grid-cols-2 gap-3 text-sm"><div><dt className="text-xs text-slate-500">Generación</dt><dd className="mt-1 font-semibold">{version.generationMode}</dd></div><div><dt className="text-xs text-slate-500">Tamaño</dt><dd className="mt-1 font-semibold">{formatBytes(version.sizeBytes)}</dd></div><div className="col-span-2"><dt className="text-xs text-slate-500">Generada</dt><dd className="mt-1">{formatDateTime(version.generatedAt)} · {version.generatedBy?.email ?? 'Sistema'}</dd></div></dl><div className="mt-4"><Checksum value={version.checksumSha256} /></div>{version.errorMessage && <p className="mt-3 rounded-xl border border-rose-100 bg-rose-50 px-3 py-2 text-xs leading-5 text-rose-800">{version.errorMessage}</p>}<div className="mt-4"><VersionActions version={version} busy={!!props.busyAction} onRestore={() => props.onRestore(version)} onCopy={() => version.checksumSha256 && props.onCopy(version.checksumSha256)} /></div></article>)}</div>
+      <div className="hidden overflow-x-auto rounded-2xl border border-slate-200 xl:block"><table className="w-full min-w-[1180px] text-left text-sm"><thead className="bg-slate-100/80 text-xs uppercase tracking-wider text-slate-500"><tr><th className="px-4 py-3">Reporte</th><th className="px-4 py-3">Versión</th><th className="px-4 py-3">Estado</th><th className="px-4 py-3">Generación</th><th className="px-4 py-3">Archivo</th><th className="px-4 py-3">Checksum SHA-256</th><th className="px-4 py-3">Acciones</th></tr></thead><tbody className="divide-y divide-slate-100">{versions.map(version => <tr key={version.id} className="align-top hover:bg-slate-50/70"><td className="px-4 py-4"><div className="font-semibold text-slate-950">{version.report.periodDate}</div><div className="mt-1 text-xs text-slate-500">{reportTypeLabel(version.report.reportType)}</div></td><td className="px-4 py-4"><div className="font-semibold">v{version.versionNumber}</div>{version.isCurrent && <span className="mt-1 inline-flex rounded-full bg-blue-50 px-2 py-0.5 text-xs font-semibold text-blue-700">Actual</span>}</td><td className="px-4 py-4"><StatusBadge value={version.status} />{version.errorMessage && <p className="mt-2 max-w-52 text-xs leading-5 text-rose-700">{version.errorMessage}</p>}</td><td className="px-4 py-4 text-xs text-slate-600"><div className="font-semibold text-slate-800">{version.generationMode}</div><div className="mt-1">{formatDateTime(version.generatedAt)}</div><div className="mt-1 max-w-44 truncate">{version.generatedBy?.email ?? 'Sistema'}</div></td><td className="px-4 py-4"><div className="max-w-48 truncate font-medium" title={version.fileName}>{version.fileName}</div><div className="mt-1 text-xs text-slate-500">{formatBytes(version.sizeBytes)}</div></td><td className="max-w-sm px-4 py-4"><Checksum value={version.checksumSha256} /></td><td className="px-4 py-4"><VersionActions version={version} busy={!!props.busyAction} onRestore={() => props.onRestore(version)} onCopy={() => version.checksumSha256 && props.onCopy(version.checksumSha256)} /></td></tr>)}</tbody></table></div>
+    </>}</div>
+    <PaginationBar pagination={props.data?.pagination ?? emptyPagination} loading={props.loading} noun="versión" onPageChange={page => props.onFilterChange('page', page)} />
+  </section>
+}

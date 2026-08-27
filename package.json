@@ -11,6 +11,8 @@
     "check:auth-audit": "node scripts/verify-auth-audit.mjs",
     "check:infrastructure": "ts-node --project scripts/tsconfig.json scripts/verify-infrastructure.ts --mode=static",
     "verify:infrastructure": "ts-node --project scripts/tsconfig.json scripts/verify-infrastructure.ts",
+    "verify:reports:phase4": "ts-node --project scripts/tsconfig.json scripts/verify-report-phase4.ts",
+    "verify:audit-retirement": "ts-node --project scripts/tsconfig.json scripts/verify-audit-retirement.ts",
     "test:phase6": "ts-node --project scripts/tsconfig.json scripts/verify-phase6-recibos.ts",
     "test:integration": "vitest run",
     "test:e2e": "playwright test --config=playwright.config.ts",
@@ -26,7 +28,8 @@
     "db:seed": "prisma db seed",
     "db:backfill:recibos": "ts-node --compiler-options {\"module\":\"commonjs\"} scripts/backfill-recibo-linkage.ts",
     "db:backfill:auth-users": "ts-node --project scripts/tsconfig.json scripts/backfill-auth-user-ids.ts",
-    "db:verify:workflow-indexes": "ts-node --project scripts/tsconfig.json scripts/verify-workflow-indexes.ts"
+    "db:verify:workflow-indexes": "ts-node --project scripts/tsconfig.json scripts/verify-workflow-indexes.ts",
+    "db:reconcile:reports": "ts-node --project scripts/tsconfig.json scripts/reconcile-report-history.ts"
   },
   "prisma": {
     "seed": "ts-node --compiler-options {\"module\":\"commonjs\"} prisma/seed.ts"

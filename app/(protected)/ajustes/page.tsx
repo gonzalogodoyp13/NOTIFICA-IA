@@ -9,7 +9,6 @@ import {
   Printer,
   FileCog,
   Scale,
-  ScrollText,
   UserRoundCog,
   UsersRound,
 } from 'lucide-react'
@@ -21,10 +20,10 @@ export const dynamic = 'force-dynamic'
 
 const configAreas = [
   {
-    id: 'materias',
-    title: 'Gestionar Materias',
-    description: 'Configurar materias legales.',
-    icon: BookOpenText,
+    id: 'estampos',
+    title: 'Gestionar Estampos',
+    description: 'Configurar plantillas y estampos del proceso.',
+    icon: Printer,
   },
   {
     id: 'abogados',
@@ -33,22 +32,10 @@ const configAreas = [
     icon: UsersRound,
   },
   {
-    id: 'tribunales',
-    title: 'Gestionar Tribunales',
-    description: 'Gestionar tribunales del sistema.',
-    icon: Scale,
-  },
-  {
-    id: 'diligencias',
-    title: 'Gestionar Diligencias',
-    description: 'Configurar tipos de diligencias.',
-    icon: FileStack,
-  },
-  {
-    id: 'comunas',
-    title: 'Gestionar Comunas',
-    description: 'Administrar comunas disponibles.',
-    icon: MapPinned,
+    id: 'procuradores',
+    title: 'Gestionar Procuradores',
+    description: 'Administrar procuradores y sus vinculaciones.',
+    icon: UserRoundCog,
   },
   {
     id: 'bancos',
@@ -57,22 +44,28 @@ const configAreas = [
     icon: Building2,
   },
   {
-    id: 'procuradores',
-    title: 'Gestionar Procuradores',
-    description: 'Administrar procuradores y sus vinculaciones.',
-    icon: UserRoundCog,
+    id: 'diligencias',
+    title: 'Gestionar Diligencias',
+    description: 'Configurar tipos de diligencias.',
+    icon: FileStack,
   },
   {
-    id: 'estampos',
-    title: 'Gestionar Estampos',
-    description: 'Configurar plantillas y estampos del proceso.',
-    icon: Printer,
+    id: 'materias',
+    title: 'Gestionar Materias',
+    description: 'Configurar materias legales.',
+    icon: BookOpenText,
   },
   {
-    id: 'logs',
-    title: 'Registros de Auditoria',
-    description: 'Ver historial de cambios del sistema.',
-    icon: ScrollText,
+    id: 'tribunales',
+    title: 'Gestionar Tribunales',
+    description: 'Gestionar tribunales del sistema.',
+    icon: Scale,
+  },
+  {
+    id: 'comunas',
+    title: 'Gestionar Comunas',
+    description: 'Administrar comunas disponibles.',
+    icon: MapPinned,
   },
   {
     id: 'reportes',
@@ -115,7 +108,7 @@ export default async function AjustesPage() {
 
         <section className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-3">
           {[
-            ...configAreas,
+            ...configAreas.filter(area => area.id !== 'reportes' || user.isOfficeAdmin),
             ...(user.isOfficeAdmin ? [{ id: 'pdf', title: 'Configuracion PDF', description: 'Receptor, firma, sello y timbre de recibos.', icon: FileCog }] : []),
           ].map((area, index) => {
             const Icon = area.icon

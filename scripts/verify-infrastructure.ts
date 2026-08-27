@@ -85,7 +85,7 @@ function runStaticChecks() {
   if (!/directUrl\s*=\s*env\("DIRECT_URL"\)/.test(schema)) errors.push('Prisma datasource does not declare DIRECT_URL.')
 
   const envExample = fs.readFileSync(path.join(root, '.env.example'), 'utf8')
-  for (const expected of ['DATABASE_URL=', 'DIRECT_URL=', 'NEXT_PUBLIC_SUPABASE_URL=', 'NEXT_PUBLIC_ENVIRONMENT=']) {
+  for (const expected of ['DATABASE_URL=', 'DIRECT_URL=', 'NEXT_PUBLIC_SUPABASE_URL=', 'NEXT_PUBLIC_ENVIRONMENT=', 'REPORT_AUTOMATION_SECRET=']) {
     if (!envExample.includes(expected)) errors.push(`.env.example is missing ${expected}.`)
   }
 
@@ -130,6 +130,8 @@ async function main() {
       errors.push('QA verification requires NEXT_PUBLIC_ENVIRONMENT=qa or test.')
     }
     if (process.env.QA_ALLOW_MUTATIONS !== 'true') errors.push('QA verification requires QA_ALLOW_MUTATIONS=true.')
+    if (process.env.MAIL_PROVIDER !== 'dry-run') errors.push('QA verification requires MAIL_PROVIDER=dry-run.')
+    if (!process.env.REPORT_AUTOMATION_SECRET?.trim()) errors.push('QA verification requires REPORT_AUTOMATION_SECRET.')
   }
 
   if (mode !== 'static') {

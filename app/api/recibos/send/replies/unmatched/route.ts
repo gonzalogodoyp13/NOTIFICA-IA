@@ -1,13 +1,14 @@
 import { NextRequest } from 'next/server'
 
-import { apiSuccess, withApiUser } from '@/lib/api/server'
+import { apiSuccess, parseApiInput, withApiUser } from '@/lib/api/server'
 import { listUnmatchedReplies } from '@/lib/recibos/reply-sync'
+import { UnmatchedReplyQuerySchema } from '@/lib/recibos/unmatched-replies-core'
 
 export const dynamic = 'force-dynamic'
 
 export async function GET(req: NextRequest) {
   return withApiUser(req, 'list unmatched receipt replies', async user => {
-    const limit = Number(req.nextUrl.searchParams.get('limit') ?? 25)
-    return apiSuccess(await listUnmatchedReplies(user.officeId, limit))
+    const query = parseApiInput(UnmatchedReplyQuerySchema, Object.fromEntries(req.nextUrl.searchParams))
+    return apiSuccess(await listUnmatchedReplies({ officeId: user.officeId, ...query }))
   })
 }

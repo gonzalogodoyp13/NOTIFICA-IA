@@ -2,6 +2,7 @@ import ExcelJS from 'exceljs'
 import type { ActivityEvent, User } from '@prisma/client'
 
 import { formatChileDateTime } from './chileTime'
+import { classifyActivityAction } from '@/lib/audit/classification'
 
 type EventWithUser = ActivityEvent & { user: Pick<User, 'email'> | null }
 
@@ -34,13 +35,15 @@ const MODULE_LABELS: Record<string, string> = {
   audit: 'Auditoria',
   settings: 'Ajustes',
   security: 'Seguridad',
+  reports: 'Reportes',
+  system: 'Sistema',
 }
 
 const SHEET_DEFS = [
   { name: 'Actividad', filter: () => true },
-  { name: 'Creaciones', filter: (event: EventWithUser) => /\.create$/.test(event.eventType) },
-  { name: 'Modificaciones', filter: (event: EventWithUser) => /\.update$/.test(event.eventType) },
-  { name: 'Eliminaciones', filter: (event: EventWithUser) => /\.delete$/.test(event.eventType) },
+  { name: 'Creaciones', filter: (event: EventWithUser) => classifyActivityAction(event.eventType, event.description) === 'CREATE' },
+  { name: 'Modificaciones', filter: (event: EventWithUser) => classifyActivityAction(event.eventType, event.description) === 'UPDATE' },
+  { name: 'Eliminaciones', filter: (event: EventWithUser) => classifyActivityAction(event.eventType, event.description) === 'DELETE' },
   { name: 'Documentos y descargas', filter: (event: EventWithUser) => event.module === 'documents' || /document\./.test(event.eventType) },
   { name: 'Correos', filter: (event: EventWithUser) => event.module === 'emails' || /email|send|reply|receipt\.(send|resend|test)/.test(event.eventType) },
   { name: 'Pagos y boletas', filter: (event: EventWithUser) => event.module === 'payments' || /receipt\.(payment|boleta|undo|export)/.test(event.eventType) },

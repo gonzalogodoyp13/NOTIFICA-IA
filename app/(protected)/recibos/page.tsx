@@ -1,6 +1,6 @@
 'use client'
 
-import { startTransition, useEffect, useMemo, useRef, useState } from 'react'
+import { startTransition, useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { AlertTriangle, CheckCircle, ChevronDown, Filter, FlaskConical, History, Mail, MessageSquare, RefreshCw, RotateCcw, Save, Search, Send, ShieldCheck, X } from 'lucide-react'
 import Link from 'next/link'
@@ -8,6 +8,11 @@ import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { readApiError } from '@/lib/api/client'
+import UnmatchedRepliesPanel, {
+  type UnmatchedReplyItem,
+  type UnmatchedReplyPagination,
+  type UnmatchedReplyStatus,
+} from './components/UnmatchedRepliesPanel'
 
 const PAGE_SIZE = 25
 
@@ -86,6 +91,7 @@ type BulkPreview = {
   stateHash: string
 }
 type RecentOperation = { id: string; action: string; createdAt: string; undoneAt: string | null; reversible: boolean; reason: string | null }
+type HistoryPanel = 'dispatch-history' | 'unmatched-replies'
 
 const EMPTY_FILTERS: FilterState = {
   abogadoIds: [], procuradorIds: [], bancoIds: [], estados: [], estampoTemplates: [], rol: '',
@@ -229,12 +235,19 @@ export default function RecibosPage() {
   const [templateSaved, setTemplateSaved] = useState(false)
   const [sendResult, setSendResult] = useState<SendResult | null>(null)
   const [historyOpen, setHistoryOpen] = useState(false)
+  const [historyPanel, setHistoryPanel] = useState<HistoryPanel>('dispatch-history')
   const [historyLoading, setHistoryLoading] = useState(false)
   const [historyItems, setHistoryItems] = useState<DispatchHistoryItem[]>([])
   const [historyDetail, setHistoryDetail] = useState<DispatchHistoryDetail | null>(null)
   const [historyDetailLoading, setHistoryDetailLoading] = useState(false)
   const [replySyncing, setReplySyncing] = useState(false)
   const [replySyncMessage, setReplySyncMessage] = useState<string | null>(null)
+  const [unmatchedItems, setUnmatchedItems] = useState<UnmatchedReplyItem[]>([])
+  const [unmatchedPagination, setUnmatchedPagination] = useState<UnmatchedReplyPagination>({ page: 1, limit: 25, total: 0, totalPages: 0 })
+  const [unmatchedPendingTotal, setUnmatchedPendingTotal] = useState(0)
+  const [unmatchedStatus, setUnmatchedStatus] = useState<UnmatchedReplyStatus>('all')
+  const [unmatchedLoading, setUnmatchedLoading] = useState(false)
+  const [unmatchedError, setUnmatchedError] = useState<string | null>(null)
   const [expandedReplies, setExpandedReplies] = useState<Record<string, boolean>>({})
   const [duplicateReasons, setDuplicateReasons] = useState<Record<string, string>>({})
   const [historyFilter, setHistoryFilter] = useState('all')
@@ -265,6 +278,31 @@ export default function RecibosPage() {
       setHistoryLoading(false)
     }
   }
+  const loadUnmatchedReplies = async (nextPage = unmatchedPagination.page, nextStatus = unmatchedStatus) => {
+    setUnmatchedLoading(true); setUnmatchedError(null)
+    try {
+      const params = new URLSearchParams({ page: String(nextPage), limit: '25', status: nextStatus })
+      const response = await fetch(`/api/recibos/send/replies/unmatched?${params}`, { credentials: 'include', cache: 'no-store' })
+      const payload = await response.json().catch(() => null)
+      if (!response.ok || payload?.ok !== true) throw new Error(payload?.error?.message || payload?.error || 'No se pudieron cargar las respuestas pendientes.')
+      setUnmatchedItems(payload.data.items ?? [])
+      setUnmatchedPagination(payload.data.pagination)
+      if (nextStatus === 'all') setUnmatchedPendingTotal(payload.data.pagination.total)
+    } catch (e) {
+      setUnmatchedError(e instanceof Error ? e.message : 'No se pudieron cargar las respuestas pendientes.')
+    } finally {
+      setUnmatchedLoading(false)
+    }
+  }
+  const loadUnmatchedCount = async () => {
+    try {
+      const response = await fetch('/api/recibos/send/replies/unmatched?page=1&limit=1&status=all', { credentials: 'include', cache: 'no-store' })
+      const payload = await response.json().catch(() => null)
+      if (response.ok && payload?.ok === true) setUnmatchedPendingTotal(payload.data.pagination.total)
+    } catch {
+      // The queue exposes its own error state when opened; a badge failure must not break Recibos.
+    }
+  }
   const loadProviderHealth = async () => {
     const response = await fetch('/api/recibos/send/health', { credentials: 'include' })
     const payload = await response.json().catch(() => null)
@@ -278,7 +316,7 @@ export default function RecibosPage() {
       await loadProviderHealth()
     } catch (e) { setError(e instanceof Error ? e.message : 'No se pudo comprobar los proveedores.') } finally { setSmartActionLoading(null) }
   }
-  useEffect(() => { void loadHistory('all'); void loadProviderHealth() }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { void loadHistory('all'); void loadProviderHealth(); void loadUnmatchedReplies(1, 'all') }, []) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     Promise.all([
       fetch('/api/abogados', { credentials: 'include' }).then(r => r.json()), fetch('/api/bancos', { credentials: 'include' }).then(r => r.json()),
@@ -406,9 +444,51 @@ export default function RecibosPage() {
     setSendOpen(true); setSendMode('procurador'); setSendExpanded({}); setSendTemplateDraft(null); setTemplateSaved(false); void previewSend('procurador', null)
   }
 
-  const openHistory = () => {
-    setHistoryOpen(true); setHistoryDetail(null); void loadHistory(historyFilter); void loadProviderHealth()
+  const setPanelInUrl = (panel: HistoryPanel | null) => {
+    const params = new URLSearchParams(searchParams.toString())
+    if (panel) params.set('panel', panel)
+    else params.delete('panel')
+    const query = params.toString()
+    window.history.replaceState(window.history.state, '', query ? `${pathname}?${query}` : pathname)
+    setHistoryOpen(panel !== null)
+    if (panel) setHistoryPanel(panel)
   }
+
+  const openHistory = () => {
+    setPanelInUrl('dispatch-history')
+  }
+
+  const selectHistoryPanel = (panel: HistoryPanel) => {
+    setPanelInUrl(panel)
+  }
+
+  const moveHistoryTab = (event: KeyboardEvent<HTMLButtonElement>, panel: HistoryPanel) => {
+    if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return
+    event.preventDefault()
+    selectHistoryPanel(panel)
+    window.requestAnimationFrame(() => document.getElementById(`${panel}-tab`)?.focus())
+  }
+
+  const closeHistory = () => {
+    setPanelInUrl(null)
+  }
+
+  const requestedHistoryPanel = searchParams.get('panel')
+  useEffect(() => {
+    if (requestedHistoryPanel !== 'dispatch-history' && requestedHistoryPanel !== 'unmatched-replies') {
+      setHistoryOpen(false)
+      return
+    }
+    setHistoryOpen(true)
+    setHistoryPanel(requestedHistoryPanel)
+    if (requestedHistoryPanel === 'dispatch-history') {
+      void loadHistory(historyFilter)
+    } else {
+      setHistoryDetail(null)
+      void loadUnmatchedReplies(unmatchedPagination.page, unmatchedStatus)
+    }
+    void loadProviderHealth()
+  }, [requestedHistoryPanel]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const openHistoryDetail = async (id: string) => {
     setHistoryDetailLoading(true); setError(null)
@@ -433,7 +513,11 @@ export default function RecibosPage() {
       if (!response.ok || payload?.ok !== true) throw new Error(payload?.error?.message || payload?.error || 'No se pudieron actualizar las respuestas.')
       const totals = payload.data.totals
       setReplySyncMessage(`Revision completada: ${totals.matched} nuevas, ${totals.duplicates} ya registradas, ${totals.unmatched + totals.needsReview} por revisar.`)
-      await loadHistory()
+      await Promise.all([
+        loadHistory(),
+        loadUnmatchedReplies(1, unmatchedStatus),
+        ...(unmatchedStatus === 'all' ? [] : [loadUnmatchedCount()]),
+      ])
       if (historyDetail) await openHistoryDetail(historyDetail.id)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'No se pudieron actualizar las respuestas.')
@@ -569,8 +653,8 @@ export default function RecibosPage() {
   return <div className="app-shell"><div className="page-stack mx-auto max-w-[1800px] px-4 sm:px-6 lg:px-8 2xl:px-10">
     <section className="page-section overflow-visible">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-        <div><div className="page-kicker">Recibos</div><h1 className="page-title">Gestion de Recibos</h1><p className="page-subtitle">Define los criterios de busqueda antes de cargar resultados. La pagina permanece liviana hasta que presiones Aplicar.</p><div className="mt-4 flex gap-2"><Link href="/recibos" className="rounded-full bg-slate-900 px-4 py-2 text-sm font-semibold text-white">Gestion</Link><Link href="/recibos/reconciliacion" className="rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700">Conciliacion</Link></div></div>
-        <div className="flex flex-wrap gap-2"><Button variant="outline" onClick={clear}>Limpiar filtros</Button><Button variant="outline" onClick={openHistory}><History className="mr-2 h-4 w-4" />Historial de envios</Button><Button variant="outline" onClick={openSendCenter} disabled={!effectiveCount || sendLoading}><Send className="mr-2 h-4 w-4" />Enviar listado ({effectiveCount})</Button><Button onClick={exportRows} disabled={!effectiveCount || exporting}>{exporting ? 'Exportando...' : `Exportar (${effectiveCount})`}</Button></div>
+        <div><div className="page-kicker">Recibos</div><h1 className="page-title">Gestion de Recibos</h1><p className="page-subtitle">Define los criterios de busqueda antes de cargar resultados.</p><div className="mt-4 flex gap-2"><Link href="/recibos" className="rounded-full bg-slate-900 px-4 py-2 text-sm font-semibold text-white">Gestion</Link><Link href="/recibos/reconciliacion" className="rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700">Conciliacion</Link></div></div>
+        <div className="flex flex-wrap gap-2"><Button variant="outline" onClick={clear}>Limpiar filtros</Button><Button variant="outline" onClick={openHistory}><History className="mr-2 h-4 w-4" />Gestion de envios{unmatchedPendingTotal > 0 && <span aria-label={`${unmatchedPendingTotal} respuestas pendientes`} className="ml-2 inline-flex min-w-5 justify-center rounded-full bg-amber-100 px-1.5 py-0.5 text-[11px] font-bold text-amber-900">{unmatchedPendingTotal > 99 ? '99+' : unmatchedPendingTotal}</span>}</Button><Button variant="outline" onClick={openSendCenter} disabled={!effectiveCount || sendLoading}><Send className="mr-2 h-4 w-4" />Enviar listado ({effectiveCount})</Button></div>
       </div>
       <div className="mt-6 rounded-2xl border border-slate-200 bg-slate-50/70 p-4 sm:p-5">
         <div className="mb-4 flex items-center gap-2 text-sm font-semibold text-slate-800"><Filter className="h-4 w-4 text-blue-700" />Criterios de busqueda</div>
@@ -594,7 +678,7 @@ export default function RecibosPage() {
       <div className="flex flex-col gap-3 border-b border-slate-200 pb-4 lg:flex-row lg:items-center lg:justify-between">
         <div><div className="text-sm font-semibold text-slate-900">{loading ? 'Cargando recibos...' : `${data?.pagination.totalRows ?? 0} recibos encontrados`}</div><div className="mt-1 text-xs text-slate-500">{effectiveCount} seleccionados</div></div>
         <div className="flex flex-wrap gap-2">
-          <Button variant="outline" onClick={openHistory}><History className="mr-2 h-4 w-4" />Historial</Button>
+          <Button onClick={exportRows} disabled={!effectiveCount || exporting}>{exporting ? 'Exportando...' : `Exportar (${effectiveCount})`}</Button>
           <Button variant="outline" onClick={openSendCenter} disabled={!effectiveCount || sendLoading}><Mail className="mr-2 h-4 w-4" />Enviar listado</Button>
           <Button variant="outline" onClick={() => { setPaymentDate(todayInput()); setBulkPreview(null); setPaidOpen(true) }} disabled={selection.mode !== 'explicit' || !selection.ids.length}>Marcar pagado</Button>
           <Button variant="outline" onClick={() => { setBulkPreview(null); setBoletaOpen(true) }} disabled={selection.mode !== 'explicit' || !selection.ids.length}>Asociar boleta</Button>
@@ -709,12 +793,18 @@ export default function RecibosPage() {
     </div>}
 
     {historyOpen && <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 p-3 sm:p-4">
-      <div className="flex max-h-[92vh] w-full max-w-6xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
-        <div className="flex items-start justify-between gap-4 border-b border-slate-200 px-5 py-4">
-          <div><div className="page-kicker">Historial de envios</div><h3 className="mt-1 text-xl font-semibold text-slate-950">Listados enviados</h3><p className="mt-1 text-sm text-slate-600">Ultimos envios registrados para esta oficina.</p></div>
-          <button type="button" onClick={() => setHistoryOpen(false)} className="rounded-full p-2 text-slate-500 hover:bg-slate-100"><X className="h-5 w-5" /></button>
+      <div role="dialog" aria-modal="true" aria-labelledby="receipt-delivery-title" className="flex max-h-[92vh] w-full max-w-7xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
+        <div className="border-b border-slate-200 px-5 pt-4">
+          <div className="flex items-start justify-between gap-4">
+            <div><div className="page-kicker">Gestion de envios</div><h3 id="receipt-delivery-title" className="mt-1 text-xl font-semibold text-slate-950">Centro de respuestas y envíos</h3><p className="mt-1 text-sm text-slate-600">Consulta listados enviados y mensajes que necesitan revisión.</p></div>
+            <button type="button" aria-label="Cerrar gestión de envíos" onClick={closeHistory} className="rounded-full p-2 text-slate-500 hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"><X className="h-5 w-5" /></button>
+          </div>
+          <div role="tablist" aria-label="Secciones de gestión de envíos" className="mt-4 flex gap-1 overflow-x-auto">
+            <button id="dispatch-history-tab" type="button" role="tab" aria-controls="dispatch-history-panel" aria-selected={historyPanel === 'dispatch-history'} tabIndex={historyPanel === 'dispatch-history' ? 0 : -1} onKeyDown={event => moveHistoryTab(event, 'unmatched-replies')} onClick={() => selectHistoryPanel('dispatch-history')} className={`whitespace-nowrap border-b-2 px-4 py-3 text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 ${historyPanel === 'dispatch-history' ? 'border-slate-900 text-slate-950' : 'border-transparent text-slate-500 hover:text-slate-800'}`}>Envíos</button>
+            <button id="unmatched-replies-tab" type="button" role="tab" aria-controls="unmatched-replies-panel" aria-selected={historyPanel === 'unmatched-replies'} tabIndex={historyPanel === 'unmatched-replies' ? 0 : -1} onKeyDown={event => moveHistoryTab(event, 'dispatch-history')} onClick={() => selectHistoryPanel('unmatched-replies')} className={`inline-flex items-center whitespace-nowrap border-b-2 px-4 py-3 text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 ${historyPanel === 'unmatched-replies' ? 'border-amber-600 text-slate-950' : 'border-transparent text-slate-500 hover:text-slate-800'}`}>Respuestas por asociar<span aria-label={`${unmatchedPendingTotal} respuestas pendientes`} className="ml-2 inline-flex min-w-6 justify-center rounded-full bg-amber-100 px-1.5 py-0.5 text-[11px] font-bold text-amber-900">{unmatchedPendingTotal > 99 ? '99+' : unmatchedPendingTotal}</span></button>
+          </div>
         </div>
-        <div className="grid flex-1 overflow-hidden lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+        {historyPanel === 'dispatch-history' && <div id="dispatch-history-panel" role="tabpanel" aria-labelledby="dispatch-history-tab" className="grid flex-1 overflow-hidden lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
           <div className="overflow-y-auto border-r border-slate-200 p-4">
             <div className="mb-3 flex items-center justify-between gap-2"><div className="text-sm font-semibold text-slate-900">Control inteligente</div><div className="flex gap-2"><Button variant="outline" onClick={() => loadHistory(historyFilter)} disabled={historyLoading}>{historyLoading ? 'Cargando...' : 'Actualizar'}</Button><Button variant="outline" onClick={syncReplies} disabled={replySyncing || historyDetail?.provider === 'dry-run'}><RefreshCw className={`mr-2 h-4 w-4 ${replySyncing ? 'animate-spin' : ''}`} />{replySyncing ? 'Revisando...' : 'Actualizar respuestas'}</Button></div></div>
             <div className="mb-3 flex flex-wrap gap-1">{[{ id: 'all', label: 'Todos' }, { id: 'sent', label: 'Enviados' }, { id: 'failed', label: 'Fallidos' }, { id: 'waiting', label: 'Esperando' }, { id: 'overdue', label: 'Vencidos' }, { id: 'replied', label: 'Respondidos' }, { id: 'resolved', label: 'Resueltos' }].map(option => <button key={option.id} type="button" onClick={() => { setHistoryFilter(option.id); setHistoryDetail(null); void loadHistory(option.id) }} className={`rounded-md px-2.5 py-1.5 text-xs font-semibold ${historyFilter === option.id ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-700'}`}>{option.label}</button>)}</div>
@@ -750,7 +840,17 @@ export default function RecibosPage() {
               </div>)}
             </div>}
           </div>
-        </div>
+        </div>}
+        {historyPanel === 'unmatched-replies' && <div id="unmatched-replies-panel" role="tabpanel" aria-labelledby="unmatched-replies-tab" className="min-h-0 flex-1 overflow-hidden"><UnmatchedRepliesPanel
+          items={unmatchedItems}
+          pagination={unmatchedPagination}
+          status={unmatchedStatus}
+          loading={unmatchedLoading}
+          error={unmatchedError}
+          onStatusChange={status => { setUnmatchedStatus(status); void loadUnmatchedReplies(1, status) }}
+          onPageChange={nextPage => void loadUnmatchedReplies(nextPage, unmatchedStatus)}
+          onRefresh={() => void loadUnmatchedReplies(unmatchedPagination.page, unmatchedStatus)}
+        /></div>}
       </div>
     </div>}
 

@@ -3,7 +3,7 @@ export const CHILE_TIMEZONE = 'America/Santiago'
 const DateSchema = /^(\d{4})-(\d{2})-(\d{2})$/
 const MonthSchema = /^(\d{4})-(\d{2})$/
 
-function partsInChile(date: Date) {
+export function partsInChile(date: Date) {
   const parts = new Intl.DateTimeFormat('en-CA', {
     timeZone: CHILE_TIMEZONE,
     year: 'numeric',
@@ -26,7 +26,7 @@ function partsInChile(date: Date) {
   }
 }
 
-function localChileDateTimeToUtc(year: number, month: number, day: number, hour = 0, minute = 0, second = 0) {
+export function localChileDateTimeToUtc(year: number, month: number, day: number, hour = 0, minute = 0, second = 0) {
   let guess = Date.UTC(year, month - 1, day, hour, minute, second)
   for (let attempt = 0; attempt < 4; attempt += 1) {
     const rendered = partsInChile(new Date(guess))

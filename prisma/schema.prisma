@@ -10,146 +10,144 @@ datasource db {
 }
 
 model User {
-  id         String     @id @default(cuid())
-  authUserId String     @unique
-  email      String     @unique
-  officeName String
-  officeId   Int
-  isOfficeAdmin Boolean  @default(false)
-  isActive   Boolean    @default(true)
-  createdAt  DateTime   @default(now())
-  auditLogs  AuditLog[]
-  activityEvents ActivityEvent[]
-  activityOutbox ActivityOutbox[]
-  generatedReports GeneratedReport[]
-  reportDeliveryRecipients ReportDeliveryRecipient[]
-  demandas   Demanda[]
-  receiptBulkOperations ReceiptBulkOperation[]
-  recibosDispatchBatches RecibosDispatchBatch[]
-  office     Office     @relation(fields: [officeId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  id                                   String                            @id @default(cuid())
+  authUserId                           String                            @unique
+  email                                String                            @unique
+  officeName                           String
+  officeId                             Int
+  isOfficeAdmin                        Boolean                           @default(false)
+  isActive                             Boolean                           @default(true)
+  createdAt                            DateTime                          @default(now())
+  activityEvents                       ActivityEvent[]
+  activityOutbox                       ActivityOutbox[]
+  generatedReports                     GeneratedReport[]
+  reportDeliveryRecipients             ReportDeliveryRecipient[]
+  generatedReportVersions              GeneratedReportVersion[]          @relation("ReportVersionGenerator")
+  requestedReportDeliveryAttempts      ReportDeliveryAttempt[]           @relation("ReportDeliveryRequester")
+  reportDeliveryAttemptRecipients      ReportDeliveryAttemptRecipient[]
+  requestedReportJobs                  ReportJob[]                       @relation("ReportJobRequester")
+  reportRecipientConfiguration         ReportRecipientConfig?            @relation("ReportRecipientUser")
+  createdReportRecipientConfigurations ReportRecipientConfig[]           @relation("ReportRecipientCreator")
+  updatedReportRecipientConfigurations ReportRecipientConfig[]           @relation("ReportRecipientUpdater")
+  createdReportSchedules               ReportSchedule[]                  @relation("ReportScheduleCreator")
+  updatedReportSchedules               ReportSchedule[]                  @relation("ReportScheduleUpdater")
+  createdCustomReportDefinitions       CustomReportDefinition[]          @relation("CustomReportDefinitionCreator")
+  updatedCustomReportDefinitions       CustomReportDefinition[]          @relation("CustomReportDefinitionUpdater")
+  customReportDefinitionRecipients     CustomReportDefinitionRecipient[]
+  demandas                             Demanda[]
+  receiptBulkOperations                ReceiptBulkOperation[]
+  recibosDispatchBatches               RecibosDispatchBatch[]
+  office                               Office                            @relation(fields: [officeId], references: [id], onDelete: Restrict, onUpdate: Cascade)
 
   @@index([officeId])
   @@map("users")
 }
 
 model Office {
-  id             Int             @id @default(autoincrement())
-  nombre         String
-  cacheRevision  Int             @default(1)
-  pdfReceptorNombre String?
-  pdfReceptorDireccionLinea String?
-  pdfReceptorTelefono String?
-  pdfFirmaStorageBucket String?
-  pdfFirmaStorageKey String?
-  pdfSelloStorageBucket String?
-  pdfSelloStorageKey String?
-  pdfReciboStampStorageBucket String?
-  pdfReciboStampStorageKey String?
-  createdAt      DateTime        @default(now())
-  users          User[]
-  abogados       Abogado[]
-  bancos         Banco[]
-  procuradores   Procurador[]
-  abogadoBancos  AbogadoBanco[]
-  procuradorAbogados ProcuradorAbogado[]
-  aranceles      Arancel[]
-  comunas        Comuna[]
-  materias       Materia[]
-  roles          RolCausa[]
-  tribunalesNuevos Tribunal[]
-  diligenciaTiposNuevos DiligenciaTipo[]
-  estampos       Estampo[]       @relation("OfficeEstampos")
-  auditLogs      AuditLog[]
-  activityEvents ActivityEvent[]
-  activityOutbox ActivityOutbox[]
-  generatedReports GeneratedReport[]
-  reportDeliveryBatches ReportDeliveryBatch[]
-  demandas       Demanda[]
-  estampoCustoms EstampoCustom[] @relation("OfficeEstampoCustoms")
-  recibos        Recibo[]
+  id                            Int                            @id @default(autoincrement())
+  nombre                        String
+  cacheRevision                 Int                            @default(1)
+  reportConfigRevision          Int                            @default(1)
+  pdfReceptorNombre             String?
+  pdfReceptorDireccionLinea     String?
+  pdfReceptorTelefono           String?
+  pdfFirmaStorageBucket         String?
+  pdfFirmaStorageKey            String?
+  pdfSelloStorageBucket         String?
+  pdfSelloStorageKey            String?
+  pdfReciboStampStorageBucket   String?
+  pdfReciboStampStorageKey      String?
+  createdAt                     DateTime                       @default(now())
+  users                         User[]
+  abogados                      Abogado[]
+  bancos                        Banco[]
+  procuradores                  Procurador[]
+  abogadoBancos                 AbogadoBanco[]
+  procuradorAbogados            ProcuradorAbogado[]
+  aranceles                     Arancel[]
+  comunas                       Comuna[]
+  materias                      Materia[]
+  roles                         RolCausa[]
+  tribunalesNuevos              Tribunal[]
+  diligenciaTiposNuevos         DiligenciaTipo[]
+  estampos                      Estampo[]                      @relation("OfficeEstampos")
+  activityEvents                ActivityEvent[]
+  activityOutbox                ActivityOutbox[]
+  generatedReports              GeneratedReport[]
+  reportDeliveryBatches         ReportDeliveryBatch[]
+  reportDeliveryAttempts        ReportDeliveryAttempt[]
+  reportJobs                    ReportJob[]
+  reportRecipientConfigurations ReportRecipientConfig[]
+  reportSchedules               ReportSchedule[]
+  customReportDefinitions       CustomReportDefinition[]
+  demandas                      Demanda[]
+  estampoCustoms                EstampoCustom[]                @relation("OfficeEstampoCustoms")
+  recibos                       Recibo[]
   receiptGenerationReservations ReceiptGenerationReservation[]
-  documentNumberSequences DocumentNumberSequence[]
-  receiptBulkOperations ReceiptBulkOperation[]
-  emailTemplates EmailTemplate[]
-  recibosDispatchBatches RecibosDispatchBatch[]
-  recibosDispatchReplies RecibosDispatchReply[]
-  recibosReplySyncCheckpoints RecibosReplySyncCheckpoint[]
-  recibosProviderHealth RecibosProviderHealth[]
+  documentNumberSequences       DocumentNumberSequence[]
+  receiptBulkOperations         ReceiptBulkOperation[]
+  emailTemplates                EmailTemplate[]
+  recibosDispatchBatches        RecibosDispatchBatch[]
+  recibosDispatchReplies        RecibosDispatchReply[]
+  recibosReplySyncCheckpoints   RecibosReplySyncCheckpoint[]
+  recibosProviderHealth         RecibosProviderHealth[]
 
   @@map("offices")
 }
 
-model AuditLog {
-  id        Int      @id @default(autoincrement())
-  userId    String
-  officeId  Int
-  tabla     String
-  accion    String
-  diff      Json?
-  createdAt DateTime @default(now())
-  office    Office   @relation(fields: [officeId], references: [id])
-  user      User     @relation(fields: [userId], references: [id])
-
-  @@index([officeId, createdAt])
-  @@index([officeId, userId, createdAt])
-  @@index([officeId, tabla, createdAt])
-  @@index([officeId, accion, createdAt])
-  @@map("audit_logs")
-}
-
 model ActivityEvent {
-  id          Int      @id @default(autoincrement())
-  officeId    Int
-  userId      String?
-  actorType   ActivityActorType @default(USER)
-  source      ActivitySource @default(WEB)
-  eventType   String
-  module      String
-  result      String
-  recordType  String?
-  recordId    String?
-  rolId       String?
-  rol         String?
-  shortName   String?
-  description String
-  metadata    Json?
-  requestId   String?
-  eventVersion Int     @default(1)
+  id               Int               @id @default(autoincrement())
+  officeId         Int
+  userId           String?
+  actorType        ActivityActorType @default(USER)
+  source           ActivitySource    @default(WEB)
+  eventType        String
+  module           String
+  result           String
+  recordType       String?
+  recordId         String?
+  rolId            String?
+  rol              String?
+  shortName        String?
+  description      String
+  metadata         Json?
+  requestId        String?
+  eventVersion     Int               @default(1)
   deduplicationKey String?
-  occurredAt  DateTime @default(now())
-  createdAt   DateTime @default(now())
-  office      Office   @relation(fields: [officeId], references: [id], onDelete: Restrict, onUpdate: Cascade)
-  user        User?    @relation(fields: [userId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  occurredAt       DateTime          @default(now())
+  createdAt        DateTime          @default(now())
+  office           Office            @relation(fields: [officeId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  user             User?             @relation(fields: [userId], references: [id], onDelete: Restrict, onUpdate: Cascade)
 
+  @@unique([officeId, deduplicationKey])
   @@index([officeId, occurredAt])
   @@index([officeId, eventType, occurredAt])
   @@index([officeId, userId, occurredAt])
   @@index([requestId])
   @@index([module, occurredAt])
   @@index([result, occurredAt])
-  @@unique([officeId, deduplicationKey])
   @@map("activity_events")
 }
 
 model ActivityOutbox {
-  id                 String               @id @default(cuid())
-  officeId           Int
-  userId             String?
-  actorType          ActivityActorType
-  source             ActivitySource
-  eventType          String
-  payload            Json
-  requestId          String?
-  deduplicationKey   String
-  status             ActivityOutboxStatus @default(PENDING)
-  attempts           Int                  @default(0)
-  nextAttemptAt      DateTime             @default(now())
-  lastError          String?
-  processedAt        DateTime?
-  createdAt          DateTime             @default(now())
-  updatedAt          DateTime             @updatedAt
-  office             Office               @relation(fields: [officeId], references: [id], onDelete: Restrict, onUpdate: Cascade)
-  user               User?                @relation(fields: [userId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  id               String               @id @default(cuid())
+  officeId         Int
+  userId           String?
+  actorType        ActivityActorType
+  source           ActivitySource
+  eventType        String
+  payload          Json
+  requestId        String?
+  deduplicationKey String
+  status           ActivityOutboxStatus @default(PENDING)
+  attempts         Int                  @default(0)
+  nextAttemptAt    DateTime             @default(now())
+  lastError        String?
+  processedAt      DateTime?
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
+  office           Office               @relation(fields: [officeId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  user             User?                @relation(fields: [userId], references: [id], onDelete: Restrict, onUpdate: Cascade)
 
   @@unique([officeId, deduplicationKey])
   @@index([status, nextAttemptAt])
@@ -176,34 +174,44 @@ enum ActivityOutboxStatus {
 }
 
 model GeneratedReport {
-  id              String   @id @default(cuid())
-  officeId        Int
-  reportType      String
-  periodStart     DateTime
-  periodEnd       DateTime
-  periodDate      String
-  timezone        String
-  status          String
-  storageBucket   String
-  storageKey      String
-  fileName        String
-  mimeType        String
-  sizeBytes       Int
-  checksumSha256  String
-  activityCount   Int
-  generatedAt     DateTime
-  expiresAt       DateTime?
-  createdByUserId String?
-  generationMode  String
-  metadata        Json?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-  office          Office   @relation(fields: [officeId], references: [id], onDelete: Restrict, onUpdate: Cascade)
-  createdBy       User?    @relation(fields: [createdByUserId], references: [id], onDelete: SetNull, onUpdate: Cascade)
-  deliveryBatches ReportDeliveryBatch[]
+  id                 String                   @id @default(cuid())
+  officeId           Int
+  reportType         String
+  identityKey        String
+  customDefinitionId String?
+  periodStart        DateTime
+  periodEnd          DateTime
+  periodDate         String
+  timezone           String
+  status             String
+  storageBucket      String
+  storageKey         String
+  fileName           String
+  mimeType           String
+  sizeBytes          Int
+  checksumSha256     String
+  activityCount      Int
+  generatedAt        DateTime
+  expiresAt          DateTime?
+  createdByUserId    String?
+  generationMode     String
+  metadata           Json?
+  createdAt          DateTime                 @default(now())
+  updatedAt          DateTime                 @updatedAt
+  currentVersionId   String?                  @unique
+  office             Office                   @relation(fields: [officeId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  createdBy          User?                    @relation(fields: [createdByUserId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  deliveryBatches    ReportDeliveryBatch[]
+  versions           GeneratedReportVersion[] @relation("ReportVersions")
+  currentVersion     GeneratedReportVersion?  @relation("CurrentReportVersion", fields: [currentVersionId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  deliveryAttempts   ReportDeliveryAttempt[]
+  customDefinition   CustomReportDefinition?  @relation(fields: [customDefinitionId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  jobs               ReportJob[]
 
-  @@unique([officeId, reportType, periodStart, periodEnd])
+  @@unique([officeId, identityKey, periodStart, periodEnd])
   @@index([officeId, reportType, periodDate])
+  @@index([officeId, identityKey, periodDate])
+  @@index([customDefinitionId])
   @@index([officeId, generatedAt])
   @@index([status])
   @@index([expiresAt])
@@ -211,8 +219,382 @@ model GeneratedReport {
   @@map("generated_reports")
 }
 
+enum GeneratedReportVersionStatus {
+  UPLOADING
+  READY
+  FAILED
+  CORRUPT
+  DELETE_PENDING
+  DELETE_FAILED
+  DELETED
+}
+
+model GeneratedReportVersion {
+  id                String                       @id @default(cuid())
+  reportId          String
+  versionNumber     Int
+  status            GeneratedReportVersionStatus @default(UPLOADING)
+  storageBucket     String
+  storageKey        String
+  fileName          String
+  mimeType          String
+  sizeBytes         Int?
+  checksumSha256    String?
+  generatedByUserId String?
+  generationMode    String
+  generatedAt       DateTime
+  metadata          Json?
+  errorMessage      String?
+  failedAt          DateTime?
+  deleteRequestedAt DateTime?
+  deletedAt         DateTime?
+  createdAt         DateTime                     @default(now())
+  updatedAt         DateTime                     @updatedAt
+  report            GeneratedReport              @relation("ReportVersions", fields: [reportId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  currentForReport  GeneratedReport?             @relation("CurrentReportVersion")
+  generatedBy       User?                        @relation("ReportVersionGenerator", fields: [generatedByUserId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  deliveryAttempts  ReportDeliveryAttempt[]
+  jobs              ReportJob[]
+
+  @@unique([reportId, versionNumber])
+  @@unique([storageBucket, storageKey])
+  @@index([reportId, status, versionNumber])
+  @@index([status, deleteRequestedAt])
+  @@index([generatedByUserId])
+  @@map("generated_report_versions")
+}
+
+enum ReportDeliveryAttemptMode {
+  MANUAL
+  SCHEDULED
+}
+
+enum ReportDeliveryTarget {
+  ALL_AUTHORIZED
+  FAILED_ONLY
+}
+
+enum ReportDeliveryAttemptStatus {
+  PENDING
+  SENDING
+  SENT
+  PARTIAL
+  FAILED
+  NO_RECIPIENTS
+  CANCELLED
+}
+
+enum ReportRecipientAuthorization {
+  AUTHORIZED
+  REVOKED
+}
+
+enum ReportDeliveryRecipientStatus {
+  PREPARED
+  SENDING
+  SENT
+  FAILED
+  SKIPPED
+}
+
+model ReportDeliveryAttempt {
+  id                     String                           @id @default(cuid())
+  officeId               Int
+  reportId               String?
+  reportVersionId        String?
+  attemptNumber          Int
+  mode                   ReportDeliveryAttemptMode
+  target                 ReportDeliveryTarget
+  parentAttemptId        String?
+  idempotencyKey         String
+  requestedByUserId      String?
+  provider               String
+  fromAccount            String
+  intendedRecipientCount Int                              @default(0)
+  sentCount              Int                              @default(0)
+  failedCount            Int                              @default(0)
+  skippedCount           Int                              @default(0)
+  status                 ReportDeliveryAttemptStatus      @default(PENDING)
+  errorMessage           String?
+  startedAt              DateTime?
+  completedAt            DateTime?
+  legacyBatchId          String?                          @unique
+  createdAt              DateTime                         @default(now())
+  updatedAt              DateTime                         @updatedAt
+  office                 Office                           @relation(fields: [officeId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  report                 GeneratedReport?                 @relation(fields: [reportId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  reportVersion          GeneratedReportVersion?          @relation(fields: [reportVersionId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  requestedBy            User?                            @relation("ReportDeliveryRequester", fields: [requestedByUserId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  parentAttempt          ReportDeliveryAttempt?           @relation("ReportAttemptRetries", fields: [parentAttemptId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  retryAttempts          ReportDeliveryAttempt[]          @relation("ReportAttemptRetries")
+  recipients             ReportDeliveryAttemptRecipient[]
+  jobs                   ReportJob[]
+
+  @@unique([reportId, attemptNumber])
+  @@unique([officeId, idempotencyKey])
+  @@index([officeId, createdAt])
+  @@index([reportVersionId])
+  @@index([parentAttemptId])
+  @@index([requestedByUserId])
+  @@index([status, createdAt])
+  @@map("report_delivery_attempts")
+}
+
+enum ReportJobType {
+  GENERATE
+  DELIVER
+}
+
+enum ReportJobStatus {
+  QUEUED
+  RUNNING
+  CANCEL_REQUESTED
+  SUCCEEDED
+  FAILED
+  CANCELLED
+}
+
+enum ReportJobOrigin {
+  MANUAL
+  SCHEDULED
+  CHAINED
+}
+
+enum ReportJobRunOutcome {
+  RUNNING
+  SUCCEEDED
+  FAILED
+  CANCELLED
+  RETRY_SCHEDULED
+}
+
+enum ReportScheduleKind {
+  DAILY
+  MONTHLY
+  CUSTOM
+}
+
+enum ReportScheduleFrequency {
+  DAILY
+  WEEKLY
+  MONTHLY
+}
+
+enum CustomReportDefinitionStatus {
+  ACTIVE
+  ARCHIVED
+}
+
+model ReportJob {
+  id                   String                  @id @default(cuid())
+  officeId             Int
+  type                 ReportJobType
+  status               ReportJobStatus         @default(QUEUED)
+  origin               ReportJobOrigin
+  reportKind           String
+  customDefinitionId   String?
+  scheduleId           String?
+  retryOfJobId         String?
+  requestedByUserId    String?
+  idempotencyKey       String
+  requestedPeriodStart DateTime
+  requestedPeriodEnd   DateTime
+  requestedPeriodLabel String
+  payload              Json?
+  progressPhase        String                  @default("queued")
+  completedUnits       Int                     @default(0)
+  totalUnits           Int                     @default(1)
+  resultCode           String?
+  safeError            String?
+  reportId             String?
+  reportVersionId      String?
+  deliveryAttemptId    String?
+  availableAt          DateTime                @default(now())
+  scheduledFor         DateTime?
+  attemptCount         Int                     @default(0)
+  maxAttempts          Int                     @default(4)
+  claimedAt            DateTime?
+  leaseExpiresAt       DateTime?
+  heartbeatAt          DateTime?
+  cancelRequestedAt    DateTime?
+  startedAt            DateTime?
+  completedAt          DateTime?
+  createdAt            DateTime                @default(now())
+  updatedAt            DateTime                @updatedAt
+  office               Office                  @relation(fields: [officeId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  customDefinition     CustomReportDefinition? @relation(fields: [customDefinitionId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  schedule             ReportSchedule?         @relation("ScheduleJobs", fields: [scheduleId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  retryOfJob           ReportJob?              @relation("ReportJobRetries", fields: [retryOfJobId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  retryJobs            ReportJob[]             @relation("ReportJobRetries")
+  requestedBy          User?                   @relation("ReportJobRequester", fields: [requestedByUserId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  report               GeneratedReport?        @relation(fields: [reportId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  reportVersion        GeneratedReportVersion? @relation(fields: [reportVersionId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  deliveryAttempt      ReportDeliveryAttempt?  @relation(fields: [deliveryAttemptId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  runs                 ReportJobRun[]
+  lastForSchedules     ReportSchedule[]        @relation("ScheduleLastJob")
+
+  @@unique([officeId, idempotencyKey])
+  @@index([status, availableAt, createdAt])
+  @@index([officeId, createdAt])
+  @@index([officeId, status, createdAt])
+  @@index([scheduleId, scheduledFor])
+  @@index([retryOfJobId])
+  @@index([customDefinitionId])
+  @@map("report_jobs")
+}
+
+model ReportJobRun {
+  id            String              @id @default(cuid())
+  jobId         String
+  attemptNumber Int
+  outcome       ReportJobRunOutcome @default(RUNNING)
+  startedAt     DateTime            @default(now())
+  completedAt   DateTime?
+  resultCode    String?
+  safeError     String?
+  createdAt     DateTime            @default(now())
+  job           ReportJob           @relation(fields: [jobId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@unique([jobId, attemptNumber])
+  @@index([jobId, startedAt])
+  @@map("report_job_runs")
+}
+
+model ReportRecipientConfig {
+  id              String   @id @default(cuid())
+  officeId        Int
+  userId          String   @unique
+  dailyEnabled    Boolean  @default(true)
+  monthlyEnabled  Boolean  @default(true)
+  customEnabled   Boolean  @default(false)
+  isEnabled       Boolean  @default(true)
+  createdByUserId String?
+  updatedByUserId String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  office          Office   @relation(fields: [officeId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  user            User     @relation("ReportRecipientUser", fields: [userId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  createdBy       User?    @relation("ReportRecipientCreator", fields: [createdByUserId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  updatedBy       User?    @relation("ReportRecipientUpdater", fields: [updatedByUserId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+
+  @@unique([officeId, userId])
+  @@index([officeId, isEnabled])
+  @@map("report_recipient_configs")
+}
+
+model ReportSchedule {
+  id                       String                  @id @default(cuid())
+  officeId                 Int
+  kind                     ReportScheduleKind
+  identityKey              String
+  customDefinitionId       String?                 @unique
+  frequency                ReportScheduleFrequency
+  localTime                String                  @default("07:00")
+  weekday                  Int?
+  monthDay                 Int?
+  timezone                 String                  @default("America/Santiago")
+  enabled                  Boolean                 @default(false)
+  latenessThresholdMinutes Int                     @default(60)
+  nextRunAt                DateTime?
+  lastAttemptAt            DateTime?
+  lastSuccessAt            DateTime?
+  lastFailureAt            DateTime?
+  lastJobId                String?
+  consecutiveFailures      Int                     @default(0)
+  safeLastError            String?
+  createdByUserId          String?
+  updatedByUserId          String?
+  createdAt                DateTime                @default(now())
+  updatedAt                DateTime                @updatedAt
+  office                   Office                  @relation(fields: [officeId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  customDefinition         CustomReportDefinition? @relation(fields: [customDefinitionId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  lastJob                  ReportJob?              @relation("ScheduleLastJob", fields: [lastJobId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  jobs                     ReportJob[]             @relation("ScheduleJobs")
+  createdBy                User?                   @relation("ReportScheduleCreator", fields: [createdByUserId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  updatedBy                User?                   @relation("ReportScheduleUpdater", fields: [updatedByUserId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+
+  @@unique([officeId, identityKey])
+  @@index([enabled, nextRunAt])
+  @@index([officeId, enabled])
+  @@map("report_schedules")
+}
+
+model CustomReportDefinition {
+  id               String                            @id @default(cuid())
+  officeId         Int
+  name             String
+  description      String?
+  status           CustomReportDefinitionStatus      @default(ACTIVE)
+  modules          Json
+  actionCategories Json
+  results          Json
+  actorUserIds     Json
+  includeSystem    Boolean                           @default(true)
+  selectedColumns  Json
+  createdByUserId  String?
+  updatedByUserId  String?
+  archivedAt       DateTime?
+  createdAt        DateTime                          @default(now())
+  updatedAt        DateTime                          @updatedAt
+  office           Office                            @relation(fields: [officeId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  createdBy        User?                             @relation("CustomReportDefinitionCreator", fields: [createdByUserId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  updatedBy        User?                             @relation("CustomReportDefinitionUpdater", fields: [updatedByUserId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  recipients       CustomReportDefinitionRecipient[]
+  schedule         ReportSchedule?
+  reports          GeneratedReport[]
+  jobs             ReportJob[]
+
+  @@unique([officeId, name])
+  @@index([officeId, status, updatedAt])
+  @@map("custom_report_definitions")
+}
+
+model CustomReportDefinitionRecipient {
+  id           String                 @id @default(cuid())
+  definitionId String
+  userId       String
+  createdAt    DateTime               @default(now())
+  definition   CustomReportDefinition @relation(fields: [definitionId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  user         User                   @relation(fields: [userId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  @@unique([definitionId, userId])
+  @@index([userId])
+  @@map("custom_report_definition_recipients")
+}
+
+model ReportDeliveryAttemptRecipient {
+  id                        String                        @id @default(cuid())
+  attemptId                 String
+  userId                    String
+  email                     String
+  authorizationDecision     ReportRecipientAuthorization
+  status                    ReportDeliveryRecipientStatus @default(PREPARED)
+  attemptCount              Int                           @default(0)
+  providerMessageId         String?
+  providerThreadId          String?
+  providerInternetMessageId String?
+  attachmentFilename        String?
+  attachmentMimeType        String?
+  attachmentByteSize        Int?
+  attachmentSha256          String?
+  errorMessage              String?
+  sentAt                    DateTime?
+  completedAt               DateTime?
+  legacyRecipientId         String?                       @unique
+  createdAt                 DateTime                      @default(now())
+  updatedAt                 DateTime                      @updatedAt
+  attempt                   ReportDeliveryAttempt         @relation(fields: [attemptId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  user                      User                          @relation(fields: [userId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  @@unique([attemptId, userId])
+  @@index([attemptId, status])
+  @@index([userId])
+  @@index([email])
+  @@map("report_delivery_attempt_recipients")
+}
+
 model ReportDeliveryBatch {
-  id                     String   @id @default(cuid())
+  id                     String                    @id @default(cuid())
   officeId               Int
   reportId               String?
   reportType             String
@@ -223,18 +605,18 @@ model ReportDeliveryBatch {
   status                 String
   provider               String
   fromAccount            String
-  intendedRecipientCount Int      @default(0)
-  sentCount              Int      @default(0)
-  failedCount            Int      @default(0)
-  skippedCount           Int      @default(0)
+  intendedRecipientCount Int                       @default(0)
+  sentCount              Int                       @default(0)
+  failedCount            Int                       @default(0)
+  skippedCount           Int                       @default(0)
   errorMessage           String?
   mode                   String
   startedAt              DateTime?
   completedAt            DateTime?
-  createdAt              DateTime @default(now())
-  updatedAt              DateTime @updatedAt
-  office                 Office   @relation(fields: [officeId], references: [id], onDelete: Restrict, onUpdate: Cascade)
-  report                 GeneratedReport? @relation(fields: [reportId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  createdAt              DateTime                  @default(now())
+  updatedAt              DateTime                  @updatedAt
+  office                 Office                    @relation(fields: [officeId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  report                 GeneratedReport?          @relation(fields: [reportId], references: [id], onDelete: SetNull, onUpdate: Cascade)
   recipients             ReportDeliveryRecipient[]
 
   @@unique([officeId, reportType, periodStart, periodEnd])
@@ -246,12 +628,12 @@ model ReportDeliveryBatch {
 }
 
 model ReportDeliveryRecipient {
-  id                        String   @id @default(cuid())
+  id                        String              @id @default(cuid())
   batchId                   String
   userId                    String
   email                     String
   status                    String
-  attemptCount              Int      @default(0)
+  attemptCount              Int                 @default(0)
   providerMessageId         String?
   providerThreadId          String?
   providerInternetMessageId String?
@@ -262,10 +644,10 @@ model ReportDeliveryRecipient {
   errorMessage              String?
   sentAt                    DateTime?
   completedAt               DateTime?
-  createdAt                 DateTime @default(now())
-  updatedAt                 DateTime @updatedAt
+  createdAt                 DateTime            @default(now())
+  updatedAt                 DateTime            @updatedAt
   batch                     ReportDeliveryBatch @relation(fields: [batchId], references: [id], onDelete: Cascade, onUpdate: Cascade)
-  user                      User     @relation(fields: [userId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  user                      User                @relation(fields: [userId], references: [id], onDelete: Restrict, onUpdate: Cascade)
 
   @@unique([batchId, userId])
   @@index([batchId])
@@ -276,7 +658,7 @@ model ReportDeliveryRecipient {
 }
 
 model Abogado {
-  id           Int            @id @default(autoincrement())
+  id           Int                 @id @default(autoincrement())
   officeId     Int
   nombre       String?
   rut          String?
@@ -284,28 +666,28 @@ model Abogado {
   comuna       String?
   telefono     String?
   email        String?
-  createdAt    DateTime       @default(now())
-  bancos       AbogadoBanco[] @relation("AbogadoBancos")
-  aranceles    Arancel[]      @relation("AbogadoAranceles")
+  createdAt    DateTime            @default(now())
+  bancos       AbogadoBanco[]      @relation("AbogadoBancos")
+  aranceles    Arancel[]           @relation("AbogadoAranceles")
   demandas     Demanda[]
   procuradores ProcuradorAbogado[] @relation("AbogadoProcuradores")
-  office       Office         @relation(fields: [officeId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  office       Office              @relation(fields: [officeId], references: [id], onDelete: Restrict, onUpdate: Cascade)
 
   @@index([officeId])
   @@map("abogados")
 }
 
 model Banco {
-  id                Int               @id @default(autoincrement())
-  officeId          Int
-  nombre            String
-  cuenta            String?
-  createdAt         DateTime          @default(now())
-  abogadoBancos     AbogadoBanco[]    @relation("BancoAbogados")
-  aranceles         Arancel[]         @relation("BancoAranceles")
-  notificaciones    Notificacion[]    @relation("NotificacionBanco")
-  recibos           Recibo[]          @relation("ReciboBanco")
-  office            Office            @relation(fields: [officeId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  id             Int            @id @default(autoincrement())
+  officeId       Int
+  nombre         String
+  cuenta         String?
+  createdAt      DateTime       @default(now())
+  abogadoBancos  AbogadoBanco[] @relation("BancoAbogados")
+  aranceles      Arancel[]      @relation("BancoAranceles")
+  notificaciones Notificacion[] @relation("NotificacionBanco")
+  recibos        Recibo[]       @relation("ReciboBanco")
+  office         Office         @relation(fields: [officeId], references: [id], onDelete: Restrict, onUpdate: Cascade)
 
   @@index([officeId])
   @@map("bancos")
@@ -418,23 +800,23 @@ model Materia {
 }
 
 model Demanda {
-  id         String      @id @default(cuid())
-  rol        String
-  caratula   String
-  cuantia    Float
-  abogadoId  Int
-  officeId   Int
-  userId     String
-  createdAt  DateTime    @default(now())
-  materiaId  Int?
+  id           String      @id @default(cuid())
+  rol          String
+  caratula     String
+  cuantia      Float
+  abogadoId    Int
+  officeId     Int
+  userId       String
+  createdAt    DateTime    @default(now())
+  materiaId    Int?
   procuradorId Int?
-  roles      RolCausa?
-  abogados   Abogado     @relation(fields: [abogadoId], references: [id])
-  materia    Materia?    @relation(fields: [materiaId], references: [id])
-  procurador Procurador? @relation(fields: [procuradorId], references: [id], onDelete: SetNull)
-  offices    Office      @relation(fields: [officeId], references: [id])
-  users      User        @relation(fields: [userId], references: [id])
-  ejecutados Ejecutado[]
+  roles        RolCausa?
+  abogados     Abogado     @relation(fields: [abogadoId], references: [id])
+  materia      Materia?    @relation(fields: [materiaId], references: [id])
+  procurador   Procurador? @relation(fields: [procuradorId], references: [id], onDelete: SetNull)
+  offices      Office      @relation(fields: [officeId], references: [id])
+  users        User        @relation(fields: [userId], references: [id])
+  ejecutados   Ejecutado[]
 
   @@unique([officeId, rol])
   @@map("demandas")
@@ -517,34 +899,34 @@ model Notificacion {
 }
 
 model Documento {
-  id             String        @id @default(cuid())
-  rolId          String
-  diligenciaId   String?
-  notificacionId String?
-  estampoId      String?
-  currentVersionId String?
-  nombre         String
-  tipo           String
-  pdfId          String?
-  version        Int           @default(1)
-  createdAt      DateTime      @default(now())
-  textoEditado   String?
-  estampoBaseId  Int?
-  voidedAt       DateTime?
-  voidReason     String?
-  voidedByUserId String?
-  generatedByUserId String?
-  generatedAt    DateTime?
-  sourceTemplate Json?
+  id                  String             @id @default(cuid())
+  rolId               String
+  diligenciaId        String?
+  notificacionId      String?
+  estampoId           String?
+  currentVersionId    String?
+  nombre              String
+  tipo                String
+  pdfId               String?
+  version             Int                @default(1)
+  createdAt           DateTime           @default(now())
+  textoEditado        String?
+  estampoBaseId       Int?
+  voidedAt            DateTime?
+  voidReason          String?
+  voidedByUserId      String?
+  generatedByUserId   String?
+  generatedAt         DateTime?
+  sourceTemplate      Json?
   generationVariables Json?
-  generationVersion Int @default(1)
-  diligencia     Diligencia?   @relation(fields: [diligenciaId], references: [id])
-  notificacion   Notificacion? @relation(fields: [notificacionId], references: [id])
-  estampoBase    EstampoBase?  @relation(fields: [estampoBaseId], references: [id])
-  estampo        Estampo?      @relation(fields: [estampoId], references: [id])
-  rol            RolCausa      @relation(fields: [rolId], references: [id])
-  versions       DocumentoVersion[] @relation("DocumentoVersions")
-  currentVersion DocumentoVersion? @relation("DocumentoCurrentVersion", fields: [currentVersionId], references: [id], onDelete: SetNull)
+  generationVersion   Int                @default(1)
+  diligencia          Diligencia?        @relation(fields: [diligenciaId], references: [id])
+  notificacion        Notificacion?      @relation(fields: [notificacionId], references: [id])
+  estampoBase         EstampoBase?       @relation(fields: [estampoBaseId], references: [id])
+  estampo             Estampo?           @relation(fields: [estampoId], references: [id])
+  rol                 RolCausa           @relation(fields: [rolId], references: [id])
+  versions            DocumentoVersion[] @relation("DocumentoVersions")
+  currentVersion      DocumentoVersion?  @relation("DocumentoCurrentVersion", fields: [currentVersionId], references: [id], onDelete: SetNull)
 
   @@index([rolId, createdAt])
   @@index([currentVersionId])
@@ -553,22 +935,22 @@ model Documento {
 }
 
 model DocumentoVersion {
-  id               String      @id @default(cuid())
-  documentoId      String
-  versionNumber    Int
-  storageBucket    String
-  storageKey       String
-  fileName         String
-  sizeBytes        Int
-  checksumSha256   String
-  mimeType         String
-  createdAt        DateTime    @default(now())
-  createdByUserId  String?
-  deletedAt        DateTime?
-  deletedByUserId  String?
-  documento        Documento   @relation("DocumentoVersions", fields: [documentoId], references: [id], onDelete: Cascade)
+  id                  String      @id @default(cuid())
+  documentoId         String
+  versionNumber       Int
+  storageBucket       String
+  storageKey          String
+  fileName            String
+  sizeBytes           Int
+  checksumSha256      String
+  mimeType            String
+  createdAt           DateTime    @default(now())
+  createdByUserId     String?
+  deletedAt           DateTime?
+  deletedByUserId     String?
+  documento           Documento   @relation("DocumentoVersions", fields: [documentoId], references: [id], onDelete: Cascade)
   currentForDocuments Documento[] @relation("DocumentoCurrentVersion")
-  recibos          Recibo[]
+  recibos             Recibo[]
 
   @@unique([documentoId, versionNumber])
   @@index([documentoId, createdAt])
@@ -587,35 +969,35 @@ model Nota {
 }
 
 model Recibo {
-  id             String   @id @default(cuid())
-  rolId          String
-  officeId       Int?
-  diligenciaId   String?
-  notificacionId String?
-  documentoId    String?
-  documentVersionId String?
-  bancoId        Int?
-  numeroRecibo   String?
-  numeroReciboYear Int?
-  numeroBoleta   String?
-  monto          Float
-  medio          String
-  ref            String?
-  fechaEjecucion DateTime?
-  fechaRecibo    DateTime?
-  status         ReceiptStatus @default(ACTIVE)
+  id                    String            @id @default(cuid())
+  rolId                 String
+  officeId              Int?
+  diligenciaId          String?
+  notificacionId        String?
+  documentoId           String?
+  documentVersionId     String?
+  bancoId               Int?
+  numeroRecibo          String?
+  numeroReciboYear      Int?
+  numeroBoleta          String?
+  monto                 Float
+  medio                 String
+  ref                   String?
+  fechaEjecucion        DateTime?
+  fechaRecibo           DateTime?
+  status                ReceiptStatus     @default(ACTIVE)
   generationFingerprint String?
-  voidedAt       DateTime?
-  voidReason     String?
-  voidedByUserId String?
-  supersedesReciboId String? @unique
-  createdAt      DateTime @default(now())
-  rol            RolCausa @relation(fields: [rolId], references: [id])
-  office         Office?  @relation(fields: [officeId], references: [id], onDelete: Restrict, onUpdate: Cascade)
-  banco          Banco?   @relation("ReciboBanco", fields: [bancoId], references: [id], onDelete: Restrict, onUpdate: Cascade)
-  documentVersion DocumentoVersion? @relation(fields: [documentVersionId], references: [id], onDelete: SetNull)
-  supersedes     Recibo?  @relation("ReciboCorrectionChain", fields: [supersedesReciboId], references: [id], onDelete: SetNull)
-  supersededBy   Recibo?  @relation("ReciboCorrectionChain")
+  voidedAt              DateTime?
+  voidReason            String?
+  voidedByUserId        String?
+  supersedesReciboId    String?           @unique
+  createdAt             DateTime          @default(now())
+  rol                   RolCausa          @relation(fields: [rolId], references: [id])
+  office                Office?           @relation(fields: [officeId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  banco                 Banco?            @relation("ReciboBanco", fields: [bancoId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  documentVersion       DocumentoVersion? @relation(fields: [documentVersionId], references: [id], onDelete: SetNull)
+  supersedes            Recibo?           @relation("ReciboCorrectionChain", fields: [supersedesReciboId], references: [id], onDelete: SetNull)
+  supersededBy          Recibo?           @relation("ReciboCorrectionChain")
 
   @@index([officeId, numeroReciboYear])
   @@index([rolId, fechaRecibo])
@@ -631,35 +1013,35 @@ model Recibo {
 }
 
 model ReceiptGenerationReservation {
-  id                    String                     @id @default(cuid())
-  officeId              Int
-  rolId                 String
-  diligenciaId          String
-  notificacionId        String
-  operation             ReceiptGenerationOperation
-  status                ReceiptGenerationStatus   @default(RESERVED)
-  idempotencyKey        String
-  requestHash           String
-  numeroRecibo          String
-  numeroReciboYear      Int
-  assignedNumber        Int?
-  documentoId           String
-  targetVersionNumber   Int
-  storageBucket         String?
-  storageKey            String?
-  fileName              String?
-  sizeBytes             Int?
-  checksumSha256        String?
-  mimeType              String?
-  receiptId             String?
-  documentVersionId     String?
-  failureCode           String?
-  createdAt             DateTime                   @default(now())
-  updatedAt             DateTime                   @updatedAt
-  uploadedAt            DateTime?
-  completedAt           DateTime?
-  failedAt              DateTime?
-  office                Office                     @relation(fields: [officeId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  id                  String                     @id @default(cuid())
+  officeId            Int
+  rolId               String
+  diligenciaId        String
+  notificacionId      String
+  operation           ReceiptGenerationOperation
+  status              ReceiptGenerationStatus    @default(RESERVED)
+  idempotencyKey      String
+  requestHash         String
+  numeroRecibo        String
+  numeroReciboYear    Int
+  assignedNumber      Int?
+  documentoId         String
+  targetVersionNumber Int
+  storageBucket       String?
+  storageKey          String?
+  fileName            String?
+  sizeBytes           Int?
+  checksumSha256      String?
+  mimeType            String?
+  receiptId           String?
+  documentVersionId   String?
+  failureCode         String?
+  createdAt           DateTime                   @default(now())
+  updatedAt           DateTime                   @updatedAt
+  uploadedAt          DateTime?
+  completedAt         DateTime?
+  failedAt            DateTime?
+  office              Office                     @relation(fields: [officeId], references: [id], onDelete: Restrict, onUpdate: Cascade)
 
   @@unique([officeId, idempotencyKey])
   @@index([notificacionId, status])
@@ -669,19 +1051,19 @@ model ReceiptGenerationReservation {
 }
 
 model ReceiptBulkOperation {
-  id            String   @id @default(cuid())
-  officeId      Int
-  userId        String
-  action        String
-  receiptIds    Json
-  beforeState   Json
-  afterState    Json
-  summary       Json?
-  createdAt     DateTime @default(now())
-  undoneAt      DateTime?
+  id             String    @id @default(cuid())
+  officeId       Int
+  userId         String
+  action         String
+  receiptIds     Json
+  beforeState    Json
+  afterState     Json
+  summary        Json?
+  createdAt      DateTime  @default(now())
+  undoneAt       DateTime?
   undoneByUserId String?
-  office        Office   @relation(fields: [officeId], references: [id], onDelete: Restrict, onUpdate: Cascade)
-  user          User     @relation(fields: [userId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  office         Office    @relation(fields: [officeId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  user           User      @relation(fields: [userId], references: [id], onDelete: Restrict, onUpdate: Cascade)
 
   @@index([officeId, createdAt])
   @@index([userId, createdAt])
@@ -718,31 +1100,31 @@ model EmailTemplate {
 }
 
 model RecibosDispatchBatch {
-  id                 String   @id @default(cuid())
-  officeId           Int
-  userId             String
-  recipientMode      String
-  provider           String
-  fromAccount        String?
-  status             String
-  selectedCount      Int      @default(0)
-  excludedCount      Int      @default(0)
-  groupCount         Int      @default(0)
-  sentCount          Int      @default(0)
-  failedCount        Int      @default(0)
-  skippedCount       Int      @default(0)
-  templateMode       String
-  dispatchKind       String   @default("standard")
-  errorMessage       String?
-  replyCount         Int      @default(0)
-  lastReplyAt        DateTime?
-  hasReplies         Boolean  @default(false)
-  createdAt          DateTime @default(now())
-  sentAt             DateTime?
-  completedAt        DateTime?
-  office             Office   @relation(fields: [officeId], references: [id], onDelete: Restrict, onUpdate: Cascade)
-  user               User     @relation(fields: [userId], references: [id], onDelete: Restrict, onUpdate: Cascade)
-  recipients         RecibosDispatchRecipient[]
+  id            String                     @id @default(cuid())
+  officeId      Int
+  userId        String
+  recipientMode String
+  provider      String
+  fromAccount   String?
+  status        String
+  selectedCount Int                        @default(0)
+  excludedCount Int                        @default(0)
+  groupCount    Int                        @default(0)
+  sentCount     Int                        @default(0)
+  failedCount   Int                        @default(0)
+  skippedCount  Int                        @default(0)
+  templateMode  String
+  dispatchKind  String                     @default("standard")
+  errorMessage  String?
+  replyCount    Int                        @default(0)
+  lastReplyAt   DateTime?
+  hasReplies    Boolean                    @default(false)
+  createdAt     DateTime                   @default(now())
+  sentAt        DateTime?
+  completedAt   DateTime?
+  office        Office                     @relation(fields: [officeId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  user          User                       @relation(fields: [userId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  recipients    RecibosDispatchRecipient[]
 
   @@index([officeId, createdAt])
   @@index([userId, createdAt])
@@ -751,49 +1133,49 @@ model RecibosDispatchBatch {
 }
 
 model RecibosDispatchRecipient {
-  id                    String   @id @default(cuid())
-  batchId               String
-  groupKey              String
-  recipientType         String
-  recipientName         String
-  recipientEmails       Json
-  subject               String
-  body                  String
-  status                String
-  attemptCount          Int      @default(0)
-  trackingToken         String?  @unique
-  providerMessageId     String?
-  providerThreadId      String?
-  providerInternetMessageId String?
-  resolvedAt            DateTime?
-  resolvedByUserId      String?
-  resolutionNote        String?
-  duplicateOverrideReason String?
+  id                         String                     @id @default(cuid())
+  batchId                    String
+  groupKey                   String
+  recipientType              String
+  recipientName              String
+  recipientEmails            Json
+  subject                    String
+  body                       String
+  status                     String
+  attemptCount               Int                        @default(0)
+  trackingToken              String?                    @unique
+  providerMessageId          String?
+  providerThreadId           String?
+  providerInternetMessageId  String?
+  resolvedAt                 DateTime?
+  resolvedByUserId           String?
+  resolutionNote             String?
+  duplicateOverrideReason    String?
   duplicateConfirmedByUserId String?
-  duplicateConfirmedAt  DateTime?
-  overlappingDispatchIds Json?
-  resendOfRecipientId   String?
-  resendReason          String?
-  partialResendConfirmed Boolean @default(false)
-  attachmentFilename    String?
-  attachmentMimeType    String?
-  attachmentByteSize    Int?
-  attachmentSha256      String?
-  reciboCount           Int      @default(0)
-  totalAmount           Float    @default(0)
-  warningSummary        Json?
-  errorMessage          String?
-  replyCount            Int      @default(0)
-  lastReplyAt           DateTime?
-  hasReplies            Boolean  @default(false)
-  createdAt             DateTime @default(now())
-  sentAt                DateTime?
-  completedAt           DateTime?
-  batch                 RecibosDispatchBatch @relation(fields: [batchId], references: [id], onDelete: Cascade, onUpdate: Cascade)
-  items                 RecibosDispatchItem[]
-  replies               RecibosDispatchReply[]
-  resendOfRecipient     RecibosDispatchRecipient? @relation("RecipientResends", fields: [resendOfRecipientId], references: [id], onDelete: SetNull, onUpdate: Cascade)
-  resends               RecibosDispatchRecipient[] @relation("RecipientResends")
+  duplicateConfirmedAt       DateTime?
+  overlappingDispatchIds     Json?
+  resendOfRecipientId        String?
+  resendReason               String?
+  partialResendConfirmed     Boolean                    @default(false)
+  attachmentFilename         String?
+  attachmentMimeType         String?
+  attachmentByteSize         Int?
+  attachmentSha256           String?
+  reciboCount                Int                        @default(0)
+  totalAmount                Float                      @default(0)
+  warningSummary             Json?
+  errorMessage               String?
+  replyCount                 Int                        @default(0)
+  lastReplyAt                DateTime?
+  hasReplies                 Boolean                    @default(false)
+  createdAt                  DateTime                   @default(now())
+  sentAt                     DateTime?
+  completedAt                DateTime?
+  batch                      RecibosDispatchBatch       @relation(fields: [batchId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  items                      RecibosDispatchItem[]
+  replies                    RecibosDispatchReply[]
+  resendOfRecipient          RecibosDispatchRecipient?  @relation("RecipientResends", fields: [resendOfRecipientId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  resends                    RecibosDispatchRecipient[] @relation("RecipientResends")
 
   @@index([batchId])
   @@index([status])
@@ -805,35 +1187,35 @@ model RecibosDispatchRecipient {
 }
 
 model RecibosDispatchReply {
-  id                       String   @id @default(cuid())
-  officeId                 Int
-  recipientId              String?
-  provider                 String
-  mailboxAddress           String
-  providerMessageId        String
-  providerThreadId         String?
-  internetMessageId        String?
-  inReplyTo                String?
-  references               Json?
-  trackingToken            String?
-  senderName               String?
-  senderEmail              String
-  subject                  String
-  textPreview              String
-  bodyText                 String
-  receivedAt               DateTime
-  matchStatus              String
-  matchMethod              String?
-  candidateRecipientIds    Json?
-  suggestedClassification  String?
+  id                        String                           @id @default(cuid())
+  officeId                  Int
+  recipientId               String?
+  provider                  String
+  mailboxAddress            String
+  providerMessageId         String
+  providerThreadId          String?
+  internetMessageId         String?
+  inReplyTo                 String?
+  references                Json?
+  trackingToken             String?
+  senderName                String?
+  senderEmail               String
+  subject                   String
+  textPreview               String
+  bodyText                  String
+  receivedAt                DateTime
+  matchStatus               String
+  matchMethod               String?
+  candidateRecipientIds     Json?
+  suggestedClassification   String?
   classificationRuleVersion String?
-  confirmedClassification  String?
-  classifiedByUserId       String?
-  classifiedAt             DateTime?
-  createdAt                DateTime @default(now())
-  office                   Office   @relation(fields: [officeId], references: [id], onDelete: Restrict, onUpdate: Cascade)
-  recipient                RecibosDispatchRecipient? @relation(fields: [recipientId], references: [id], onDelete: SetNull, onUpdate: Cascade)
-  attachments              RecibosDispatchReplyAttachment[]
+  confirmedClassification   String?
+  classifiedByUserId        String?
+  classifiedAt              DateTime?
+  createdAt                 DateTime                         @default(now())
+  office                    Office                           @relation(fields: [officeId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  recipient                 RecibosDispatchRecipient?        @relation(fields: [recipientId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  attachments               RecibosDispatchReplyAttachment[]
 
   @@unique([provider, mailboxAddress, providerMessageId])
   @@index([officeId, receivedAt])
@@ -845,15 +1227,15 @@ model RecibosDispatchReply {
 }
 
 model RecibosDispatchReplyAttachment {
-  id                   String   @id @default(cuid())
+  id                   String               @id @default(cuid())
   replyId              String
   providerAttachmentId String?
   filename             String
   mimeType             String?
   byteSize             Int?
   contentId            String?
-  isInline             Boolean  @default(false)
-  createdAt            DateTime @default(now())
+  isInline             Boolean              @default(false)
+  createdAt            DateTime             @default(now())
   reply                RecibosDispatchReply @relation(fields: [replyId], references: [id], onDelete: Cascade, onUpdate: Cascade)
 
   @@index([replyId])
@@ -861,21 +1243,21 @@ model RecibosDispatchReplyAttachment {
 }
 
 model RecibosReplySyncCheckpoint {
-  id                String   @id @default(cuid())
-  officeId          Int
-  provider          String
-  mailboxAddress    String
-  cursor            Json?
-  graphDeltaLink    String?
-  gmailUidValidity  String?
-  gmailLastUid      Int?
-  lastAttemptedAt   DateTime?
-  lastSuccessfulAt  DateTime?
-  lockedAt          DateTime?
-  lastError         String?
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
-  office            Office   @relation(fields: [officeId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  id               String    @id @default(cuid())
+  officeId         Int
+  provider         String
+  mailboxAddress   String
+  cursor           Json?
+  graphDeltaLink   String?
+  gmailUidValidity String?
+  gmailLastUid     Int?
+  lastAttemptedAt  DateTime?
+  lastSuccessfulAt DateTime?
+  lockedAt         DateTime?
+  lastError        String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  office           Office    @relation(fields: [officeId], references: [id], onDelete: Cascade, onUpdate: Cascade)
 
   @@unique([officeId, provider, mailboxAddress])
   @@index([officeId, updatedAt])
@@ -883,7 +1265,7 @@ model RecibosReplySyncCheckpoint {
 }
 
 model RecibosProviderHealth {
-  id                   String   @id @default(cuid())
+  id                   String    @id @default(cuid())
   officeId             Int
   provider             String
   mailboxAddress       String
@@ -893,9 +1275,9 @@ model RecibosProviderHealth {
   lastSuccessfulSendAt DateTime?
   lastSuccessfulSyncAt DateTime?
   lastError            String?
-  createdAt            DateTime @default(now())
-  updatedAt            DateTime @updatedAt
-  office               Office   @relation(fields: [officeId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+  office               Office    @relation(fields: [officeId], references: [id], onDelete: Cascade, onUpdate: Cascade)
 
   @@unique([officeId, provider, mailboxAddress])
   @@index([officeId, updatedAt])
@@ -903,14 +1285,14 @@ model RecibosProviderHealth {
 }
 
 model RecibosDispatchItem {
-  id             String   @id @default(cuid())
+  id             String                   @id @default(cuid())
   recipientId    String
   reciboId       String
   numeroRecibo   String
   rol            String
   monto          Float
   fechaEjecucion DateTime?
-  createdAt      DateTime @default(now())
+  createdAt      DateTime                 @default(now())
   recipient      RecibosDispatchRecipient @relation(fields: [recipientId], references: [id], onDelete: Cascade, onUpdate: Cascade)
 
   @@index([recipientId])

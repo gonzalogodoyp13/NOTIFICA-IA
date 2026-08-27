@@ -1,15 +1,14 @@
 ﻿import 'server-only'
 
-import { randomUUID } from 'crypto'
 import { Prisma, type GeneratedReport } from '@prisma/client'
 
 import { prisma } from '@/lib/prisma'
-import { enqueueExternalEvent, processActivityOutbox } from '@/lib/audit/outbox'
 import { asJsonObject, getString } from '@/lib/utils/json'
 import { chileMonthBounds } from './chileTime'
 import { buildMonthlyBillingWorkbook, type MonthlyExclusionDetail, type MonthlyReportRow } from './monthlyWorkbook'
 import { MONTHLY_REPORT_TYPE, monthlyFinancialSummary, qualifyMonthlySources } from './monthlyCore'
-import { deleteReportFile, uploadMonthlyReportWorkbook } from './storage'
+import { classifyActivityAction } from '@/lib/audit/classification'
+import { persistReportVersion } from './versioning'
 
 const REPORT_STATUS_READY = 'ready'
 const EMPTY = '-'
@@ -70,10 +69,6 @@ export type MonthlyReportResult =
   | { status: 'generated'; report: GeneratedReport }
   | { status: 'existing'; report: GeneratedReport }
   | { status: 'no_activity'; periodDate: string; periodStart: Date; periodEnd: Date }
-
-function isUniqueConstraint(error: unknown) {
-  return error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002'
-}
 
 function label(value?: string | null) {
   return value?.trim() || EMPTY
@@ -253,20 +248,24 @@ export async function generateMonthlyReport(input: {
   userId?: string | null
   month: string
   force?: boolean
+  generationMode?: string
+  cancellationCheck?: () => Promise<boolean>
   requestId?: string
 }): Promise<MonthlyReportResult> {
   const bounds = chileMonthBounds(input.month)
   const existing = await prisma.generatedReport.findUnique({
     where: {
-      officeId_reportType_periodStart_periodEnd: {
+      officeId_identityKey_periodStart_periodEnd: {
         officeId: input.officeId,
-        reportType: MONTHLY_REPORT_TYPE,
+        identityKey: MONTHLY_REPORT_TYPE,
         periodStart: bounds.start,
         periodEnd: bounds.end,
       },
     },
   })
-  if (existing && !input.force) return { status: 'existing', report: existing }
+  if (existing?.status === REPORT_STATUS_READY && existing.currentVersionId && !input.force) {
+    return { status: 'existing', report: existing }
+  }
 
   const [office, monthlyData, activityEvents] = await Promise.all([
     prisma.office.findUnique({ where: { id: input.officeId }, select: { nombre: true } }),
@@ -282,107 +281,42 @@ export async function generateMonthlyReport(input: {
 
   const financialSummary = monthlyFinancialSummary(monthlyData.qualifiedRows)
   const now = new Date()
-  const reportId = existing?.id ?? randomUUID()
-  const workbook = await buildMonthlyBillingWorkbook({
-    officeName: office?.nombre ?? `Oficina ${input.officeId}`,
-    periodDate: bounds.isoMonth,
-    periodStart: bounds.start,
-    periodEnd: bounds.end,
+  const metadata = nextMetadata(existing, {
+    force: !!input.force,
+    qualifiedCount: monthlyData.qualifiedRows.length,
+    excludedCount: monthlyData.exclusions.length,
+    financialSummary,
     generatedAt: now,
-    rows: monthlyData.qualifiedRows,
-    exclusions: monthlyData.exclusions,
-    activityEvents,
-    deletionEvents: activityEvents.filter(event => /\.delete$/.test(event.eventType) || /void|anul/i.test(`${event.eventType} ${event.description}`)),
-    errorEvents: activityEvents.filter(event => event.result === 'failure' || event.result === 'denied'),
   })
-
-  const stored = await uploadMonthlyReportWorkbook({
-    buffer: workbook,
+  const persisted = await persistReportVersion({
     officeId: input.officeId,
-    periodDate: bounds.isoMonth,
-    reportId,
-    upsert: !!existing,
-  })
-
-  const data = {
-    reportType: MONTHLY_REPORT_TYPE,
+    reportType: 'monthly',
     periodStart: bounds.start,
     periodEnd: bounds.end,
     periodDate: bounds.isoMonth,
     timezone: bounds.timezone,
-    status: REPORT_STATUS_READY,
-    storageBucket: stored.storageBucket,
-    storageKey: stored.storageKey,
-    fileName: stored.fileName,
-    mimeType: stored.mimeType,
-    sizeBytes: stored.sizeBytes,
-    checksumSha256: stored.checksumSha256,
     activityCount: monthlyData.qualifiedRows.length,
     generatedAt: now,
     expiresAt: null,
-    createdByUserId: input.userId ?? null,
-    generationMode: input.force ? 'manual_force' : 'manual',
-    metadata: nextMetadata(existing, {
-      force: !!input.force,
-      qualifiedCount: monthlyData.qualifiedRows.length,
-      excludedCount: monthlyData.exclusions.length,
-      financialSummary,
+    generatedByUserId: input.userId ?? null,
+    generationMode: input.generationMode ?? (input.force ? 'manual_force' : 'manual'),
+    metadata,
+    cancellationCheck: input.cancellationCheck,
+    requestId: input.requestId,
+    buildWorkbook: () => buildMonthlyBillingWorkbook({
+      officeName: office?.nombre ?? `Oficina ${input.officeId}`,
+      periodDate: bounds.isoMonth,
+      periodStart: bounds.start,
+      periodEnd: bounds.end,
       generatedAt: now,
+      rows: monthlyData.qualifiedRows,
+      exclusions: monthlyData.exclusions,
+      activityEvents,
+      deletionEvents: activityEvents.filter(event => classifyActivityAction(event.eventType, event.description) === 'DELETE'),
+      errorEvents: activityEvents.filter(event => event.result === 'failure' || event.result === 'denied'),
     }),
-  }
-
-  if (existing) {
-    const report = await prisma.$transaction(async tx => {
-      const updated = await tx.generatedReport.update({ where: { id: existing.id }, data })
-      await enqueueExternalEvent(tx, {
-        id: input.userId ?? undefined, officeId: input.officeId, requestId: input.requestId,
-        actorType: input.userId ? 'USER' : 'SYSTEM', source: input.userId ? 'WEB' : 'SYSTEM',
-      }, {
-        eventType: 'report.monthly.generated', module: 'reports', result: 'success',
-        recordType: 'GeneratedReport', recordId: updated.id, description: 'Reporte mensual generado.',
-        deduplicationKey: `report:${updated.id}:${stored.checksumSha256}`,
-        metadata: { reportId: updated.id, reportType: updated.reportType, periodDate: updated.periodDate, activityCount: updated.activityCount },
-      })
-      return updated
-    })
-    await processActivityOutbox(50).catch(() => undefined)
-    return { status: 'generated', report }
-  }
-
-  try {
-    const report = await prisma.$transaction(async tx => {
-      const created = await tx.generatedReport.create({ data: { id: reportId, officeId: input.officeId, ...data } })
-      await enqueueExternalEvent(tx, {
-        id: input.userId ?? undefined, officeId: input.officeId, requestId: input.requestId,
-        actorType: input.userId ? 'USER' : 'SYSTEM', source: input.userId ? 'WEB' : 'SYSTEM',
-      }, {
-        eventType: 'report.monthly.generated', module: 'reports', result: 'success',
-        recordType: 'GeneratedReport', recordId: created.id, description: 'Reporte mensual generado.',
-        deduplicationKey: `report:${created.id}:${stored.checksumSha256}`,
-        metadata: { reportId: created.id, reportType: created.reportType, periodDate: created.periodDate, activityCount: created.activityCount },
-      })
-      return created
-    })
-    await processActivityOutbox(50).catch(() => undefined)
-    return { status: 'generated', report }
-  } catch (error) {
-    if (isUniqueConstraint(error)) {
-      await deleteReportFile(stored.storageBucket, stored.storageKey).catch(() => undefined)
-      const report = await prisma.generatedReport.findUniqueOrThrow({
-        where: {
-          officeId_reportType_periodStart_periodEnd: {
-            officeId: input.officeId,
-            reportType: MONTHLY_REPORT_TYPE,
-            periodStart: bounds.start,
-            periodEnd: bounds.end,
-          },
-        },
-      })
-      return { status: 'existing', report }
-    }
-    await deleteReportFile(stored.storageBucket, stored.storageKey).catch(() => undefined)
-    throw error
-  }
+  })
+  return { status: 'generated', report: persisted.report }
 }
 
 export async function getMonthlyReportFinancialSummary(input: { officeId: number; month: string }) {

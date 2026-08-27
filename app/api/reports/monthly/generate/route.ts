@@ -1,8 +1,10 @@
 import { NextRequest } from 'next/server'
 import { z } from 'zod'
 
-import { ApiError, apiSuccess, parseApiInput, withApiUser } from '@/lib/api/server'
-import { generateMonthlyReport } from '@/lib/reports/monthlyReport'
+import { apiSuccess, parseApiInput, withApiUser } from '@/lib/api/server'
+import { assertReportAdmin } from '@/lib/reports/access'
+import { validateReportIdempotencyKey } from '@/lib/reports/deliveryAttempts'
+import { enqueueManualGeneration, serializeReportJob } from '@/lib/reports/jobs'
 
 export const dynamic = 'force-dynamic'
 
@@ -13,38 +15,10 @@ const GenerateSchema = z.object({
 
 export async function POST(request: NextRequest) {
   return withApiUser(request, 'reports.monthly.generate', async (user) => {
-    if (!user.isOfficeAdmin) throw new ApiError('UNAUTHORIZED', 'Solo un administrador de oficina puede generar reportes mensuales.', 403)
+    assertReportAdmin(user)
     const input = parseApiInput(GenerateSchema, await request.json().catch(() => ({})))
-    const result = await generateMonthlyReport({
-      officeId: user.officeId,
-      userId: user.id,
-      month: input.month,
-      force: input.force,
-      requestId: user.requestId,
-    })
-
-    if (result.status === 'no_activity') {
-      return apiSuccess({
-        status: result.status,
-        periodDate: result.periodDate,
-        periodStart: result.periodStart.toISOString(),
-        periodEnd: result.periodEnd.toISOString(),
-      })
-    }
-
-    return apiSuccess({
-      status: result.status,
-      report: {
-        id: result.report.id,
-        reportType: result.report.reportType,
-        periodDate: result.report.periodDate,
-        status: result.report.status,
-        fileName: result.report.fileName,
-        sizeBytes: result.report.sizeBytes,
-        activityCount: result.report.activityCount,
-        generatedAt: result.report.generatedAt.toISOString(),
-        expiresAt: result.report.expiresAt?.toISOString() ?? null,
-      },
-    })
+    const idempotencyKey = validateReportIdempotencyKey(request.headers.get('Idempotency-Key'))
+    const job = await enqueueManualGeneration({ officeId: user.officeId, userId: user.id, kind: 'monthly', period: input.month, force: input.force, idempotencyKey })
+    return apiSuccess(serializeReportJob(job), 202)
   })
 }

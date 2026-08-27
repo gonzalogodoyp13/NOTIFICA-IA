@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 
 import { chileDayBounds } from '../../lib/reports/chileTime'
 import { buildDailyAuditWorkbook, dailyEventDetail } from '../../lib/reports/dailyWorkbook'
+import { classifyActivityAction } from '../../lib/audit/classification'
 
 function event(overrides: Record<string, unknown> = {}) {
   return {
@@ -45,6 +46,42 @@ describe('daily report Chile date bounds', () => {
 })
 
 describe('daily report workbook', () => {
+  it('classifies canonical, legacy and historical action names without dropping unknown activity', () => {
+    for (const verb of ['create', 'created', 'generate', 'generated']) {
+      expect(classifyActivityAction(`notification.${verb}`)).toBe('CREATE')
+    }
+    for (const verb of ['update', 'updated', 'regenerated', 'corrected', 'status_changed', 'completed', 'scheduled', 'payment', 'boleta', 'undo', 'reset', 'toggled', 'resolution', 'reply_classify']) {
+      expect(classifyActivityAction(`notification.${verb}`)).toBe('UPDATE')
+    }
+    for (const verb of ['delete', 'deleted', 'voided', 'cancelled', 'canceled', 'anulled']) {
+      expect(classifyActivityAction(`notification.${verb}`)).toBe('DELETE')
+    }
+    expect(classifyActivityAction('legacy.event', 'Registro eliminado historicamente.')).toBe('DELETE')
+    expect(classifyActivityAction('search.roles')).toBe('OTHER')
+  })
+
+  it('places canonical created, updated and deleted events in their action sheets', async () => {
+    const buffer = await buildDailyAuditWorkbook({
+      officeName: 'Oficina QA',
+      periodDate: '2026-06-22',
+      periodStart: new Date('2026-06-22T04:00:00.000Z'),
+      periodEnd: new Date('2026-06-23T03:59:59.999Z'),
+      generatedAt: new Date('2026-06-23T11:00:00.000Z'),
+      events: [
+        event({ id: 1, eventType: 'notification.created' }),
+        event({ id: 2, eventType: 'notification.updated' }),
+        event({ id: 3, eventType: 'notification.deleted' }),
+        event({ id: 4, eventType: 'search.roles' }),
+      ],
+    })
+    const workbook = new ExcelJS.Workbook()
+    await workbook.xlsx.load(buffer as any)
+    expect(workbook.getWorksheet('Creaciones')?.getCell('D2').value).toBe('notification.created')
+    expect(workbook.getWorksheet('Modificaciones')?.getCell('D2').value).toBe('notification.updated')
+    expect(workbook.getWorksheet('Eliminaciones')?.getCell('D2').value).toBe('notification.deleted')
+    expect(workbook.getWorksheet('Actividad')?.rowCount).toBe(5)
+  })
+
   it('creates all required worksheets and hides raw metadata JSON', async () => {
     const buffer = await buildDailyAuditWorkbook({
       officeName: 'Oficina QA',

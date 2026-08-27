@@ -21,7 +21,7 @@ function unlockViewportScroll() {
   }
 }
 
-export function ModalPortal({ children }: { children: ReactNode }) {
+export function ModalPortal({ children, ariaLabelledby, ariaDescribedby }: { children: ReactNode; ariaLabelledby?: string; ariaDescribedby?: string }) {
   const [mounted, setMounted] = useState(false)
 
   useEffect(() => setMounted(true), [])
@@ -38,6 +38,8 @@ export function ModalPortal({ children }: { children: ReactNode }) {
       data-modal-portal="viewport"
       role="dialog"
       aria-modal="true"
+      aria-labelledby={ariaLabelledby}
+      aria-describedby={ariaDescribedby}
       style={{
         position: 'fixed',
         inset: 0,

@@ -37,15 +37,17 @@ export function createServerSupabaseClient() {
   )
 }
 
-export function createServerSupabaseStorageClient() {
+export function createServerSupabaseStorageClient(options: { requireServiceRole?: boolean } = {}) {
   const supabaseUrl = process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL
-  const supabaseKey =
-    process.env.SUPABASE_SERVICE_ROLE_KEY ??
-    process.env.SUPABASE_ANON_KEY ??
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+  const supabaseKey = options.requireServiceRole
+    ? serviceRoleKey
+    : serviceRoleKey ?? process.env.SUPABASE_ANON_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 
   if (!supabaseUrl || !supabaseKey) {
-    throw new Error('Missing Supabase server storage configuration')
+    throw new Error(options.requireServiceRole
+      ? 'Missing SUPABASE_SERVICE_ROLE_KEY for trusted report storage operations'
+      : 'Missing Supabase server storage configuration')
   }
 
   return createServerClient(supabaseUrl, supabaseKey, {

@@ -16,6 +16,7 @@ import {
 } from '@/lib/recibos/reply-tracking-core'
 import { CLASSIFICATION_RULE_VERSION, suggestReplyClassification } from '@/lib/recibos/smart-control-core'
 import { recordProviderSuccess } from '@/lib/recibos/provider-health'
+import { unmatchedReplyStatuses, type UnmatchedReplyStatusFilter } from '@/lib/recibos/unmatched-replies-core'
 
 type ProviderSyncResult = {
   provider: string
@@ -245,22 +246,47 @@ export async function syncAllConfiguredOfficeReplies(requestId?: string) {
   return results
 }
 
-export async function listUnmatchedReplies(officeId: number, limit = 25) {
-  return prisma.recibosDispatchReply.findMany({
-    where: { officeId, matchStatus: { in: ['unmatched', 'needs_review'] } },
-    orderBy: { receivedAt: 'desc' },
-    take: Math.min(Math.max(limit, 1), 100),
-    select: {
-      id: true,
-      provider: true,
-      mailboxAddress: true,
-      senderEmail: true,
-      subject: true,
-      textPreview: true,
-      receivedAt: true,
-      matchStatus: true,
-      matchMethod: true,
-      candidateRecipientIds: true,
+export async function listUnmatchedReplies(input: {
+  officeId: number
+  page?: number
+  limit?: number
+  status?: UnmatchedReplyStatusFilter
+}) {
+  const page = Math.max(1, Math.trunc(input.page ?? 1))
+  const limit = Math.min(100, Math.max(1, Math.trunc(input.limit ?? 25)))
+  const status = input.status ?? 'all'
+  const where: Prisma.RecibosDispatchReplyWhereInput = {
+    officeId: input.officeId,
+    matchStatus: { in: unmatchedReplyStatuses(status) },
+  }
+  const [items, total] = await prisma.$transaction([
+    prisma.recibosDispatchReply.findMany({
+      where,
+      orderBy: [{ receivedAt: 'desc' }, { id: 'desc' }],
+      skip: (page - 1) * limit,
+      take: limit,
+      select: {
+        id: true,
+        provider: true,
+        mailboxAddress: true,
+        senderEmail: true,
+        subject: true,
+        textPreview: true,
+        receivedAt: true,
+        matchStatus: true,
+        matchMethod: true,
+        candidateRecipientIds: true,
+      },
+    }),
+    prisma.recibosDispatchReply.count({ where }),
+  ])
+  return {
+    items,
+    pagination: {
+      page,
+      limit,
+      total,
+      totalPages: Math.ceil(total / limit),
     },
-  })
+  }
 }

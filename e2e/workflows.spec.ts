@@ -436,8 +436,6 @@ test('authenticated workflow creates demanda, diligencia, notification, estampos
   const api = await createAuthenticatedContext(baseURL)
   const suffix = qaRequestSuffix().toUpperCase()
   const startedAt = new Date(Date.now() - 1_000)
-  const initialQa = await findQaContext(prisma)
-  const legacyCountBefore = await prisma.auditLog.count({ where: { officeId: initialQa.officeId } })
   const { qa, rol, demanda, ejecutadoId } = await createDemand(api, suffix)
   const diligence = await createDiligence(api, demanda.rolId, qa.diligenciaTipoId, ejecutadoId)
   const notification = await createNotification(api, demanda.rolId, diligence.id, ejecutadoId)
@@ -612,9 +610,6 @@ test('authenticated workflow creates demanda, diligencia, notification, estampos
     expect(serialized).not.toContain('Firma Receptor')
     expect(serialized).not.toContain('CERTIFICO QA')
   }
-
-  const legacyCountAfter = await prisma.auditLog.count({ where: { officeId: qa.officeId } })
-  expect(legacyCountAfter).toBe(legacyCountBefore)
 
   await api.dispose()
 })

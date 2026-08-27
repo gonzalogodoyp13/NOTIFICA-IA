@@ -57,41 +57,45 @@ export default function TopBar() {
     <>
       <div className="sticky top-0 z-30 bg-white/80 backdrop-blur-sm border-b border-gray-200">
         <div className="max-w-6xl mx-auto px-4">
-          <div className="flex items-center justify-between h-16 gap-4">
+          <div className="flex h-16 min-w-0 items-center justify-between gap-4">
             {/* Left side: Navigation links with icons */}
-            <div className="flex items-center gap-6">
+            <div className="flex min-w-0 flex-1 items-center justify-between gap-2 md:flex-none md:justify-start md:gap-4 lg:gap-6">
               <Link
                 href="/dashboard"
-                className="flex items-center gap-2 text-gray-700 hover:text-blue-600 transition-colors font-medium"
+                aria-label="Inicio"
+                className="flex shrink-0 items-center gap-2 text-gray-700 hover:text-blue-600 transition-colors font-medium"
               >
                 <Home className="h-5 w-5" />
-                <span>Inicio</span>
+                <span className="hidden lg:inline">Inicio</span>
               </Link>
               <Link
                 href="/roles"
-                className="flex items-center gap-2 text-gray-700 hover:text-blue-600 transition-colors font-medium"
+                aria-label="Gestionar Demandas"
+                className="flex shrink-0 items-center gap-2 text-gray-700 hover:text-blue-600 transition-colors font-medium"
               >
                 <FileText className="h-5 w-5" />
-                <span>Gestionar Demandas</span>
+                <span className="hidden lg:inline">Gestionar Demandas</span>
               </Link>
               <Link
                 href="/recibos"
-                className="flex items-center gap-2 text-gray-700 hover:text-blue-600 transition-colors font-medium"
+                aria-label="Gestión de Recibos"
+                className="flex shrink-0 items-center gap-2 text-gray-700 hover:text-blue-600 transition-colors font-medium"
               >
                 <FileText className="h-5 w-5" />
-                <span>Gestión de Recibos</span>
+                <span className="hidden lg:inline">Gestión de Recibos</span>
               </Link>
               <Link
                 href="/ajustes"
-                className="flex items-center gap-2 text-gray-700 hover:text-blue-600 transition-colors font-medium"
+                aria-label="Ajustes de oficina"
+                className="flex shrink-0 items-center gap-2 text-gray-700 hover:text-blue-600 transition-colors font-medium"
               >
                 <Settings className="h-5 w-5" />
-                <span>Ajustes de oficina</span>
+                <span className="hidden lg:inline">Ajustes de oficina</span>
               </Link>
             </div>
 
             {/* Right side: Search bar */}
-            <div className="flex items-center gap-2 flex-1 max-w-md">
+            <div className="hidden min-w-0 flex-1 items-center gap-2 md:flex md:max-w-md">
               <Input
                 type="text"
                 aria-label="Buscar ROL exacto"

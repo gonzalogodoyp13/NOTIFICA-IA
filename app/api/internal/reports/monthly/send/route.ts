@@ -2,7 +2,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 
 import { withRequestTiming } from '@/lib/api/requestTiming'
-import { sendMonthlyReportsForAllOffices } from '@/lib/reports/monthlyDelivery'
+import { prisma } from '@/lib/prisma'
+import { chileMonthBounds, previousChileMonthString } from '@/lib/reports/chileTime'
+import { enqueueReportJob, serializeReportJob } from '@/lib/reports/jobs'
 import { bearerOrHeaderSecret, isSecretAuthorized } from '@/lib/security/secret'
 
 export const dynamic = 'force-dynamic'
@@ -27,13 +29,12 @@ export async function POST(req: NextRequest) {
     }
 
     try {
-      const result = await sendMonthlyReportsForAllOffices({
-        periodDate: parsed.data.month,
-        officeId: parsed.data.officeId,
-        mode: 'scheduled',
-        requestId: req.headers.get('x-request-id') ?? undefined,
-      })
-      return NextResponse.json({ ok: true, data: result })
+      const period = parsed.data.month ?? previousChileMonthString()
+      const bounds = chileMonthBounds(period)
+      const offices = parsed.data.officeId ? [{ id: parsed.data.officeId }] : await prisma.office.findMany({ where: { users: { some: { isActive: true, isOfficeAdmin: true } } }, select: { id: true }, orderBy: { id: 'asc' } })
+      const jobs = []
+      for (const office of offices) jobs.push(serializeReportJob(await enqueueReportJob({ officeId: office.id, type: 'GENERATE', origin: 'SCHEDULED', reportKind: 'monthly', idempotencyKey: `legacy-scheduled:monthly:${office.id}:${period}`, periodStart: bounds.start, periodEnd: bounds.end, periodLabel: period, payload: { deliverAfter: true } })))
+      return NextResponse.json({ ok: true, data: { period, officeCount: offices.length, jobs } }, { status: 202 })
     } catch {
       return NextResponse.json({ ok: false, error: { code: 'INTERNAL_ERROR', message: 'No se pudo enviar reportes mensuales' } }, { status: 500 })
     }
