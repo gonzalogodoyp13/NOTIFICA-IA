@@ -13,6 +13,7 @@ import { buildEstampoPdf } from '@/lib/estampos/pdf'
 import { type HeaderData } from '@/lib/pdf/header'
 import type { VariableDef } from '@/lib/estampos/types'
 import { loadSerializedNotification } from '@/lib/workflow/notificationView'
+import { assertRoleWorkflowWritable, syncDiligenceWorkflowState } from '@/lib/roles/workflowState'
 
 export const dynamic = 'force-dynamic'
 
@@ -62,6 +63,7 @@ export async function POST(
     }
 
     const { dbUser, diligencia, ejecutadoFromNotificacion, notificacionMeta, activeReceiptAmount } = context
+    assertRoleWorkflowWritable(diligencia.rol.estado)
     const { estampoBase, estampoCustom, textoTemplate } = templateBundle
 
     const initialVariables = buildWizardInitialVariables({
@@ -178,6 +180,7 @@ export async function POST(
         data: { currentVersionId: documentVersion.id },
         include: { currentVersion: true },
       })
+      await syncDiligenceWorkflowState(diligencia.id, tx)
       const queuedEvent = await enqueueExternalEvent(tx, user, {
         eventType: 'stamp.generated',
         module: 'documents',

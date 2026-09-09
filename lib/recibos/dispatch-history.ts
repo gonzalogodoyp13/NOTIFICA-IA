@@ -2,9 +2,10 @@ import 'server-only'
 
 import { prisma } from '@/lib/prisma'
 import { dispatchStatusLabel, replyState } from '@/lib/recibos/dispatch-history-core'
+import { deliveryPresentation, sendTypeLabel, withAdminDiagnostics } from '@/lib/recibos/delivery-visibility'
 import { deriveOperationalState, type OperationalState } from '@/lib/recibos/smart-control-core'
 
-export async function listRecibosDispatchHistory(officeId: number, limit = 20, state?: OperationalState) {
+export async function listRecibosDispatchHistory(officeId: number, limit = 20, state?: OperationalState, includeDiagnostics = false) {
   const batches = await prisma.recibosDispatchBatch.findMany({
     where: { officeId },
     orderBy: { createdAt: 'desc' },
@@ -45,16 +46,15 @@ export async function listRecibosDispatchHistory(officeId: number, limit = 20, s
       : recipientStates.includes('waiting') ? 'waiting'
       : recipientStates.includes('replied') ? 'replied'
       : batch.status === 'failed' ? 'failed' : 'sent'
-    return {
+    return withAdminDiagnostics({
       id: batch.id,
       createdAt: batch.createdAt.toISOString(),
       sentAt: batch.sentAt?.toISOString() ?? null,
       completedAt: batch.completedAt?.toISOString() ?? null,
       senderEmail: batch.user.email,
-      provider: batch.provider,
-      dispatchKind: batch.dispatchKind,
+      ...deliveryPresentation(batch.provider),
+      sendTypeLabel: sendTypeLabel(batch.dispatchKind),
       operationalState,
-      fromAccount: batch.fromAccount,
       recipientMode: batch.recipientMode,
       recipientSummary: recipientNames.length <= 2 ? recipientNames.join(', ') : `${recipientNames.slice(0, 2).join(', ')} +${recipientNames.length - 2}`,
       recipientType: recipientTypes.length === 1 ? recipientTypes[0] : batch.recipientMode,
@@ -72,12 +72,12 @@ export async function listRecibosDispatchHistory(officeId: number, limit = 20, s
       replyCount,
       lastReplyAt: (batch.lastReplyAt ?? recipientLastReplyAt)?.toISOString() ?? null,
       replyState: replyState(replyCount),
-    }
+    }, { provider: batch.provider, fromAccount: batch.fromAccount, dispatchKind: batch.dispatchKind }, includeDiagnostics)
   })
   return mapped.filter(item => !state || item.operationalState === state).slice(0, Math.min(Math.max(limit, 1), 50))
 }
 
-export async function getRecibosDispatchHistoryDetail(officeId: number, batchId: string) {
+export async function getRecibosDispatchHistoryDetail(officeId: number, batchId: string, includeDiagnostics = false) {
   const batch = await prisma.recibosDispatchBatch.findFirst({
     where: { id: batchId, officeId },
     include: {
@@ -97,15 +97,14 @@ export async function getRecibosDispatchHistoryDetail(officeId: number, batchId:
   })
   if (!batch) return null
 
-  return {
+  return withAdminDiagnostics({
     id: batch.id,
     createdAt: batch.createdAt.toISOString(),
     sentAt: batch.sentAt?.toISOString() ?? null,
     completedAt: batch.completedAt?.toISOString() ?? null,
     senderEmail: batch.user.email,
-    provider: batch.provider,
-    dispatchKind: batch.dispatchKind,
-    fromAccount: batch.fromAccount,
+    ...deliveryPresentation(batch.provider),
+    sendTypeLabel: sendTypeLabel(batch.dispatchKind),
     recipientMode: batch.recipientMode,
     status: batch.status,
     statusLabel: dispatchStatusLabel(batch.status),
@@ -115,13 +114,12 @@ export async function getRecibosDispatchHistoryDetail(officeId: number, batchId:
     sentCount: batch.sentCount,
     failedCount: batch.failedCount,
     skippedCount: batch.skippedCount,
-    templateMode: batch.templateMode,
     errorMessage: batch.errorMessage,
     hasReplies: batch.hasReplies,
     replyCount: batch.replyCount,
     lastReplyAt: batch.lastReplyAt?.toISOString() ?? null,
     replyState: replyState(batch.replyCount),
-    recipients: batch.recipients.map(recipient => ({
+    recipients: batch.recipients.map(recipient => withAdminDiagnostics({
       id: recipient.id,
       groupKey: recipient.groupKey,
       recipientType: recipient.recipientType,
@@ -131,13 +129,7 @@ export async function getRecibosDispatchHistoryDetail(officeId: number, batchId:
       body: recipient.body,
       status: recipient.status,
       statusLabel: dispatchStatusLabel(recipient.status),
-      attemptCount: recipient.attemptCount,
-      providerMessageId: recipient.providerMessageId,
-      providerThreadId: recipient.providerThreadId,
       attachmentFilename: recipient.attachmentFilename,
-      attachmentMimeType: recipient.attachmentMimeType,
-      attachmentByteSize: recipient.attachmentByteSize,
-      attachmentSha256: recipient.attachmentSha256,
       reciboCount: recipient.reciboCount,
       totalAmount: recipient.totalAmount,
       warningSummary: recipient.warningSummary,
@@ -145,7 +137,7 @@ export async function getRecibosDispatchHistoryDetail(officeId: number, batchId:
       operationalState: deriveOperationalState({ status: recipient.status, provider: batch.provider, dispatchKind: batch.dispatchKind, sentAt: recipient.sentAt, replyCount: recipient.replyCount, resolvedAt: recipient.resolvedAt }),
       resolvedAt: recipient.resolvedAt?.toISOString() ?? null,
       resolutionNote: recipient.resolutionNote,
-      resendOfRecipientId: recipient.resendOfRecipientId,
+      isResend: !!recipient.resendOfRecipientId,
       resendReason: recipient.resendReason,
       duplicateOverrideReason: recipient.duplicateOverrideReason,
       sentAt: recipient.sentAt?.toISOString() ?? null,
@@ -154,27 +146,23 @@ export async function getRecibosDispatchHistoryDetail(officeId: number, batchId:
       replyCount: recipient.replyCount,
       lastReplyAt: recipient.lastReplyAt?.toISOString() ?? null,
       replyState: replyState(recipient.replyCount),
-      replies: recipient.replies.map(reply => ({
+      replies: recipient.replies.map(reply => withAdminDiagnostics({
         id: reply.id,
-        provider: reply.provider,
         senderName: reply.senderName,
         senderEmail: reply.senderEmail,
         subject: reply.subject,
         textPreview: reply.textPreview,
         bodyText: reply.bodyText,
         receivedAt: reply.receivedAt.toISOString(),
-        matchMethod: reply.matchMethod,
         suggestedClassification: reply.suggestedClassification,
         confirmedClassification: reply.confirmedClassification,
         classifiedAt: reply.classifiedAt?.toISOString() ?? null,
-        attachments: reply.attachments.map(attachment => ({
+        attachments: reply.attachments.map(attachment => withAdminDiagnostics({
           id: attachment.id,
           filename: attachment.filename,
-          mimeType: attachment.mimeType,
-          byteSize: attachment.byteSize,
           isInline: attachment.isInline,
-        })),
-      })),
+        }, { mimeType: attachment.mimeType, byteSize: attachment.byteSize }, includeDiagnostics)),
+      }, { provider: reply.provider, matchMethod: reply.matchMethod }, includeDiagnostics)),
       items: recipient.items.map(item => ({
         id: item.id,
         reciboId: item.reciboId,
@@ -183,6 +171,14 @@ export async function getRecibosDispatchHistoryDetail(officeId: number, batchId:
         monto: item.monto,
         fechaEjecucion: item.fechaEjecucion?.toISOString() ?? null,
       })),
-    })),
-  }
+    }, {
+        attemptCount: recipient.attemptCount,
+        providerMessageId: recipient.providerMessageId,
+        providerThreadId: recipient.providerThreadId,
+        attachmentMimeType: recipient.attachmentMimeType,
+        attachmentByteSize: recipient.attachmentByteSize,
+        attachmentSha256: recipient.attachmentSha256,
+        resendOfRecipientId: recipient.resendOfRecipientId,
+      }, includeDiagnostics)),
+  }, { provider: batch.provider, fromAccount: batch.fromAccount, dispatchKind: batch.dispatchKind, templateMode: batch.templateMode }, includeDiagnostics)
 }

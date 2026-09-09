@@ -175,7 +175,7 @@ export async function sendReceiptGroups(params: {
     duplicateByGroup.set(job.group.groupKey, intelligence)
     const confirmation = submitted.get(job.group.groupKey)?.duplicateConfirmation
     if (intelligence.requiresConfirmation && (!confirmation?.confirmed || confirmation.reason.trim().length < 3)) {
-      throw new ApiError('CONFLICT', intelligence.warning || 'Este listado incluye recibos enviados recientemente. Confirma el reenvio e indica un motivo.', 409)
+      throw new ApiError('CONFLICT', intelligence.warning || 'Este listado incluye recibos enviados recientemente. Confirma el reenvío e indica un motivo.', 409)
     }
   }
 
@@ -356,7 +356,7 @@ export async function sendReceiptGroups(params: {
     await enqueueExternalEvent(tx, params.user, {
       eventType: 'receipt.send', module: 'emails', result: 'success',
       recordType: 'RecibosDispatchBatch', recordId: batch.id,
-      description: 'Envio de recibos registrado.',
+      description: 'Envío de recibos registrado.',
       deduplicationKey: `receipt-send:${batch.id}:completed`,
       metadata: {
         dispatchBatchId: batch.id, count: rows.length, groupCount: preview.groups.length,
@@ -402,7 +402,7 @@ export async function sendReceiptTest(params: { user: UserContext & { email: str
       await enqueueExternalEvent(tx, params.user, {
         eventType: 'receipt.test_send', module: 'emails', result: 'success',
         recordType: 'RecibosDispatchBatch', recordId: batch.id,
-        description: 'Envio de prueba de recibos registrado.',
+        description: 'Envío de prueba de recibos registrado.',
         deduplicationKey: `receipt-test-send:${batch.id}:completed`,
         metadata: { dispatchBatchId: batch.id, recipientId: recipient.id, count: workbookRows.length, provider: adapter.provider },
       })

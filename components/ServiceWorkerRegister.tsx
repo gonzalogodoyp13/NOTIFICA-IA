@@ -6,16 +6,18 @@ import { useEffect } from 'react'
 
 export default function ServiceWorkerRegister() {
   useEffect(() => {
-    if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
-      navigator.serviceWorker
-        .register('/sw.js')
-        .then((registration) => {
+    if (typeof window === 'undefined' || !('serviceWorker' in navigator)) return
+
+    void navigator.serviceWorker
+      .register('/sw.js')
+      .then(registration => {
+        if (registration?.scope) {
           console.log('Service Worker registered successfully:', registration.scope)
-        })
-        .catch((error) => {
-          console.error('Service Worker registration failed:', error)
-        })
-    }
+        }
+      })
+      .catch(error => {
+        console.error('Service Worker registration failed:', error)
+      })
   }, [])
 
   return null

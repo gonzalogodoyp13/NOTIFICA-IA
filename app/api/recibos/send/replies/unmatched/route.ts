@@ -9,6 +9,6 @@ export const dynamic = 'force-dynamic'
 export async function GET(req: NextRequest) {
   return withApiUser(req, 'list unmatched receipt replies', async user => {
     const query = parseApiInput(UnmatchedReplyQuerySchema, Object.fromEntries(req.nextUrl.searchParams))
-    return apiSuccess(await listUnmatchedReplies({ officeId: user.officeId, ...query }))
+    return apiSuccess(await listUnmatchedReplies({ officeId: user.officeId, includeDiagnostics: user.isOfficeAdmin, ...query }))
   })
 }

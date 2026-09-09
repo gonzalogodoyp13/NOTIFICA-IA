@@ -20,16 +20,16 @@ const emptyFilters = { abogadoIds: [], procuradorIds: [], bancoIds: [], estados:
 
 export async function resendDispatch(params: { officeId: number; userId: string; requestId?: string; recipientId: string; input: Input }) {
   const source = await prisma.recibosDispatchRecipient.findFirst({ where: { id: params.recipientId, batch: { officeId: params.officeId } }, include: { batch: true, items: true } })
-  if (!source) throw new ApiError('NOT_FOUND', 'El envio original no existe.', 404)
+  if (!source) throw new ApiError('NOT_FOUND', 'El envío original no existe.', 404)
   const originalIds = source.items.map(item => item.reciboId)
   const current = await getReceiptList(params.officeId, emptyFilters, { exportAll: true, reciboIds: originalIds })
   const unavailableCount = originalIds.length - current.rows.length
-  if (!current.rows.length) throw new ApiError('CONFLICT', 'Ninguno de los recibos del envio original sigue disponible.', 409)
-  if (unavailableCount > 0 && !params.input.confirmPartial) throw new ApiError('CONFLICT', `${unavailableCount} recibo(s) ya no estan disponibles. Confirma el reenvio parcial.`, 409)
+  if (!current.rows.length) throw new ApiError('CONFLICT', 'Ninguno de los recibos del envío original sigue disponible.', 409)
+  if (unavailableCount > 0 && !params.input.confirmPartial) throw new ApiError('CONFLICT', `${unavailableCount} recibo(s) ya no están disponibles. Confirma el reenvío parcial.`, 409)
   const intelligence = await duplicateIntelligenceForGroup(params.officeId, { groupKey: source.groupKey.replace(/^test:/, ''), reciboIds: current.rows.map(row => row.reciboId) })
-  if (intelligence.requiresConfirmation && !params.input.duplicateConfirmation) throw new ApiError('CONFLICT', intelligence.warning || 'Confirma el reenvio duplicado.', 409)
+  if (intelligence.requiresConfirmation && !params.input.duplicateConfirmation) throw new ApiError('CONFLICT', intelligence.warning || 'Confirma el reenvío duplicado.', 409)
   const adapter = createMailAdapter()
-  const workbook = Buffer.from(await buildRecibosWorkbook(current.rows, `Reenvio de listado para ${source.recipientName}`))
+  const workbook = Buffer.from(await buildRecibosWorkbook(current.rows, `Reenvío de listado para ${source.recipientName}`))
   const token = createTrackingToken()
   const baseSubject = params.input.subject.replace(/\s*\[NIA-[A-Z0-9]{8,24}\]\s*$/i, '').trim()
   const subject = subjectWithTrackingToken(baseSubject, token)
@@ -54,7 +54,7 @@ export async function resendDispatch(params: { officeId: number; userId: string;
       await enqueueExternalEvent(tx, { id: params.userId, officeId: params.officeId, requestId: params.requestId }, {
         eventType: 'receipt.resend', module: 'emails', result: 'success',
         recordType: 'RecibosDispatchBatch', recordId: batch.id,
-        description: 'Reenvio de recibos registrado.',
+        description: 'Reenvío de recibos registrado.',
         deduplicationKey: `receipt-resend:${batch.id}:completed`,
         metadata: { sourceRecipientId: source.id, recipientId: recipient.id, batchId: batch.id, count: current.rows.length, unavailableCount },
       })

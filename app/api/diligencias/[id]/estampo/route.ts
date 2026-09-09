@@ -2,10 +2,11 @@ import { withApiUser } from '@/lib/api/server'
 import { NextRequest, NextResponse } from 'next/server'
 import { Prisma } from '@prisma/client'
 
-import { ApiError, apiFailure, parseApiInput } from '@/lib/api/server'
+import { ApiError, apiFailure, handleApiError, parseApiInput } from '@/lib/api/server'
 import { buildDocumentGenerationMetadata } from '@/lib/documents/generationMetadata'
 import { hasStoredPdf, uploadPdfToDocumentStorage } from '@/lib/documents/storage'
 import { prisma } from '@/lib/prisma'
+import { assertRoleWorkflowWritable, syncDiligenceWorkflowState } from '@/lib/roles/workflowState'
 import { EstampoGenerateSchema } from '@/lib/validations/rol-workspace'
 import { formatCuantiaCLP } from '@/lib/utils/cuantia'
 import { formatDateToSpanishWords } from '@/lib/utils/dateFormat'
@@ -154,6 +155,8 @@ export async function POST(
       return apiFailure(new ApiError('NOT_FOUND', 'Diligencia no encontrada o no pertenece a tu oficina', 404))
     }
 
+    assertRoleWorkflowWritable(diligencia.rol.estado)
+
     const raw = await req.json().catch(() => ({}))
     const notificacionId = typeof raw?.notificacionId === 'string' ? raw.notificacionId : null
 
@@ -292,6 +295,7 @@ export async function POST(
           data: { meta: { ...notificacionMeta, estampoDraft: filled } },
         })
       }
+      await syncDiligenceWorkflowState(diligencia.id, tx)
       const queuedEvent = await enqueueExternalEvent(tx, user, {
         eventType: 'stamp.generated', module: 'documents', result: 'success',
         recordType: 'Documento', recordId: updated.id, rolId: diligencia.rolId, rol: diligencia.rol.rol,
@@ -334,7 +338,7 @@ export async function POST(
       },
     })
   } catch (error) {
-    return apiFailure(new ApiError('INTERNAL_ERROR', 'Ocurrió un error inesperado', 500))
+    return handleApiError(error, { operation: 'stamp.generate.custom', request: req, user })
   }
 
   })

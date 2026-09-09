@@ -1,4 +1,5 @@
 import { useTimeline } from '@/lib/hooks/useRolWorkspace'
+import { formatDateTimeCL } from '@/lib/utils/dateInput'
 
 interface RolTimelineProps {
   rolId: string
@@ -53,7 +54,7 @@ export default function RolTimeline({ rolId }: RolTimelineProps) {
               </div>
               <div className="flex-1 rounded-md border border-slate-100 bg-white p-4 shadow-sm">
                 <header className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
-                  <span>{new Date(entry.createdAt).toLocaleString('es-CL')}</span>
+                  <span>{formatDateTimeCL(entry.createdAt)}</span>
                   <span>{entry.userEmail}</span>
                 </header>
                 <p className="mt-2 text-sm text-slate-700">{entry.accion}</p>

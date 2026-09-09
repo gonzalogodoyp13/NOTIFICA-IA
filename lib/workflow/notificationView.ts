@@ -38,7 +38,7 @@ export function serializeNotification(notificacion: any, diligenciaContext?: any
     meta: notificacion.meta ?? null,
     ejecutadoId: notificacion.ejecutadoId ?? null,
     bancoId: notificacion.bancoId ?? null,
-    createdAt: notificacion.createdAt ? new Date(notificacion.createdAt).toISOString() : null,
+    createdAt: new Date(notificacion.createdAt).toISOString(),
     updatedAt: notificacion.updatedAt ? new Date(notificacion.updatedAt).toISOString() : null,
     voidedAt: notificacion.voidedAt ? new Date(notificacion.voidedAt).toISOString() : null,
     voidReason: notificacion.voidReason ?? null,

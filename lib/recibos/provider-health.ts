@@ -22,7 +22,7 @@ async function probe(provider: ProviderName, mailbox: string) {
   if (provider === 'microsoft_graph') {
     const token = await graphAccessToken()
     const response = await fetch(`https://graph.microsoft.com/v1.0/users/${encodeURIComponent(mailbox)}?$select=id,mail`, { headers: { Authorization: `Bearer ${token}` } })
-    if (!response.ok) throw new Error('Microsoft Graph no pudo acceder al buzon compartido.')
+    if (!response.ok) throw new Error('Microsoft Graph no pudo acceder al buzón compartido.')
     return
   }
   const client = new ImapFlow({ host: process.env.GMAIL_IMAP_HOST?.trim() || 'imap.gmail.com', port: Number(process.env.GMAIL_IMAP_PORT || 993), secure: process.env.GMAIL_IMAP_SECURE?.trim() !== 'false', auth: { user: mailbox, pass: process.env.GMAIL_IMAP_APP_PASSWORD?.trim() || process.env.GMAIL_SMTP_APP_PASSWORD?.trim() || '' }, logger: false })

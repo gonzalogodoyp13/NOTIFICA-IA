@@ -21,6 +21,7 @@ import { buildReciboPdf, buildReciboVariables, loadOfficeReciboStampForPdf } fro
 import type { DiligenciaWithReciboRelations } from '@/lib/pdf/recibo'
 import { loadOfficePdfConfig } from '@/lib/pdf/officeConfig'
 import { prisma } from '@/lib/prisma'
+import { assertRoleWorkflowWritable, syncDiligenceWorkflowState } from '@/lib/roles/workflowState'
 import {
   buildExecutionMetadata,
   receiptGenerationFingerprint,
@@ -184,6 +185,7 @@ async function loadGenerationContext(
     },
   })
   if (!notification) throw new ApiError('NOT_FOUND', 'Notificación no encontrada', 404)
+  assertRoleWorkflowWritable(notification.diligencia.rol.estado)
   if (!notification.ejecutadoId || !notification.ejecutado) {
     throw new ApiError('VALIDATION_ERROR', 'La notificación requiere un ejecutado', 400)
   }
@@ -792,6 +794,7 @@ export async function generateReceipt(params: {
       data: { bancoId: params.input.bancoId, meta: nextMeta, updatedAt: fechaGeneracion },
     })
     await tx.diligencia.update({ where: { id: diligenciaId }, data: { estadoCobro: 'NO_PAGADO' } })
+    await syncDiligenceWorkflowState(diligenciaId, tx)
 
     const eventType = eventTypeFor(currentReservation.operation)
     const queuedEvent = await enqueueExternalEvent(tx, params.context, {

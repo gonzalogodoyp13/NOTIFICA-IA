@@ -78,7 +78,11 @@ export default function EstampoWizardModal({
         const payload = await response.json().catch(() => null)
 
         if (!response.ok || payload?.ok !== true) {
-          throw new Error(payload?.error || 'Error al cargar estampos para el wizard')
+          throw new Error(
+            (typeof payload?.error === 'string' && payload.error) ||
+              (typeof payload?.error?.message === 'string' && payload.error.message) ||
+              'Error al cargar estampos para el wizard'
+          )
         }
 
         const data = payload.data as WizardResponse
@@ -236,7 +240,10 @@ export default function EstampoWizardModal({
       const result = await response.json().catch(() => null)
 
       if (!response.ok || result?.ok !== true) {
-        const errorMsg = result?.error || 'Error al generar estampo'
+        const errorMsg =
+          (typeof result?.error === 'string' && result.error) ||
+          (typeof result?.error?.message === 'string' && result.error.message) ||
+          'Error al generar estampo'
         const missing = result?.missing as string[] | undefined
         throw new Error(
           missing && missing.length > 0

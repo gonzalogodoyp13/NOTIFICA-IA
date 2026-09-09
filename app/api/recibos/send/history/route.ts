@@ -11,6 +11,6 @@ export async function GET(req: NextRequest) {
     const limit = Number(req.nextUrl.searchParams.get('limit') ?? 20)
     const stateValue = req.nextUrl.searchParams.get('state')
     const state = z.enum(['sent', 'failed', 'waiting', 'overdue', 'replied', 'resolved']).optional().parse(stateValue || undefined)
-    return apiSuccess(await listRecibosDispatchHistory(user.officeId, limit, state))
+    return apiSuccess(await listRecibosDispatchHistory(user.officeId, limit, state, user.isOfficeAdmin))
   })
 }

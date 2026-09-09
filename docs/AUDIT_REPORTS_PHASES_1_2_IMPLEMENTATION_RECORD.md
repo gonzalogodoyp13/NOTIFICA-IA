@@ -1060,3 +1060,13 @@ Operational interpretation:
 - Fully automatic delivery additionally requires the external scheduler and explicit schedule enablement.
 
 Non-functional follow-up remains unchanged: the remote São Paulo latency benchmark is above the repository target, and a specialist screen-reader-software review remains outstanding beyond the completed semantic DOM, keyboard, focus, and responsive checks.
+
+### 13.9 Public-table RLS and Data API hardening
+
+On 2026-08-27, migration `20260827210000_harden_public_table_rls` was applied to the configured production-like Supabase target after the required `migrate status → migrate deploy → generate` startup sequence. The migration closed the broader public-schema RLS backlog recorded in section 9.3 without changing application authorization contracts.
+
+The application uses direct Prisma connections for application tables and uses the Supabase browser client only for Auth. Accordingly, all 53 ordinary or partitioned tables in the exposed `public` schema now have RLS enabled, while `anon` and `authenticated` have no table or public-sequence privileges and no allow policies exist. `FORCE ROW LEVEL SECURITY` was deliberately not enabled, so the existing table-owning Prisma server connection remains functional. Existing trusted `service_role` grants were preserved; future public objects created by `postgres` no longer receive automatic table, sequence, or function grants for `anon`, `authenticated`, or `service_role`.
+
+The append-only `prevent_activity_history_mutation()` trigger function now has an empty pinned `search_path` and is not executable by `PUBLIC`, `anon`, or `authenticated`. Post-deployment verification reported zero RLS-disabled public tables, zero client-role public-table grants, zero client-role public-sequence usage grants, and zero public policies. Supabase Security Advisor no longer reports any `rls_disabled_in_public` or mutable-function-search-path finding. Its 53 `rls_enabled_no_policy` notices are informational and intentional for the deny-by-default Data API design. The separate Auth leaked-password-protection warning remains a dashboard-owned follow-up.
+
+Qualification passed Prisma validation/generation, TypeScript, lint, authentication/audit static verification, 30 integration files and 143 tests, the production build, and production-read-only infrastructure verification with zero warnings.

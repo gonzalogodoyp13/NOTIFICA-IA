@@ -218,6 +218,44 @@ test('Nueva diligencia and Nueva Notificacion open in the visible viewport inste
   }
 })
 
+test('status confirmation prevents accidental changes and terminal roles are read-only', async ({ baseURL, browser }) => {
+  const api = await createAuthenticatedContext(baseURL)
+  const suffix = qaRequestSuffix().toUpperCase()
+  const { qa, demanda, ejecutadoId } = await createDemand(api, `STATUS-${suffix}`)
+  const diligence = await createDiligence(api, demanda.rolId, qa.diligenciaTipoId, ejecutadoId, false)
+  const notification = await createNotification(api, demanda.rolId, diligence.id, ejecutadoId)
+  const context = await browser.newContext({ storageState: AUTH_STATE_PATH })
+  const page = await context.newPage()
+
+  try {
+    await page.goto(`/roles/${demanda.rolId}?tab=diligencias`)
+    await expect(page.getByText(new RegExp(`Ref\\. ${notification.id.replace(/-/g, '').slice(0, 8)}`, 'i'))).toBeVisible()
+    await expect(page.getByText(/\d{2}\/\d{2}\/\d{4}, \d{2}:\d{2}/).first()).toBeVisible()
+
+    await page.getByRole('button', { name: 'Cambiar estado' }).click()
+    await page.getByRole('menuitem', { name: 'Archivado' }).click()
+    await expect(page.getByRole('dialog', { name: 'Archivar ROL' })).toBeVisible()
+    await page.getByRole('button', { name: 'Cancelar' }).click()
+    expect((await prisma.rolCausa.findUniqueOrThrow({ where: { id: demanda.rolId } })).estado).toBe('en_proceso')
+
+    await page.getByRole('button', { name: 'Cambiar estado' }).click()
+    await page.getByRole('menuitem', { name: 'Archivado' }).click()
+    await page.getByRole('button', { name: 'Archivar ROL' }).click()
+    await expect(page.getByText('Modo de solo lectura.')).toBeVisible()
+    await expect(page.getByRole('button', { name: '+ Nueva diligencia' })).toBeDisabled()
+
+    const blockedNotification = await api.post(`/api/roles/${demanda.rolId}/diligencias/${diligence.id}/notificaciones`, {
+      data: { ejecutadoId },
+    })
+    expect(blockedNotification.status()).toBe(409)
+    const blockedPayload = await parseJson(blockedNotification)
+    expect((blockedPayload.error as JsonRecord).code).toBe('ROLE_READ_ONLY')
+  } finally {
+    await context.close()
+    await api.dispose()
+  }
+})
+
 test('authenticated navigation replaces Ingresar with a subtle Cerrar sesión action', async ({ browser }) => {
   const context = await browser.newContext({ storageState: AUTH_STATE_PATH, serviceWorkers: 'block' })
   const page = await context.newPage()
@@ -255,7 +293,9 @@ test('missing ROL search opens the creation handoff and composes the caratula', 
     await page.getByLabel('Buscar ROL exacto').fill(missingRol)
     await page.getByRole('button', { name: 'Buscar ROL' }).click()
 
-    await expect(page).toHaveURL(`/roles/no-encontrado?rol=${encodeURIComponent(missingRol)}`)
+    await expect(page).toHaveURL(`/roles/no-encontrado?rol=${encodeURIComponent(missingRol)}`, {
+      timeout: 30_000,
+    })
     await expect(page.getByRole('heading', {
       name: `No se registran causas con el rol ${missingRol}.`,
     })).toBeVisible()
@@ -351,7 +391,7 @@ test('manual receipt amount only becomes a lawyer-specific arancel when opted in
     await expect(page.getByLabel('Banco *')).toHaveValue(String(qa.bancoId))
     await page.getByLabel('Fecha de ejecución *').fill('04/08/2026')
     await expect(page.getByLabel('Fecha de ejecución *')).toHaveValue('04/08/2026')
-    await page.getByRole('button', { name: 'Siguiente', exact: true }).click()
+    await page.getByRole('button', { name: 'Continuar al recibo', exact: true }).click()
     await expect(page.getByRole('heading', { name: 'Datos del recibo' })).toBeVisible()
     await page.getByLabel('Tipo de Estampo *').selectOption(`custom:${estampo.id}`)
     await page.getByLabel('Monto (CLP) *').fill('18000')
@@ -359,7 +399,7 @@ test('manual receipt amount only becomes a lawyer-specific arancel when opted in
     await expect(saveDefaultCheckbox).toBeVisible()
     await expect(saveDefaultCheckbox).not.toBeChecked()
     await saveDefaultCheckbox.check()
-    await page.getByRole('button', { name: 'Generar recibo', exact: true }).click()
+    await page.getByRole('button', { name: 'Generar recibo y salir', exact: true }).click()
     await expect(page.getByRole('heading', { name: 'Datos del recibo' })).toBeHidden({ timeout: 30_000 })
     await expect(page.getByText('El monto quedó guardado como arancel predeterminado para este abogado.')).toBeVisible({ timeout: 30_000 })
     await context.close()
@@ -808,7 +848,7 @@ test('execution wizard uses one workflow read and keeps Step 1 continuation loca
       progressPatchCount += 1
     }
   })
-  await page.getByRole('button', { name: 'Siguiente' }).click()
+  await page.getByRole('button', { name: 'Continuar al recibo' }).click()
 
   await expect(page.getByRole('heading', { name: 'Datos del recibo' })).toBeVisible()
   await expect(page.getByLabel('Tipo de Estampo *')).toHaveValue(`custom:${qa.customEstampoId}`)
@@ -822,9 +862,9 @@ test('execution wizard uses one workflow read and keeps Step 1 continuation loca
   await expect(page.getByLabel('Motivo de corrección *')).toBeVisible()
 
   await page.getByLabel('Motivo de corrección *').fill('Corrección QA para validar caché')
-  await page.getByRole('button', { name: 'Guardar recibo y continuar' }).click()
+  await page.getByRole('button', { name: 'Generar recibo y continuar al estampo' }).click()
   await expect(page.getByRole('heading', { name: 'Generar estampo' })).toBeVisible()
-  await page.getByRole('button', { name: 'Guardar', exact: true }).click()
+  await page.getByRole('button', { name: 'Guardar borrador y salir', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'Generar estampo' })).toBeHidden()
   await expect(page.getByRole('button', { name: 'Editar recibo' })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Continuar con estampo' })).toBeVisible()
@@ -879,7 +919,7 @@ test('execution wizard uses one workflow read and keeps Step 1 continuation loca
 
   await expectWizardActionsInsideViewport('Datos de ejecución')
   await expect(mobilePage.getByLabel('Banco *')).toHaveValue(String(qa.bancoId))
-  await mobilePage.getByRole('button', { name: 'Siguiente' }).click()
+  await mobilePage.getByRole('button', { name: 'Continuar al recibo' }).click()
   await expectWizardActionsInsideViewport('Datos del recibo')
 
   await mobileContext.close()

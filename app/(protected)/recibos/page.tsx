@@ -2,7 +2,7 @@
 
 import { startTransition, useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
-import { AlertTriangle, CheckCircle, ChevronDown, Filter, FlaskConical, History, Mail, MessageSquare, RefreshCw, RotateCcw, Save, Search, Send, ShieldCheck, X } from 'lucide-react'
+import { AlertTriangle, CheckCircle, ChevronDown, Filter, FlaskConical, History, Mail, MessageSquare, RefreshCw, RotateCcw, Save, Search, Send, ShieldCheck, SlidersHorizontal, X } from 'lucide-react'
 import Link from 'next/link'
 
 import { Button } from '@/components/ui/button'
@@ -13,18 +13,13 @@ import UnmatchedRepliesPanel, {
   type UnmatchedReplyPagination,
   type UnmatchedReplyStatus,
 } from './components/UnmatchedRepliesPanel'
+import ReceiptResults, { type ReceiptRow } from './components/ReceiptResults'
 
 const PAGE_SIZE = 25
 
 type Option = { id: string; nombre: string }
 type LinkedOption = Option & { bancoIds: string[]; abogadoIds?: string[]; procuradorIds?: string[] }
 type TemplateOption = { key: string; label: string; kind: 'wizard' | 'legacy' }
-type ReceiptRow = {
-  reciboId: string; rolId: string; documentoId: string | null; numeroRecibo: string; rol: string
-  tribunal: string; caratula: string; gestion: string; estampoTemplate: string; estampoTemplateKey: string | null
-  resultado: string; abogado: string; procurador: string; banco: string; valor: number; fechaRecibo: string
-  fechaEjecucion: string | null; fechaPago: string | null; estado: 'Pagado' | 'Sin pagar'; numeroBoleta: string
-}
 type RecipientMode = 'procurador' | 'abogado' | 'ambos'
 type SendRecipient = { recipientType: 'procurador' | 'abogado'; recipientId: number; name: string; email: string | null; validEmail: boolean }
 type SendPreviewGroup = {
@@ -45,29 +40,36 @@ type SendDraft = {
   recipients: Record<string, { email: string; saveToRecord: boolean }>
 }
 type TemplateDraft = { subject: string; body: string }
-type SendResult = { dispatchBatchId: string; provider: string; selectedRows: number; groupCount: number; sentCount: number }
+type SendResult = { dispatchBatchId: string; deliveryMode: 'live' | 'simulation'; deliveryLabel: string; selectedRows: number; groupCount: number; sentCount: number }
+type ProviderDiagnostics = { provider: string; mailboxAddress: string; status: string; lastError: string | null; lastCheckedAt: string | null }
+type ProviderHealthView = {
+  readiness: { status: 'available' | 'attention' | 'simulation' | 'unconfigured'; label: string; canSyncReplies: boolean }
+  diagnostics?: { providers: ProviderDiagnostics[] }
+}
 type DispatchHistoryItem = {
-  id: string; createdAt: string; sentAt: string | null; senderEmail: string; provider: string; fromAccount: string | null
+  id: string; createdAt: string; sentAt: string | null; senderEmail: string; deliveryMode: 'live' | 'simulation'; deliveryLabel: string; canSyncReplies: boolean; sendTypeLabel: string
   recipientMode: string; recipientSummary: string; recipientType: string; reciboCount: number; totalAmount: number
-  status: string; statusLabel: string; sentCount: number; failedCount: number; skippedCount: number; replyState: string; operationalState: string; dispatchKind: string
+  status: string; statusLabel: string; sentCount: number; failedCount: number; skippedCount: number; replyState: string; operationalState: string
   replyCount: number; lastReplyAt: string | null
+  diagnostics?: { provider: string; fromAccount: string | null; dispatchKind: string }
 }
 type DispatchHistoryDetail = {
-  id: string; createdAt: string; sentAt: string | null; completedAt: string | null; senderEmail: string; provider: string; fromAccount: string | null
-  recipientMode: string; status: string; statusLabel: string; selectedCount: number; excludedCount: number; groupCount: number; dispatchKind: string
+  id: string; createdAt: string; sentAt: string | null; completedAt: string | null; senderEmail: string; deliveryMode: 'live' | 'simulation'; deliveryLabel: string; canSyncReplies: boolean; sendTypeLabel: string
+  recipientMode: string; status: string; statusLabel: string; selectedCount: number; excludedCount: number; groupCount: number
   sentCount: number; failedCount: number; skippedCount: number; errorMessage: string | null; replyState: string
   replyCount: number; lastReplyAt: string | null
-  templateMode: string
+  diagnostics?: { provider: string; fromAccount: string | null; dispatchKind: string; templateMode: string }
   recipients: Array<{
     id: string; recipientType: string; recipientName: string; recipientEmails: string[]; subject: string; body: string
-    status: string; statusLabel: string; attemptCount: number; providerMessageId: string | null; providerThreadId: string | null
-    attachmentFilename: string | null; attachmentMimeType: string | null; attachmentByteSize: number | null; attachmentSha256: string | null
+    status: string; statusLabel: string; attachmentFilename: string | null
     reciboCount: number; totalAmount: number; errorMessage: string | null; replyState: string; replyCount: number; lastReplyAt: string | null; operationalState: string
-    resolvedAt: string | null; resolutionNote: string | null; resendOfRecipientId: string | null; resendReason: string | null; duplicateOverrideReason: string | null
+    resolvedAt: string | null; resolutionNote: string | null; isResend: boolean; resendReason: string | null; duplicateOverrideReason: string | null
+    diagnostics?: { attemptCount: number; providerMessageId: string | null; providerThreadId: string | null; attachmentMimeType: string | null; attachmentByteSize: number | null; attachmentSha256: string | null; resendOfRecipientId: string | null }
     replies: Array<{
-      id: string; provider: string; senderName: string | null; senderEmail: string; subject: string; textPreview: string
-      bodyText: string; receivedAt: string; matchMethod: string | null; suggestedClassification: string | null; confirmedClassification: string | null; classifiedAt: string | null
-      attachments: Array<{ id: string; filename: string; mimeType: string | null; byteSize: number | null; isInline: boolean }>
+      id: string; senderName: string | null; senderEmail: string; subject: string; textPreview: string
+      bodyText: string; receivedAt: string; suggestedClassification: string | null; confirmedClassification: string | null; classifiedAt: string | null
+      diagnostics?: { provider: string; matchMethod: string | null }
+      attachments: Array<{ id: string; filename: string; isInline: boolean; diagnostics?: { mimeType: string | null; byteSize: number | null } }>
     }>
     items: Array<{ id: string; reciboId: string; numeroRecibo: string; rol: string; monto: number; fechaEjecucion: string | null }>
   }>
@@ -119,8 +121,8 @@ function validate(filters: FilterState) {
   if (filters.fechaEjecucionDesde && filters.fechaEjecucionHasta && filters.fechaEjecucionDesde > filters.fechaEjecucionHasta) return 'La fecha desde no puede ser mayor que la fecha hasta.'
   const min = filters.montoMin === '' ? undefined : Number(filters.montoMin)
   const max = filters.montoMax === '' ? undefined : Number(filters.montoMax)
-  if ((min !== undefined && (!Number.isFinite(min) || min < 0)) || (max !== undefined && (!Number.isFinite(max) || max < 0))) return 'Los montos deben ser numeros positivos.'
-  if (min !== undefined && max !== undefined && min > max) return 'El monto minimo no puede ser mayor que el monto maximo.'
+  if ((min !== undefined && (!Number.isFinite(min) || min < 0)) || (max !== undefined && (!Number.isFinite(max) || max < 0))) return 'Los montos deben ser números positivos.'
+  if (min !== undefined && max !== undefined && min > max) return 'El monto mínimo no puede ser mayor que el monto máximo.'
   return null
 }
 
@@ -179,7 +181,7 @@ function MultiSelect({ label, options, selected, onChange }: { label: string; op
       <span className="truncate">{names.length ? (names.length === 1 ? names[0] : `${names.length} seleccionados`) : 'Todos'}</span><ChevronDown className="h-4 w-4" />
     </button>
     {open && <div className="absolute z-30 mt-1 max-h-72 w-full overflow-auto rounded-xl border border-slate-200 bg-white p-2 shadow-xl">
-      {selected.length > 0 && <button type="button" onClick={() => onChange([])} className="mb-1 w-full rounded px-2 py-2 text-left text-xs font-semibold text-blue-700 hover:bg-blue-50">Limpiar seleccion</button>}
+      {selected.length > 0 && <button type="button" onClick={() => onChange([])} className="mb-1 w-full rounded px-2 py-2 text-left text-xs font-semibold text-blue-700 hover:bg-blue-50">Limpiar selección</button>}
       {options.length ? options.map(option => <label key={option.id} className="flex cursor-pointer items-center gap-2 rounded px-2 py-2 hover:bg-slate-50">
         <input type="checkbox" checked={selected.includes(option.id)} onChange={() => onChange(selected.includes(option.id) ? selected.filter(id => id !== option.id) : [...selected, option.id])} />
         <span>{option.nombre}</span>
@@ -224,6 +226,7 @@ export default function RecibosPage() {
   const [bulkPreview, setBulkPreview] = useState<BulkPreview | null>(null)
   const [recentOperation, setRecentOperation] = useState<RecentOperation | null>(null)
   const [sendOpen, setSendOpen] = useState(false)
+  const [sendAdvancedOpen, setSendAdvancedOpen] = useState(false)
   const [sendMode, setSendMode] = useState<RecipientMode>('procurador')
   const [sendPreview, setSendPreview] = useState<SendPreview | null>(null)
   const [sendTemplateDraft, setSendTemplateDraft] = useState<TemplateDraft | null>(null)
@@ -251,14 +254,58 @@ export default function RecibosPage() {
   const [expandedReplies, setExpandedReplies] = useState<Record<string, boolean>>({})
   const [duplicateReasons, setDuplicateReasons] = useState<Record<string, string>>({})
   const [historyFilter, setHistoryFilter] = useState('all')
-  const [providerHealth, setProviderHealth] = useState<Array<{ provider: string; mailboxAddress: string; status: string; lastError: string | null }>>([])
+  const [providerHealth, setProviderHealth] = useState<ProviderHealthView | null>(null)
   const [smartActionLoading, setSmartActionLoading] = useState<string | null>(null)
   const [resolutionNotes, setResolutionNotes] = useState<Record<string, string>>({})
   const [resendRecipientId, setResendRecipientId] = useState<string | null>(null)
   const [resendDraft, setResendDraft] = useState({ emails: '', subject: '', body: '', reason: '' })
   const selectAllRef = useRef<HTMLInputElement | null>(null)
+  const sendDialogRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => { setFilters(appliedFilters) }, [appliedFilters])
+  useEffect(() => {
+    if (!sendOpen) return
+
+    const dialog = sendDialogRef.current
+    const previouslyFocused = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    const focusableSelector = 'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+    const focusableElements = () => dialog
+      ? Array.from(dialog.querySelectorAll<HTMLElement>(focusableSelector)).filter(element => element.offsetParent !== null)
+      : []
+
+    focusableElements()[0]?.focus()
+    const handleKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        setSendOpen(false)
+        setSendAdvancedOpen(false)
+        return
+      }
+      if (event.key !== 'Tab') return
+
+      const elements = focusableElements()
+      if (!elements.length) {
+        event.preventDefault()
+        dialog?.focus()
+        return
+      }
+      const first = elements[0]
+      const last = elements[elements.length - 1]
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault()
+        last.focus()
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault()
+        first.focus()
+      }
+    }
+
+    document.addEventListener('keydown', handleKeyDown)
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown)
+      if (previouslyFocused && document.contains(previouslyFocused)) previouslyFocused.focus()
+    }
+  }, [sendOpen])
   useEffect(() => {
     fetch('/api/recibos/bulk/recent', { credentials: 'include' }).then(r => r.json()).then(payload => {
       const operation = (payload.data ?? []).find((item: RecentOperation) => item.reversible)
@@ -346,7 +393,6 @@ export default function RecibosPage() {
   const selectedOnPage = rows.filter(row => rowSelected(row.reciboId)).length
   const allPageSelected = rows.length > 0 && selectedOnPage === rows.length
   const somePageSelected = selectedOnPage > 0 && selectedOnPage < rows.length
-  useEffect(() => { if (selectAllRef.current) selectAllRef.current.indeterminate = somePageSelected }, [somePageSelected])
   const effectiveCount = selection.mode === 'allFiltered' ? Math.max(0, (data?.pagination.totalRows ?? 0) - selection.excludedIds.length) : selection.ids.length
   const explicitRows = rows.filter(row => selection.mode === 'explicit' && selection.ids.includes(row.reciboId))
   const explicitTotal = explicitRows.reduce((sum, row) => sum + row.valor, 0)
@@ -392,11 +438,11 @@ export default function RecibosPage() {
     setBulkUpdating(true); setError(null)
     try {
       const response = await fetch('/api/recibos/bulk', { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: bulkPreview.action, reciboIds: selection.ids, fechaPago: bulkPreview.action === 'markPaid' ? paymentDate : undefined, numeroBoleta: bulkPreview.action === 'associateBoleta' ? boletaDraft.trim() : undefined, stateHash: bulkPreview.stateHash }) })
-      const payload = await response.json().catch(() => null); if (!response.ok || payload?.ok !== true) throw new Error(payload?.error || 'Error al ejecutar la accion.')
+      const payload = await response.json().catch(() => null); if (!response.ok || payload?.ok !== true) throw new Error(payload?.error || 'Error al ejecutar la acción.')
       setPaidOpen(false); setBoletaOpen(false); setBulkPreview(null); setBoletaDraft(''); setSelection({ mode: 'explicit', ids: [] })
       setRecentOperation({ id: payload.data.operationId, action: bulkPreview.action, createdAt: new Date().toISOString(), undoneAt: null, reversible: true, reason: null })
       const params = new URLSearchParams(searchParams.toString()); const refreshed = await fetch(`/api/recibos?${params}`, { credentials: 'include' }).then(r => r.json()); if (refreshed.ok) setData(refreshed.data)
-    } catch (e) { setError(e instanceof Error ? e.message : 'Error al ejecutar la accion.') } finally { setBulkUpdating(false) }
+    } catch (e) { setError(e instanceof Error ? e.message : 'Error al ejecutar la acción.') } finally { setBulkUpdating(false) }
   }
 
   const undoRecent = async () => {
@@ -404,10 +450,10 @@ export default function RecibosPage() {
     setBulkUpdating(true); setError(null)
     try {
       const response = await fetch(`/api/recibos/bulk/${recentOperation.id}/undo`, { method: 'POST', credentials: 'include' })
-      const payload = await response.json().catch(() => null); if (!response.ok || payload?.ok !== true) throw new Error(payload?.error || 'No se pudo deshacer la operacion.')
+      const payload = await response.json().catch(() => null); if (!response.ok || payload?.ok !== true) throw new Error(payload?.error || 'No se pudo deshacer la operación.')
       setRecentOperation(null)
       if (applied) { const refreshed = await fetch(`/api/recibos?${searchParams}`, { credentials: 'include' }).then(r => r.json()); if (refreshed.ok) setData(refreshed.data) }
-    } catch (e) { setError(e instanceof Error ? e.message : 'No se pudo deshacer la operacion.') } finally { setBulkUpdating(false) }
+    } catch (e) { setError(e instanceof Error ? e.message : 'No se pudo deshacer la operación.') } finally { setBulkUpdating(false) }
   }
 
   const sendSelectionBody = () => selection.mode === 'explicit'
@@ -434,14 +480,14 @@ export default function RecibosPage() {
         body: JSON.stringify({ filters: filtersForBody(appliedFilters), selection: sendSelectionBody(), recipientMode: mode, ...(template ? { template } : {}) }),
       })
       const payload = await response.json().catch(() => null)
-      if (!response.ok || payload?.ok !== true) throw new Error(payload?.error?.message || payload?.error || 'No se pudo preparar el envio.')
+      if (!response.ok || payload?.ok !== true) throw new Error(payload?.error?.message || payload?.error || 'No se pudo preparar el envío.')
       setSendPreview(payload.data); setSendDrafts(buildDrafts(payload.data)); setSendTemplateDraft({ subject: payload.data.template.subject, body: payload.data.template.body }); setTemplateSaved(false)
-    } catch (e) { setError(e instanceof Error ? e.message : 'No se pudo preparar el envio.'); setSendPreview(null); setSendDrafts({}) }
+    } catch (e) { setError(e instanceof Error ? e.message : 'No se pudo preparar el envío.'); setSendPreview(null); setSendDrafts({}) }
     finally { setSendLoading(false) }
   }
 
   const openSendCenter = () => {
-    setSendOpen(true); setSendMode('procurador'); setSendExpanded({}); setSendTemplateDraft(null); setTemplateSaved(false); void previewSend('procurador', null)
+    setSendOpen(true); setSendAdvancedOpen(false); setSendMode('procurador'); setSendExpanded({}); setSendTemplateDraft(null); setTemplateSaved(false); void previewSend('procurador', null)
   }
 
   const setPanelInUrl = (panel: HistoryPanel | null) => {
@@ -505,7 +551,7 @@ export default function RecibosPage() {
   }
 
   const syncReplies = async () => {
-    if (historyDetail?.provider === 'dry-run') return
+    if (providerHealth && !providerHealth.readiness.canSyncReplies) return
     setReplySyncing(true); setReplySyncMessage(null); setError(null)
     try {
       const response = await fetch('/api/recibos/send/replies/sync', { method: 'POST', credentials: 'include' })
@@ -539,9 +585,9 @@ export default function RecibosPage() {
     setSmartActionLoading(recipientId)
     try {
       const response = await fetch(`/api/recibos/send/history/recipients/${recipientId}/resolution`, { method: 'PATCH', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ resolved, note: resolutionNotes[recipientId] || undefined }) })
-      if (!response.ok) throw new Error(await readApiError(response, 'No se pudo actualizar la resolucion.'))
+      if (!response.ok) throw new Error(await readApiError(response, 'No se pudo actualizar la resolución.'))
       await loadHistory(historyFilter); if (historyDetail) await openHistoryDetail(historyDetail.id)
-    } catch (e) { setError(e instanceof Error ? e.message : 'No se pudo actualizar la resolucion.') } finally { setSmartActionLoading(null) }
+    } catch (e) { setError(e instanceof Error ? e.message : 'No se pudo actualizar la resolución.') } finally { setSmartActionLoading(null) }
   }
 
   const testSend = async (group: SendPreviewGroup) => {
@@ -551,7 +597,7 @@ export default function RecibosPage() {
       const template = sendTemplateDraft ?? sendPreview.template
       const response = await fetch('/api/recibos/send/test', { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ filters: filtersForBody(appliedFilters), selection: sendSelectionBody(), recipientMode: sendMode, template: { subject: template.subject, body: template.body }, groupKey: group.groupKey }) })
       if (!response.ok) throw new Error(await readApiError(response, 'No se pudo enviar la prueba.'))
-      setReplySyncMessage('Prueba enviada a tu correo y registrada como envio de prueba.')
+      setReplySyncMessage('Prueba enviada a tu correo y registrada como envío de prueba.')
       void loadHistory(historyFilter)
     } catch (e) { setError(e instanceof Error ? e.message : 'No se pudo enviar la prueba.') } finally { setSmartActionLoading(null) }
   }
@@ -635,7 +681,7 @@ export default function RecibosPage() {
         }),
       }
     }).filter(group => group.recipients.some(recipient => basicEmail(recipient.email)))
-    if (!groups.length) { setError('Corrige al menos un email antes de enviar.'); return }
+    if (!groups.length) { setError('Corrige al menos un correo antes de enviar.'); return }
     const template = sendTemplateDraft ?? sendPreview.template
     setSending(true); setError(null); setSendResult(null)
     try {
@@ -653,27 +699,27 @@ export default function RecibosPage() {
   return <div className="app-shell"><div className="page-stack mx-auto max-w-[1800px] px-4 sm:px-6 lg:px-8 2xl:px-10">
     <section className="page-section overflow-visible">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-        <div><div className="page-kicker">Recibos</div><h1 className="page-title">Gestion de Recibos</h1><p className="page-subtitle">Define los criterios de busqueda antes de cargar resultados.</p><div className="mt-4 flex gap-2"><Link href="/recibos" className="rounded-full bg-slate-900 px-4 py-2 text-sm font-semibold text-white">Gestion</Link><Link href="/recibos/reconciliacion" className="rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700">Conciliacion</Link></div></div>
-        <div className="flex flex-wrap gap-2"><Button variant="outline" onClick={clear}>Limpiar filtros</Button><Button variant="outline" onClick={openHistory}><History className="mr-2 h-4 w-4" />Gestion de envios{unmatchedPendingTotal > 0 && <span aria-label={`${unmatchedPendingTotal} respuestas pendientes`} className="ml-2 inline-flex min-w-5 justify-center rounded-full bg-amber-100 px-1.5 py-0.5 text-[11px] font-bold text-amber-900">{unmatchedPendingTotal > 99 ? '99+' : unmatchedPendingTotal}</span>}</Button><Button variant="outline" onClick={openSendCenter} disabled={!effectiveCount || sendLoading}><Send className="mr-2 h-4 w-4" />Enviar listado ({effectiveCount})</Button></div>
+        <div><div className="page-kicker">Recibos</div><h1 className="page-title">Gestión de Recibos</h1><p className="page-subtitle">Define los criterios de búsqueda antes de cargar resultados.</p><div className="mt-4 flex gap-2"><Link href="/recibos" className="rounded-full bg-slate-900 px-4 py-2 text-sm font-semibold text-white">Gestión</Link><Link href="/recibos/reconciliacion" className="rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700">Conciliación</Link></div></div>
+        <div className="flex flex-wrap gap-2"><Button variant="outline" onClick={clear}>Limpiar filtros</Button><Button variant="outline" onClick={openHistory}><History className="mr-2 h-4 w-4" />Gestión de envíos{unmatchedPendingTotal > 0 && <span aria-label={`${unmatchedPendingTotal} respuestas pendientes`} className="ml-2 inline-flex min-w-5 justify-center rounded-full bg-amber-100 px-1.5 py-0.5 text-[11px] font-bold text-amber-900">{unmatchedPendingTotal > 99 ? '99+' : unmatchedPendingTotal}</span>}</Button><Button variant="outline" onClick={openSendCenter} disabled={!effectiveCount || sendLoading}><Send className="mr-2 h-4 w-4" />Enviar listado ({effectiveCount})</Button></div>
       </div>
       <div className="mt-6 rounded-2xl border border-slate-200 bg-slate-50/70 p-4 sm:p-5">
-        <div className="mb-4 flex items-center gap-2 text-sm font-semibold text-slate-800"><Filter className="h-4 w-4 text-blue-700" />Criterios de busqueda</div>
+        <div className="mb-4 flex items-center gap-2 text-sm font-semibold text-slate-800"><Filter className="h-4 w-4 text-blue-700" />Criterios de búsqueda</div>
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           <MultiSelect label="Estado" options={[{ id: 'PAGADO', nombre: 'Pagado' }, { id: 'NO_PAGADO', nombre: 'Sin pagar' }]} selected={filters.estados} onChange={v => update('estados', v)} />
           <MultiSelect label="Abogado" options={options.abogados} selected={filters.abogadoIds} onChange={v => update('abogadoIds', v)} />
           <MultiSelect label="Procurador" options={options.procuradores} selected={filters.procuradorIds} onChange={v => update('procuradorIds', v)} />
           <MultiSelect label="Banco" options={options.bancos} selected={filters.bancoIds} onChange={v => update('bancoIds', v)} />
           <label className="space-y-2 text-sm text-slate-700"><span className="font-medium">ROL</span><Input value={filters.rol} onChange={e => update('rol', e.target.value)} placeholder="C-1234-2025" /></label>
-          <label className="space-y-2 text-sm text-slate-700"><span className="font-medium">Ejecucion desde</span><Input type="date" value={filters.fechaEjecucionDesde} onChange={e => update('fechaEjecucionDesde', e.target.value)} /></label>
-          <label className="space-y-2 text-sm text-slate-700"><span className="font-medium">Ejecucion hasta</span><Input type="date" value={filters.fechaEjecucionHasta} onChange={e => update('fechaEjecucionHasta', e.target.value)} /></label>
+          <label className="space-y-2 text-sm text-slate-700"><span className="font-medium">Ejecución desde</span><Input type="date" value={filters.fechaEjecucionDesde} onChange={e => update('fechaEjecucionDesde', e.target.value)} /></label>
+          <label className="space-y-2 text-sm text-slate-700"><span className="font-medium">Ejecución hasta</span><Input type="date" value={filters.fechaEjecucionHasta} onChange={e => update('fechaEjecucionHasta', e.target.value)} /></label>
         </div>
         <div className="mt-5 flex items-center justify-end"><Button onClick={() => apply()} disabled={!hasFilters(filters)}><Search className="mr-2 h-4 w-4" />Aplicar filtros</Button></div>
       </div>
       {error && <div className="mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">{error}</div>}
-      {recentOperation?.reversible && <div className="mt-4 flex items-center justify-between gap-3 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900"><span>La ultima accion masiva se completo correctamente y puede deshacerse.</span><Button variant="outline" onClick={undoRecent} disabled={bulkUpdating}>Deshacer</Button></div>}
+      {recentOperation?.reversible && <div className="mt-4 flex items-center justify-between gap-3 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900"><span>La última acción masiva se completó correctamente y puede deshacerse.</span><Button variant="outline" onClick={undoRecent} disabled={bulkUpdating}>Deshacer</Button></div>}
     </section>
 
-    {!applied ? <section className="page-section"><div className="flex min-h-64 flex-col items-center justify-center text-center"><div className="rounded-full bg-blue-50 p-4 text-blue-700"><Filter className="h-8 w-8" /></div><h2 className="mt-4 text-xl font-semibold text-slate-900">Elige como buscar</h2><p className="mt-2 max-w-xl text-slate-600">Selecciona estado, abogado, procurador, banco, ROL o fecha de ejecucion. Los recibos se cargaran solo despues de aplicar los filtros.</p></div></section> :
+    {!applied ? <section className="page-section"><div className="flex min-h-64 flex-col items-center justify-center text-center"><div className="rounded-full bg-blue-50 p-4 text-blue-700"><Filter className="h-8 w-8" /></div><h2 className="mt-4 text-xl font-semibold text-slate-900">Elige cómo buscar</h2><p className="mt-2 max-w-xl text-slate-600">Selecciona estado, abogado, procurador, banco, ROL o fecha de ejecución. Los recibos se cargarán solo después de aplicar los filtros.</p></div></section> :
     <section className="page-section overflow-hidden">
       <div className="flex flex-col gap-3 border-b border-slate-200 pb-4 lg:flex-row lg:items-center lg:justify-between">
         <div><div className="text-sm font-semibold text-slate-900">{loading ? 'Cargando recibos...' : `${data?.pagination.totalRows ?? 0} recibos encontrados`}</div><div className="mt-1 text-xs text-slate-500">{effectiveCount} seleccionados</div></div>
@@ -684,46 +730,36 @@ export default function RecibosPage() {
           <Button variant="outline" onClick={() => { setBulkPreview(null); setBoletaOpen(true) }} disabled={selection.mode !== 'explicit' || !selection.ids.length}>Asociar boleta</Button>
         </div>
       </div>
-      {selection.mode === 'allFiltered' && <div className="my-3 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-900">Todos los resultados filtrados estan seleccionados. Puedes excluir filas individuales. Las acciones de pago y boleta requieren una seleccion explicita; la seleccion global se usa para exportar.</div>}
-      <div className="overflow-x-auto"><table className="min-w-[2100px] w-full text-sm"><thead><tr className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-600">
-        <th className="px-3 py-3"><input ref={selectAllRef} type="checkbox" checked={allPageSelected} onChange={togglePage} aria-label="Seleccionar pagina" /></th>
-        {['N° Recibo','ROL','Tribunal','Caratula','Gestion','Estampo','Resultado','Abogado','Procurador','Banco','Monto','Estado','N° Boleta','Fecha ejecucion','Fecha recibo','Fecha pago'].map(title => <th key={title} className="px-3 py-3">{title}</th>)}
-      </tr></thead><tbody className="divide-y divide-slate-100">
-        {!loading && rows.length === 0 && <tr><td colSpan={17} className="px-4 py-16 text-center text-slate-500">No se encontraron recibos con estos filtros.</td></tr>}
-        {rows.map(row => <tr key={row.reciboId} className="hover:bg-slate-50/80"><td className="px-3 py-3"><input type="checkbox" checked={rowSelected(row.reciboId)} onChange={() => toggleRow(row.reciboId)} /></td>
-          <td className="px-3 py-3 font-semibold text-blue-800">{row.numeroRecibo}</td><td className="px-3 py-3">{row.rol}</td><td className="px-3 py-3">{row.tribunal}</td><td className="px-3 py-3">{row.caratula}</td>
-          <td className="px-3 py-3">{row.gestion}</td><td className="px-3 py-3">{row.estampoTemplate}</td><td className="px-3 py-3">{row.resultado}</td><td className="px-3 py-3">{row.abogado}</td>
-          <td className="px-3 py-3">{row.procurador}</td><td className="px-3 py-3">{row.banco}</td><td className="px-3 py-3 font-semibold">{formatCurrency(row.valor)}</td>
-          <td className="px-3 py-3"><span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${row.estado === 'Pagado' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}>{row.estado}</span></td>
-          <td className="px-3 py-3">{row.numeroBoleta}</td><td className="px-3 py-3">{formatDate(row.fechaEjecucion)}</td><td className="px-3 py-3">{formatDate(row.fechaRecibo)}</td><td className="px-3 py-3">{formatDate(row.fechaPago)}</td>
-        </tr>)}
-      </tbody></table></div>
-      {data && data.pagination.totalPages > 1 && <div className="flex items-center justify-between border-t border-slate-200 pt-4"><Button variant="outline" disabled={page <= 1} onClick={() => apply(page - 1, true)}>Anterior</Button><span className="text-sm text-slate-600">Pagina {page} de {data.pagination.totalPages}</span><Button variant="outline" disabled={page >= data.pagination.totalPages} onClick={() => apply(page + 1, true)}>Siguiente</Button></div>}
+      {selection.mode === 'allFiltered' && <div className="my-3 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-900">Todos los resultados filtrados están seleccionados. Puedes excluir filas individuales. Las acciones de pago y boleta requieren una selección explícita; la selección global se usa para exportar.</div>}
+      <ReceiptResults rows={rows} loading={loading} allPageSelected={allPageSelected} somePageSelected={somePageSelected} selectAllRef={selectAllRef} onTogglePage={togglePage} isSelected={rowSelected} onToggleRow={toggleRow} />
+      {data && data.pagination.totalPages > 1 && <div className="flex items-center justify-between border-t border-slate-200 pt-4"><Button variant="outline" disabled={page <= 1} onClick={() => apply(page - 1, true)}>Anterior</Button><span className="text-sm text-slate-600">Página {page} de {data.pagination.totalPages}</span><Button variant="outline" disabled={page >= data.pagination.totalPages} onClick={() => apply(page + 1, true)}>Siguiente</Button></div>}
     </section>}
 
-    {sendOpen && <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 p-3 sm:p-4">
-      <div className="flex max-h-[92vh] w-full max-w-6xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
-        <div className="border-b border-slate-200 px-5 py-4">
+    {sendOpen && <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/45 lg:items-center lg:p-4">
+      <div ref={sendDialogRef} role="dialog" aria-modal="true" aria-labelledby="receipt-send-title" tabIndex={-1} className="flex h-[100dvh] min-w-0 w-full max-w-6xl flex-col overflow-hidden bg-white shadow-2xl lg:h-auto lg:max-h-[92vh] lg:rounded-2xl">
+        <div className="shrink-0 border-b border-slate-200 px-4 py-3 sm:px-5 sm:py-4">
           <div className="flex items-start justify-between gap-4">
-            <div><div className="page-kicker">Centro de envio</div><h3 className="mt-1 text-xl font-semibold text-slate-950">Enviar listado de recibos</h3><p className="mt-1 text-sm text-slate-600">Revisa destinatarios, corrige emails y confirma el envio.</p></div>
-            <button type="button" onClick={() => setSendOpen(false)} className="rounded-full p-2 text-slate-500 hover:bg-slate-100"><X className="h-5 w-5" /></button>
-          </div>
-          <div className="mt-4 inline-flex rounded-lg border border-slate-200 bg-slate-50 p-1">
-            {([{ id: 'procurador', label: 'Procurador' }, { id: 'abogado', label: 'Abogado' }, { id: 'ambos', label: 'Ambos' }] as Array<{ id: RecipientMode; label: string }>).map(option =>
-              <button key={option.id} type="button" onClick={() => { setSendMode(option.id); void previewSend(option.id) }} className={`rounded-md px-4 py-2 text-sm font-semibold transition ${sendMode === option.id ? 'bg-slate-900 text-white shadow-sm' : 'text-slate-700 hover:bg-white'}`}>{option.label}</button>
-            )}
+            <div className="min-w-0"><div className="page-kicker">Centro de envío</div><h3 id="receipt-send-title" className="mt-1 text-lg font-semibold text-slate-950 sm:text-xl">Enviar listado de recibos</h3><p className="mt-1 text-sm text-slate-600">Revisa los destinatarios y confirma el envío.</p></div>
+            <button type="button" aria-label="Cerrar centro de envío" onClick={() => { setSendOpen(false); setSendAdvancedOpen(false) }} className="min-h-11 min-w-11 rounded-full p-2 text-slate-500 hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"><X className="mx-auto h-5 w-5" /></button>
           </div>
         </div>
-        <div className="flex-1 overflow-y-auto px-5 py-4">
+        <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-4 py-4 sm:px-5">
           {sendLoading && <div className="rounded-xl border border-slate-200 bg-slate-50 p-6 text-sm text-slate-600">Preparando vista previa...</div>}
           {!sendLoading && sendPreview && <div className="space-y-4">
-            <div className="flex flex-wrap gap-2">{providerHealth.map(item => <span key={item.provider} className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-semibold ${item.status === 'healthy' ? 'bg-emerald-100 text-emerald-800' : item.status === 'degraded' || item.status === 'misconfigured' ? 'bg-red-100 text-red-800' : 'bg-slate-100 text-slate-700'}`}><ShieldCheck className="h-3.5 w-3.5" />{item.provider}: {item.status}</span>)}</div>
+            {providerHealth && <div role="status" className={`flex items-start gap-2 rounded-xl border px-4 py-3 text-sm ${providerHealth.readiness.status === 'available' ? 'border-emerald-200 bg-emerald-50 text-emerald-900' : providerHealth.readiness.status === 'attention' ? 'border-red-200 bg-red-50 text-red-900' : 'border-slate-200 bg-slate-50 text-slate-700'}`}><ShieldCheck className="mt-0.5 h-4 w-4 shrink-0" /><span>{providerHealth.readiness.label}</span></div>}
             <div className="grid gap-3 md:grid-cols-3">
               <div className="rounded-lg bg-slate-100 p-3 text-sm"><div className="text-xs text-slate-500">Recibos seleccionados</div><strong>{sendPreview.totals.selectedRows}</strong></div>
-              <div className="rounded-lg bg-emerald-50 p-3 text-sm"><div className="text-xs text-emerald-700">Grupos con email valido</div><strong>{sendPreview.groups.filter(group => draftValidEmails(group) > 0).length}</strong></div>
+              <div className="rounded-lg bg-emerald-50 p-3 text-sm"><div className="text-xs text-emerald-700">Grupos con correo válido</div><strong>{sendPreview.groups.filter(group => draftValidEmails(group) > 0).length}</strong></div>
               <div className="rounded-lg bg-amber-50 p-3 text-sm"><div className="text-xs text-amber-700">Filas excluidas</div><strong>{sendPreview.totals.excludedRows}</strong></div>
             </div>
-            <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-4">
+            <button type="button" aria-expanded={sendAdvancedOpen} aria-controls="receipt-send-advanced" onClick={() => setSendAdvancedOpen(value => !value)} className="flex min-h-11 w-full items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 text-left text-sm font-semibold text-slate-800 shadow-sm hover:border-slate-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"><span className="inline-flex items-center gap-2"><SlidersHorizontal className="h-4 w-4 text-blue-700" />Opciones avanzadas</span><ChevronDown className={`h-4 w-4 transition ${sendAdvancedOpen ? 'rotate-180' : ''}`} /></button>
+            {sendAdvancedOpen && <div id="receipt-send-advanced" className="space-y-4 rounded-xl border border-slate-200 bg-slate-50/70 p-4">
+              <div><div className="text-sm font-semibold text-slate-950">Destinatarios del envío</div><div className="mt-2 grid grid-cols-1 gap-2 sm:inline-flex sm:rounded-lg sm:border sm:border-slate-200 sm:bg-white sm:p-1">
+                {([{ id: 'procurador', label: 'Procurador' }, { id: 'abogado', label: 'Abogado' }, { id: 'ambos', label: 'Ambos' }] as Array<{ id: RecipientMode; label: string }>).map(option =>
+                  <button key={option.id} type="button" onClick={() => { setSendMode(option.id); void previewSend(option.id) }} className={`min-h-11 rounded-md px-4 py-2 text-sm font-semibold transition ${sendMode === option.id ? 'bg-slate-900 text-white shadow-sm' : 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 sm:border-0'}`}>{option.label}</button>
+                )}
+              </div></div>
+              <div className="rounded-xl border border-slate-200 bg-white p-4">
               <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                 <div><div className="text-sm font-semibold text-slate-950">Plantilla de correo</div><div className="mt-1 text-xs text-slate-500">Origen: {sendPreview.template.source === 'saved' ? 'predeterminada guardada' : 'plantilla base'}</div></div>
                 <div className="flex flex-wrap gap-2"><Button variant="outline" onClick={saveTemplateDefault} disabled={savingTemplate || !sendTemplateDraft}><Save className="mr-2 h-4 w-4" />{savingTemplate ? 'Guardando...' : 'Guardar como plantilla predeterminada'}</Button></div>
@@ -740,28 +776,28 @@ export default function RecibosPage() {
               <div className="mt-2 flex flex-wrap gap-2">
                 {TEMPLATE_VARIABLES.map(variable => <button key={`subject-${variable}`} type="button" onClick={() => insertVariable('subject', variable)} className="rounded-full bg-slate-200 px-3 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-300">Asunto {`{${variable}}`}</button>)}
               </div>
-            </div>
-            {sendResult && <div className="flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900"><CheckCircle className="h-4 w-4" />Envio procesado en modo {sendResult.provider}: {sendResult.sentCount} de {sendResult.groupCount} grupos.</div>}
+              </div>
+            </div>}
+            {sendResult && <div className={`flex items-center gap-2 rounded-xl border px-4 py-3 text-sm ${sendResult.deliveryMode === 'simulation' ? 'border-blue-200 bg-blue-50 text-blue-900' : 'border-emerald-200 bg-emerald-50 text-emerald-900'}`}><CheckCircle className="h-4 w-4 shrink-0" /><span>{sendResult.deliveryLabel}: {sendResult.sentCount} de {sendResult.groupCount} grupos procesados.</span></div>}
             {sendPreview.groups.map(group => {
               const draft = sendDrafts[group.groupKey]
               const validEmails = draftValidEmails(group)
               return <div key={group.groupKey} className="rounded-xl border border-slate-200 bg-white p-4">
                 <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                   <div><div className="text-sm font-semibold text-slate-950">{group.recipientName}</div><div className="mt-1 text-xs text-slate-500">{group.recipientType} · {group.reciboCount} recibos · {formatCurrency(group.totalAmount)}</div><div className="mt-1 break-all text-xs text-slate-500">{group.attachmentFilename}</div></div>
-                  <span className={`inline-flex w-fit items-center rounded-full px-2.5 py-1 text-xs font-semibold ${validEmails ? 'bg-emerald-100 text-emerald-800' : 'bg-red-100 text-red-800'}`}>{validEmails ? `${validEmails} email valido` : 'Sin email valido'}</span>
+                  <span className={`inline-flex w-fit items-center rounded-full px-2.5 py-1 text-xs font-semibold ${validEmails ? 'bg-emerald-100 text-emerald-800' : 'bg-red-100 text-red-800'}`}>{validEmails ? `${validEmails} ${validEmails === 1 ? 'correo válido' : 'correos válidos'}` : 'Sin correo válido'}</span>
                 </div>
                 {!!group.warnings.length && <div className="mt-3 flex gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" /><span>{group.warnings.join(' · ')}</span></div>}
-                {group.intelligence?.lastSentAt && <div className="mt-3 text-xs text-slate-600">Ultimo envio a este destinatario: <strong>{formatDateTime(group.intelligence.lastSentAt)}</strong></div>}
-                {group.intelligence?.requiresConfirmation && <div className="mt-3 rounded-lg border border-red-200 bg-red-50 p-3"><div className="flex gap-2 text-sm font-semibold text-red-900"><AlertTriangle className="h-4 w-4 shrink-0" />{group.intelligence.warning}</div><label className="mt-3 block space-y-2 text-xs text-red-900"><span>Motivo obligatorio para continuar</span><Input value={duplicateReasons[group.groupKey] ?? ''} onChange={event => setDuplicateReasons(current => ({ ...current, [group.groupKey]: event.target.value }))} placeholder="Indica por que se enviara nuevamente" /></label></div>}
+                {group.intelligence?.lastSentAt && <div className="mt-3 text-xs text-slate-600">Último envío a este destinatario: <strong>{formatDateTime(group.intelligence.lastSentAt)}</strong></div>}
+                {group.intelligence?.requiresConfirmation && <div className="mt-3 rounded-lg border border-red-200 bg-red-50 p-3"><div className="flex gap-2 text-sm font-semibold text-red-900"><AlertTriangle className="h-4 w-4 shrink-0" />{group.intelligence.warning}</div><label className="mt-3 block space-y-2 text-xs text-red-900"><span>Motivo obligatorio para continuar</span><Input value={duplicateReasons[group.groupKey] ?? ''} onChange={event => setDuplicateReasons(current => ({ ...current, [group.groupKey]: event.target.value }))} placeholder="Indica por qué se enviará nuevamente" /></label></div>}
                 <div className="mt-4 grid gap-3 lg:grid-cols-2">
                   {group.recipients.map(recipient => {
                     const key = recipientKey(recipient)
                     const item = draft?.recipients[key] ?? { email: recipient.email ?? '', saveToRecord: false }
                     const valid = basicEmail(item.email)
                     return <div key={key} className="rounded-lg border border-slate-200 p-3">
-                      <div className="mb-2 flex items-center justify-between gap-2"><span className="text-sm font-medium text-slate-800">{recipient.recipientType === 'procurador' ? 'Procurador' : 'Abogado'}: {recipient.name}</span><span className={`text-xs font-semibold ${valid ? 'text-emerald-700' : 'text-red-700'}`}>{valid ? 'Valido' : 'Revisar'}</span></div>
-                      <Input value={item.email} onChange={event => updateRecipientDraft(group.groupKey, key, { email: event.target.value })} placeholder="correo@dominio.cl" />
-                      <label className="mt-2 flex items-center gap-2 text-xs text-slate-600"><input type="checkbox" checked={item.saveToRecord} onChange={event => updateRecipientDraft(group.groupKey, key, { saveToRecord: event.target.checked })} disabled={!valid} />Guardar este email en la ficha</label>
+                      <div className="mb-2 flex min-w-0 items-start justify-between gap-2"><span className="min-w-0 break-words text-sm font-medium text-slate-800">{recipient.recipientType === 'procurador' ? 'Procurador' : 'Abogado'}: {recipient.name}</span><span className={`shrink-0 text-xs font-semibold ${valid ? 'text-emerald-700' : 'text-red-700'}`}>{valid ? 'Válido' : 'Revisar'}</span></div>
+                      {sendAdvancedOpen ? <><Input value={item.email} onChange={event => updateRecipientDraft(group.groupKey, key, { email: event.target.value })} placeholder="correo@dominio.cl" /><label className="mt-2 flex min-h-11 items-center gap-2 text-xs text-slate-600"><input type="checkbox" checked={item.saveToRecord} onChange={event => updateRecipientDraft(group.groupKey, key, { saveToRecord: event.target.checked })} disabled={!valid} />Guardar este correo en la ficha</label></> : <div className={`break-all rounded-lg px-3 py-2 text-sm ${valid ? 'bg-slate-50 text-slate-700' : 'bg-red-50 text-red-800'}`}>{item.email || 'Sin correo registrado'}</div>}
                     </div>
                   })}
                 </div>
@@ -769,7 +805,7 @@ export default function RecibosPage() {
                   <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm"><div className="mb-1 text-xs font-semibold uppercase text-slate-500">Asunto resuelto</div>{group.subject}</div>
                   <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm"><div className="mb-1 text-xs font-semibold uppercase text-slate-500">Mensaje resuelto</div><pre className="whitespace-pre-wrap font-sans text-sm text-slate-700">{group.body}</pre></div>
                 </div>
-                <div className="mt-3 flex justify-end"><Button variant="outline" onClick={() => testSend(group)} disabled={smartActionLoading === `test:${group.groupKey}`}><FlaskConical className="mr-2 h-4 w-4" />{smartActionLoading === `test:${group.groupKey}` ? 'Enviando prueba...' : 'Enviar prueba a mi correo'}</Button></div>
+                {sendAdvancedOpen && <div className="mt-3 flex justify-end"><Button variant="outline" onClick={() => testSend(group)} disabled={smartActionLoading === `test:${group.groupKey}`}><FlaskConical className="mr-2 h-4 w-4" />{smartActionLoading === `test:${group.groupKey}` ? 'Enviando prueba...' : 'Enviar prueba a mi correo'}</Button></div>}
               </div>
             })}
             {!!sendPreview.excluded.length && <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
@@ -784,10 +820,12 @@ export default function RecibosPage() {
             {!!sendPreview.cleanupSuggestions?.length && <div className="rounded-xl border border-slate-200 p-4"><div className="text-sm font-semibold text-slate-900">Correos que requieren limpieza</div><div className="mt-3 space-y-2">{sendPreview.cleanupSuggestions.map(item => <div key={`${item.recipientType}:${item.recipientId}`} className="flex flex-col gap-2 border-b border-slate-100 pb-2 text-sm last:border-0 sm:flex-row sm:items-center sm:justify-between"><div><strong>{item.name}</strong><span className="ml-2 text-xs text-red-700">{item.problem} · {item.affectedReciboCount} recibos</span></div><Link href={item.editUrl} className="text-xs font-semibold text-blue-700">Corregir ficha</Link></div>)}</div></div>}
           </div>}
         </div>
-        <div className="flex flex-col gap-2 border-t border-slate-200 px-5 py-4 sm:flex-row sm:items-center sm:justify-end">
-          <Button variant="outline" onClick={() => setSendOpen(false)}>Cancelar</Button>
-          <Button variant="outline" onClick={() => previewSend(sendMode)} disabled={sendLoading || sending}>Actualizar vista previa</Button>
-          <Button onClick={executeSend} disabled={!sendPreview || sending || sendLoading || !sendPreview.groups.some(group => draftValidEmails(group) > 0) || sendPreview.groups.some(group => group.intelligence?.requiresConfirmation && (duplicateReasons[group.groupKey]?.trim().length ?? 0) < 3)}>{sending ? 'Enviando...' : 'Confirmar envio'}</Button>
+        <div className="shrink-0 border-t border-slate-200 bg-white px-4 py-3 sm:px-5 sm:py-4">
+          <div className="grid grid-cols-1 gap-2 sm:flex sm:items-center sm:justify-end">
+          <Button variant="outline" onClick={() => { setSendOpen(false); setSendAdvancedOpen(false) }}>Cancelar</Button>
+          {sendAdvancedOpen && <Button variant="outline" onClick={() => previewSend(sendMode)} disabled={sendLoading || sending}>Actualizar vista previa</Button>}
+          <Button onClick={executeSend} disabled={!sendPreview || sending || sendLoading || !sendPreview.groups.some(group => draftValidEmails(group) > 0) || sendPreview.groups.some(group => group.intelligence?.requiresConfirmation && (duplicateReasons[group.groupKey]?.trim().length ?? 0) < 3)}>{sending ? 'Enviando...' : 'Confirmar envío'}</Button>
+          </div>
         </div>
       </div>
     </div>}
@@ -796,7 +834,7 @@ export default function RecibosPage() {
       <div role="dialog" aria-modal="true" aria-labelledby="receipt-delivery-title" className="flex max-h-[92vh] w-full max-w-7xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
         <div className="border-b border-slate-200 px-5 pt-4">
           <div className="flex items-start justify-between gap-4">
-            <div><div className="page-kicker">Gestion de envios</div><h3 id="receipt-delivery-title" className="mt-1 text-xl font-semibold text-slate-950">Centro de respuestas y envíos</h3><p className="mt-1 text-sm text-slate-600">Consulta listados enviados y mensajes que necesitan revisión.</p></div>
+            <div><div className="page-kicker">Gestión de envíos</div><h3 id="receipt-delivery-title" className="mt-1 text-xl font-semibold text-slate-950">Centro de respuestas y envíos</h3><p className="mt-1 text-sm text-slate-600">Consulta listados enviados y mensajes que necesitan revisión.</p></div>
             <button type="button" aria-label="Cerrar gestión de envíos" onClick={closeHistory} className="rounded-full p-2 text-slate-500 hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"><X className="h-5 w-5" /></button>
           </div>
           <div role="tablist" aria-label="Secciones de gestión de envíos" className="mt-4 flex gap-1 overflow-x-auto">
@@ -806,37 +844,40 @@ export default function RecibosPage() {
         </div>
         {historyPanel === 'dispatch-history' && <div id="dispatch-history-panel" role="tabpanel" aria-labelledby="dispatch-history-tab" className="grid flex-1 overflow-hidden lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
           <div className="overflow-y-auto border-r border-slate-200 p-4">
-            <div className="mb-3 flex items-center justify-between gap-2"><div className="text-sm font-semibold text-slate-900">Control inteligente</div><div className="flex gap-2"><Button variant="outline" onClick={() => loadHistory(historyFilter)} disabled={historyLoading}>{historyLoading ? 'Cargando...' : 'Actualizar'}</Button><Button variant="outline" onClick={syncReplies} disabled={replySyncing || historyDetail?.provider === 'dry-run'}><RefreshCw className={`mr-2 h-4 w-4 ${replySyncing ? 'animate-spin' : ''}`} />{replySyncing ? 'Revisando...' : 'Actualizar respuestas'}</Button></div></div>
+            <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between"><div className="text-sm font-semibold text-slate-900">Control inteligente</div><div className="flex flex-wrap gap-2"><Button variant="outline" onClick={() => loadHistory(historyFilter)} disabled={historyLoading}>{historyLoading ? 'Cargando...' : 'Actualizar'}</Button><Button variant="outline" onClick={syncReplies} disabled={replySyncing || providerHealth?.readiness.canSyncReplies === false}><RefreshCw className={`mr-2 h-4 w-4 ${replySyncing ? 'animate-spin' : ''}`} />{replySyncing ? 'Revisando...' : 'Actualizar respuestas'}</Button></div></div>
             <div className="mb-3 flex flex-wrap gap-1">{[{ id: 'all', label: 'Todos' }, { id: 'sent', label: 'Enviados' }, { id: 'failed', label: 'Fallidos' }, { id: 'waiting', label: 'Esperando' }, { id: 'overdue', label: 'Vencidos' }, { id: 'replied', label: 'Respondidos' }, { id: 'resolved', label: 'Resueltos' }].map(option => <button key={option.id} type="button" onClick={() => { setHistoryFilter(option.id); setHistoryDetail(null); void loadHistory(option.id) }} className={`rounded-md px-2.5 py-1.5 text-xs font-semibold ${historyFilter === option.id ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-700'}`}>{option.label}</button>)}</div>
-            <div className="mb-3 flex flex-wrap items-center gap-2">{providerHealth.map(item => <span key={`history-${item.provider}`} className={`rounded-full px-2 py-1 text-xs font-semibold ${item.status === 'healthy' ? 'bg-emerald-100 text-emerald-800' : item.status === 'degraded' || item.status === 'misconfigured' ? 'bg-red-100 text-red-800' : 'bg-slate-100 text-slate-700'}`}>{item.provider}: {item.status}</span>)}<button type="button" onClick={checkHealth} disabled={smartActionLoading === 'health'} className="text-xs font-semibold text-blue-700">{smartActionLoading === 'health' ? 'Comprobando...' : 'Comprobar proveedores'}</button></div>
+            {providerHealth && <div className="mb-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700">{providerHealth.readiness.label}</div>}
+            {providerHealth?.diagnostics && <details className="mb-3 rounded-xl border border-slate-200 bg-white p-3 text-xs text-slate-600"><summary className="cursor-pointer font-semibold text-blue-800">Detalles técnicos</summary><div className="mt-3 space-y-2">{providerHealth.diagnostics.providers.map(item => <div key={`history-${item.provider}`} className="rounded-lg bg-slate-50 p-2"><div className="font-semibold text-slate-800">{item.provider}: {item.status}</div><div className="mt-1 break-all">{item.mailboxAddress || 'Sin buzón configurado'}</div>{item.lastError && <div className="mt-1 text-red-700">{item.lastError}</div>}</div>)}<button type="button" onClick={checkHealth} disabled={smartActionLoading === 'health'} className="min-h-11 font-semibold text-blue-700">{smartActionLoading === 'health' ? 'Comprobando...' : 'Comprobar proveedores'}</button></div></details>}
             {replySyncMessage && <div className="mb-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-900">{replySyncMessage}</div>}
-            {!historyLoading && !historyItems.length && <div className="rounded-xl border border-slate-200 bg-slate-50 p-6 text-sm text-slate-600">Aun no hay envios registrados.</div>}
+            {!historyLoading && !historyItems.length && <div className="rounded-xl border border-slate-200 bg-slate-50 p-6 text-sm text-slate-600">Aún no hay envíos registrados.</div>}
             <div className="space-y-3">
               {historyItems.map(item => <button key={item.id} type="button" onClick={() => openHistoryDetail(item.id)} className={`w-full rounded-xl border p-4 text-left transition hover:border-slate-400 ${historyDetail?.id === item.id ? 'border-slate-900 bg-slate-50' : 'border-slate-200 bg-white'}`}>
-                <div className="flex items-start justify-between gap-3"><div><div className="text-sm font-semibold text-slate-950">{item.recipientSummary || 'Sin destinatario'}</div><div className="mt-1 text-xs text-slate-500">{formatDateTime(item.sentAt ?? item.createdAt)} · {item.senderEmail}{item.dispatchKind !== 'standard' ? ` · ${item.dispatchKind}` : ''}</div></div><span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold ${statusClass(item.operationalState === 'overdue' ? 'partial' : item.operationalState === 'waiting' ? 'sending' : item.operationalState === 'replied' || item.operationalState === 'resolved' ? 'sent' : item.status)}`}>{OPERATIONAL_LABELS[item.operationalState] ?? item.statusLabel}</span></div>
-                <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-slate-600"><div>{item.reciboCount} recibos</div><div>{formatCurrency(item.totalAmount)}</div><div>{item.provider}{item.fromAccount ? ` · ${item.fromAccount}` : ''}</div><div className={item.replyCount ? 'font-semibold text-emerald-700' : ''}>{item.replyState}{item.lastReplyAt ? ` · ${formatDateTime(item.lastReplyAt)}` : ''}</div></div>
+                <div className="flex items-start justify-between gap-3"><div><div className="text-sm font-semibold text-slate-950">{item.recipientSummary || 'Sin destinatario'}</div><div className="mt-1 text-xs text-slate-500">{formatDateTime(item.sentAt ?? item.createdAt)} · {item.senderEmail} · {item.sendTypeLabel}</div></div><span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold ${statusClass(item.operationalState === 'overdue' ? 'partial' : item.operationalState === 'waiting' ? 'sending' : item.operationalState === 'replied' || item.operationalState === 'resolved' ? 'sent' : item.status)}`}>{item.deliveryMode === 'simulation' ? 'Simulación' : (OPERATIONAL_LABELS[item.operationalState] ?? item.statusLabel)}</span></div>
+                <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-slate-600"><div>{item.reciboCount} recibos</div><div>{formatCurrency(item.totalAmount)}</div><div>{item.deliveryLabel}</div><div className={item.replyCount ? 'font-semibold text-emerald-700' : ''}>{item.replyState}{item.lastReplyAt ? ` · ${formatDateTime(item.lastReplyAt)}` : ''}</div></div>
               </button>)}
             </div>
           </div>
           <div className="overflow-y-auto p-4">
             {historyDetailLoading && <div className="rounded-xl border border-slate-200 bg-slate-50 p-6 text-sm text-slate-600">Cargando detalle...</div>}
-            {!historyDetailLoading && !historyDetail && <div className="rounded-xl border border-slate-200 bg-slate-50 p-6 text-sm text-slate-600">Selecciona un envio para ver destinatarios, recibos y metadatos.</div>}
+            {!historyDetailLoading && !historyDetail && <div className="rounded-xl border border-slate-200 bg-slate-50 p-6 text-sm text-slate-600">Selecciona un envío para ver sus destinatarios y recibos.</div>}
             {!historyDetailLoading && historyDetail && <div className="space-y-4">
               <div className="rounded-xl border border-slate-200 p-4">
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div><div className="text-sm font-semibold text-slate-950">Envio {historyDetail.id}</div><div className="mt-1 text-xs text-slate-500">{formatDateTime(historyDetail.sentAt ?? historyDetail.createdAt)} · {historyDetail.senderEmail}</div></div><span className={`w-fit rounded-full px-2.5 py-1 text-xs font-semibold ${statusClass(historyDetail.status)}`}>{historyDetail.statusLabel}</span></div>
-                <div className="mt-4 grid gap-3 text-sm sm:grid-cols-3"><div><span className="text-xs text-slate-500">Proveedor</span><div>{historyDetail.provider}</div></div><div><span className="text-xs text-slate-500">Cuenta envio</span><div className="break-all">{historyDetail.fromAccount ?? '-'}</div></div><div><span className="text-xs text-slate-500">Respuestas</span><div>{historyDetail.replyState}</div></div><div><span className="text-xs text-slate-500">Recibos</span><div>{historyDetail.selectedCount}</div></div><div><span className="text-xs text-slate-500">Enviados</span><div>{historyDetail.sentCount}</div></div><div><span className="text-xs text-slate-500">Fallidos / omitidos</span><div>{historyDetail.failedCount} / {historyDetail.skippedCount}</div></div></div>
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div><div className="text-sm font-semibold text-slate-950">{historyDetail.sendTypeLabel} de recibos</div><div className="mt-1 text-xs text-slate-500">{formatDateTime(historyDetail.sentAt ?? historyDetail.createdAt)} · {historyDetail.senderEmail}</div></div><span className={`w-fit rounded-full px-2.5 py-1 text-xs font-semibold ${statusClass(historyDetail.status)}`}>{historyDetail.deliveryMode === 'simulation' ? 'Simulación' : historyDetail.statusLabel}</span></div>
+                <div className="mt-4 grid gap-3 text-sm sm:grid-cols-3"><div><span className="text-xs text-slate-500">Tipo de entrega</span><div>{historyDetail.deliveryLabel}</div></div><div><span className="text-xs text-slate-500">Respuestas</span><div>{historyDetail.replyState}</div></div><div><span className="text-xs text-slate-500">Recibos</span><div>{historyDetail.selectedCount}</div></div><div><span className="text-xs text-slate-500">Enviados</span><div>{historyDetail.sentCount}</div></div><div><span className="text-xs text-slate-500">Fallidos / omitidos</span><div>{historyDetail.failedCount} / {historyDetail.skippedCount}</div></div></div>
+                {historyDetail.diagnostics && <details className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600"><summary className="cursor-pointer font-semibold text-blue-800">Detalles técnicos</summary><dl className="mt-3 grid gap-3 sm:grid-cols-2"><div><dt className="font-semibold text-slate-700">Proveedor</dt><dd className="break-all">{historyDetail.diagnostics.provider}</dd></div><div><dt className="font-semibold text-slate-700">Cuenta de envío</dt><dd className="break-all">{historyDetail.diagnostics.fromAccount ?? '-'}</dd></div><div><dt className="font-semibold text-slate-700">Tipo interno</dt><dd>{historyDetail.diagnostics.dispatchKind}</dd></div><div><dt className="font-semibold text-slate-700">Plantilla</dt><dd>{historyDetail.diagnostics.templateMode}</dd></div></dl></details>}
                 {historyDetail.errorMessage && <div className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800">{historyDetail.errorMessage}</div>}
               </div>
               {historyDetail.recipients.map(recipient => <div key={recipient.id} className="rounded-xl border border-slate-200 p-4">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div><div className="text-sm font-semibold text-slate-950">{recipient.recipientName}</div><div className="mt-1 text-xs text-slate-500">{recipient.recipientType} · {recipient.reciboCount} recibos · {formatCurrency(recipient.totalAmount)}</div><div className="mt-1 break-all text-xs text-slate-500">{recipient.recipientEmails.join(', ')}</div></div><span className={`w-fit rounded-full px-2.5 py-1 text-xs font-semibold ${statusClass(recipient.operationalState === 'overdue' ? 'partial' : recipient.operationalState === 'waiting' ? 'sending' : recipient.operationalState === 'replied' || recipient.operationalState === 'resolved' ? 'sent' : recipient.status)}`}>{OPERATIONAL_LABELS[recipient.operationalState] ?? recipient.statusLabel}</span></div>
-                <div className="mt-3 grid gap-3 text-xs text-slate-600 sm:grid-cols-2"><div><span className="font-semibold text-slate-700">Message ID:</span> {recipient.providerMessageId ?? '-'}</div><div><span className="font-semibold text-slate-700">Thread ID:</span> {recipient.providerThreadId ?? '-'}</div><div><span className="font-semibold text-slate-700">Intentos:</span> {recipient.attemptCount}</div><div><span className="font-semibold text-slate-700">Respuestas:</span> {recipient.replyState}{recipient.lastReplyAt ? ` · ${formatDateTime(recipient.lastReplyAt)}` : ''}</div><div className="break-all sm:col-span-2"><span className="font-semibold text-slate-700">Adjunto:</span> {recipient.attachmentFilename ?? '-'} {recipient.attachmentByteSize ? `(${recipient.attachmentByteSize} bytes)` : ''}</div><div className="break-all sm:col-span-2"><span className="font-semibold text-slate-700">SHA-256:</span> {recipient.attachmentSha256 ?? '-'}</div></div>
+                <div className="mt-3 grid gap-3 text-xs text-slate-600 sm:grid-cols-2"><div><span className="font-semibold text-slate-700">Respuestas:</span> {recipient.replyState}{recipient.lastReplyAt ? ` · ${formatDateTime(recipient.lastReplyAt)}` : ''}</div><div className="break-all"><span className="font-semibold text-slate-700">Adjunto:</span> {recipient.attachmentFilename ?? '-'}</div></div>
+                {recipient.diagnostics && <details className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600"><summary className="cursor-pointer font-semibold text-blue-800">Detalles técnicos</summary><div className="mt-3 grid gap-3 sm:grid-cols-2"><div><span className="font-semibold text-slate-700">Message ID:</span> <span className="break-all">{recipient.diagnostics.providerMessageId ?? '-'}</span></div><div><span className="font-semibold text-slate-700">Thread ID:</span> <span className="break-all">{recipient.diagnostics.providerThreadId ?? '-'}</span></div><div><span className="font-semibold text-slate-700">Intentos:</span> {recipient.diagnostics.attemptCount}</div><div><span className="font-semibold text-slate-700">MIME:</span> {recipient.diagnostics.attachmentMimeType ?? '-'}</div><div><span className="font-semibold text-slate-700">Tamaño:</span> {recipient.diagnostics.attachmentByteSize ? `${recipient.diagnostics.attachmentByteSize} bytes` : '-'}</div><div className="break-all"><span className="font-semibold text-slate-700">SHA-256:</span> {recipient.diagnostics.attachmentSha256 ?? '-'}</div>{recipient.diagnostics.resendOfRecipientId && <div className="break-all sm:col-span-2"><span className="font-semibold text-slate-700">Envío de origen:</span> {recipient.diagnostics.resendOfRecipientId}</div>}</div></details>}
                 {recipient.errorMessage && <div className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800">{recipient.errorMessage}</div>}
                 {recipient.duplicateOverrideReason && <div className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-900">Duplicado confirmado: {recipient.duplicateOverrideReason}</div>}
-                {recipient.resendOfRecipientId && <div className="mt-3 rounded-lg bg-blue-50 px-3 py-2 text-xs text-blue-900">Reenvio vinculado a {recipient.resendOfRecipientId}. Motivo: {recipient.resendReason}</div>}
+                {recipient.isResend && <div className="mt-3 rounded-lg bg-blue-50 px-3 py-2 text-xs text-blue-900">Reenvío vinculado. Motivo: {recipient.resendReason}</div>}
                 <div className="mt-4 grid gap-3 lg:grid-cols-2"><div className="rounded-lg bg-slate-50 p-3 text-sm"><div className="mb-1 text-xs font-semibold uppercase text-slate-500">Asunto usado</div>{recipient.subject}</div><div className="rounded-lg bg-slate-50 p-3 text-sm"><div className="mb-1 text-xs font-semibold uppercase text-slate-500">Mensaje usado</div><pre className="whitespace-pre-wrap font-sans text-sm text-slate-700">{recipient.body}</pre></div></div>
-                <div className="mt-4 border-t border-slate-200 pt-4"><div className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-900"><MessageSquare className="h-4 w-4 text-emerald-700" />Respuestas ({recipient.replyCount})</div>{!recipient.replies.length ? <div className="rounded-lg bg-slate-50 px-3 py-3 text-sm text-slate-500">Sin respuestas recibidas.</div> : <div className="space-y-3">{recipient.replies.map(reply => <div key={reply.id} className="rounded-lg border border-slate-200 bg-white p-3"><div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between"><div><div className="text-sm font-semibold text-slate-900">{reply.subject || 'Sin asunto'}</div><div className="mt-1 text-xs text-slate-500">{reply.senderName ? `${reply.senderName} · ` : ''}{reply.senderEmail} · {formatDateTime(reply.receivedAt)}</div></div><button type="button" onClick={() => setExpandedReplies(current => ({ ...current, [reply.id]: !current[reply.id] }))} className="text-xs font-semibold text-blue-700 hover:text-blue-900">{expandedReplies[reply.id] ? 'Ocultar respuesta' : 'Leer respuesta completa'}</button></div><div className="mt-3 text-sm text-slate-700">{expandedReplies[reply.id] ? <pre className="whitespace-pre-wrap font-sans text-sm">{reply.bodyText}</pre> : reply.textPreview}</div><div className="mt-3 flex flex-wrap items-center gap-2"><select value={reply.confirmedClassification ?? reply.suggestedClassification ?? 'otro'} onChange={event => classifyReply(reply.id, event.target.value)} disabled={smartActionLoading === reply.id} className="h-9 rounded-md border border-slate-300 bg-white px-2 text-xs"><option value="recibido">Recibido</option><option value="observado">Observado</option><option value="requiere_correccion">Requiere correccion</option><option value="pago_informado">Pago informado</option><option value="otro">Otro</option></select><span className="text-xs text-slate-500">{reply.confirmedClassification ? 'Clasificacion confirmada' : 'Sugerencia automatica'}</span></div>{!!reply.attachments.length && <div className="mt-3 border-t border-slate-100 pt-2 text-xs text-slate-600"><div className="font-semibold text-slate-700">Adjuntos</div>{reply.attachments.map(attachment => <div key={attachment.id} className="mt-1">{attachment.filename}{attachment.mimeType ? ` · ${attachment.mimeType}` : ''}{attachment.byteSize ? ` · ${attachment.byteSize} bytes` : ''}</div>)}</div>}</div>)}</div>}</div>
-                <div className="mt-4 border-t border-slate-200 pt-4"><div className="grid gap-2 sm:grid-cols-[1fr_auto_auto]"><Input value={resolutionNotes[recipient.id] ?? recipient.resolutionNote ?? ''} onChange={event => setResolutionNotes(current => ({ ...current, [recipient.id]: event.target.value }))} placeholder="Nota de resolucion" /><Button variant="outline" onClick={() => setResolution(recipient.id, !recipient.resolvedAt)} disabled={smartActionLoading === recipient.id}>{recipient.resolvedAt ? 'Reabrir' : 'Marcar resuelto'}</Button><Button variant="outline" onClick={() => openResend(recipient)}><RotateCcw className="mr-2 h-4 w-4" />Reenviar</Button></div></div>
-                <div className="mt-4 overflow-x-auto"><table className="w-full min-w-[560px] text-xs"><thead><tr className="bg-slate-50 text-left text-slate-600"><th className="px-2 py-2">Recibo</th><th className="px-2 py-2">ROL</th><th className="px-2 py-2">Monto</th><th className="px-2 py-2">Ejecucion</th></tr></thead><tbody className="divide-y divide-slate-100">{recipient.items.map(item => <tr key={item.id}><td className="px-2 py-2 font-semibold text-blue-800">{item.numeroRecibo}</td><td className="px-2 py-2">{item.rol}</td><td className="px-2 py-2">{formatCurrency(item.monto)}</td><td className="px-2 py-2">{formatDate(item.fechaEjecucion)}</td></tr>)}</tbody></table></div>
+                <div className="mt-4 border-t border-slate-200 pt-4"><div className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-900"><MessageSquare className="h-4 w-4 text-emerald-700" />Respuestas ({recipient.replyCount})</div>{!recipient.replies.length ? <div className="rounded-lg bg-slate-50 px-3 py-3 text-sm text-slate-500">Sin respuestas recibidas.</div> : <div className="space-y-3">{recipient.replies.map(reply => <div key={reply.id} className="rounded-lg border border-slate-200 bg-white p-3"><div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between"><div><div className="text-sm font-semibold text-slate-900">{reply.subject || 'Sin asunto'}</div><div className="mt-1 text-xs text-slate-500">{reply.senderName ? `${reply.senderName} · ` : ''}{reply.senderEmail} · {formatDateTime(reply.receivedAt)}</div></div><button type="button" onClick={() => setExpandedReplies(current => ({ ...current, [reply.id]: !current[reply.id] }))} className="text-xs font-semibold text-blue-700 hover:text-blue-900">{expandedReplies[reply.id] ? 'Ocultar respuesta' : 'Leer respuesta completa'}</button></div><div className="mt-3 text-sm text-slate-700">{expandedReplies[reply.id] ? <pre className="whitespace-pre-wrap font-sans text-sm">{reply.bodyText}</pre> : reply.textPreview}</div><div className="mt-3 flex flex-wrap items-center gap-2"><select value={reply.confirmedClassification ?? reply.suggestedClassification ?? 'otro'} onChange={event => classifyReply(reply.id, event.target.value)} disabled={smartActionLoading === reply.id} className="h-9 rounded-md border border-slate-300 bg-white px-2 text-xs"><option value="recibido">Recibido</option><option value="observado">Observado</option><option value="requiere_correccion">Requiere corrección</option><option value="pago_informado">Pago informado</option><option value="otro">Otro</option></select><span className="text-xs text-slate-500">{reply.confirmedClassification ? 'Clasificación confirmada' : 'Sugerencia automática'}</span></div>{!!reply.attachments.length && <div className="mt-3 border-t border-slate-100 pt-2 text-xs text-slate-600"><div className="font-semibold text-slate-700">Adjuntos</div>{reply.attachments.map(attachment => <div key={attachment.id} className="mt-1">{attachment.filename}{attachment.diagnostics?.mimeType ? ` · ${attachment.diagnostics.mimeType}` : ''}{attachment.diagnostics?.byteSize ? ` · ${attachment.diagnostics.byteSize} bytes` : ''}</div>)}</div>}{reply.diagnostics && <details className="mt-3 text-xs text-slate-600"><summary className="cursor-pointer font-semibold text-blue-800">Detalles técnicos de la respuesta</summary><div className="mt-2 break-all">Proveedor: {reply.diagnostics.provider} · Método: {reply.diagnostics.matchMethod ?? '-'}</div></details>}</div>)}</div>}</div>
+                <div className="mt-4 border-t border-slate-200 pt-4"><div className="grid gap-2 sm:grid-cols-[1fr_auto_auto]"><Input value={resolutionNotes[recipient.id] ?? recipient.resolutionNote ?? ''} onChange={event => setResolutionNotes(current => ({ ...current, [recipient.id]: event.target.value }))} placeholder="Nota de resolución" /><Button variant="outline" onClick={() => setResolution(recipient.id, !recipient.resolvedAt)} disabled={smartActionLoading === recipient.id}>{recipient.resolvedAt ? 'Reabrir' : 'Marcar resuelto'}</Button><Button variant="outline" onClick={() => openResend(recipient)}><RotateCcw className="mr-2 h-4 w-4" />Reenviar</Button></div></div>
+                <div className="mt-4 overflow-x-auto"><table className="w-full min-w-[560px] text-xs"><thead><tr className="bg-slate-50 text-left text-slate-600"><th className="px-2 py-2">Recibo</th><th className="px-2 py-2">ROL</th><th className="px-2 py-2">Monto</th><th className="px-2 py-2">Ejecución</th></tr></thead><tbody className="divide-y divide-slate-100">{recipient.items.map(item => <tr key={item.id}><td className="px-2 py-2 font-semibold text-blue-800">{item.numeroRecibo}</td><td className="px-2 py-2">{item.rol}</td><td className="px-2 py-2">{formatCurrency(item.monto)}</td><td className="px-2 py-2">{formatDate(item.fechaEjecucion)}</td></tr>)}</tbody></table></div>
               </div>)}
             </div>}
           </div>
@@ -854,9 +895,9 @@ export default function RecibosPage() {
       </div>
     </div>}
 
-    {resendRecipientId && <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/50 p-4"><div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-lg bg-white p-5 shadow-2xl"><div className="flex items-start justify-between"><div><div className="page-kicker">Reenvio vinculado</div><h3 className="mt-1 text-lg font-semibold">Reenviar listado</h3></div><button type="button" onClick={() => setResendRecipientId(null)} className="p-2"><X className="h-5 w-5" /></button></div><div className="mt-4 space-y-3"><label className="block space-y-1 text-sm"><span>Destinatarios</span><Input value={resendDraft.emails} onChange={event => setResendDraft(current => ({ ...current, emails: event.target.value }))} /></label><label className="block space-y-1 text-sm"><span>Asunto</span><Input value={resendDraft.subject} onChange={event => setResendDraft(current => ({ ...current, subject: event.target.value }))} /></label><label className="block space-y-1 text-sm"><span>Mensaje</span><textarea rows={6} value={resendDraft.body} onChange={event => setResendDraft(current => ({ ...current, body: event.target.value }))} className="w-full rounded-md border border-slate-300 px-3 py-2" /></label><label className="block space-y-1 text-sm"><span>Motivo obligatorio</span><Input value={resendDraft.reason} onChange={event => setResendDraft(current => ({ ...current, reason: event.target.value }))} placeholder="Motivo del reenvio" /></label></div><div className="mt-5 flex justify-end gap-2"><Button variant="outline" onClick={() => setResendRecipientId(null)}>Cancelar</Button><Button onClick={executeResend} disabled={resendDraft.reason.trim().length < 3 || smartActionLoading === `resend:${resendRecipientId}`}>{smartActionLoading === `resend:${resendRecipientId}` ? 'Reenviando...' : 'Confirmar reenvio'}</Button></div></div></div>}
+    {resendRecipientId && <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/50 p-4"><div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-lg bg-white p-5 shadow-2xl"><div className="flex items-start justify-between"><div><div className="page-kicker">Reenvío vinculado</div><h3 className="mt-1 text-lg font-semibold">Reenviar listado</h3></div><button type="button" aria-label="Cerrar reenvío" onClick={() => setResendRecipientId(null)} className="p-2"><X className="h-5 w-5" /></button></div><div className="mt-4 space-y-3"><label className="block space-y-1 text-sm"><span>Destinatarios</span><Input value={resendDraft.emails} onChange={event => setResendDraft(current => ({ ...current, emails: event.target.value }))} /></label><label className="block space-y-1 text-sm"><span>Asunto</span><Input value={resendDraft.subject} onChange={event => setResendDraft(current => ({ ...current, subject: event.target.value }))} /></label><label className="block space-y-1 text-sm"><span>Mensaje</span><textarea rows={6} value={resendDraft.body} onChange={event => setResendDraft(current => ({ ...current, body: event.target.value }))} className="w-full rounded-md border border-slate-300 px-3 py-2" /></label><label className="block space-y-1 text-sm"><span>Motivo obligatorio</span><Input value={resendDraft.reason} onChange={event => setResendDraft(current => ({ ...current, reason: event.target.value }))} placeholder="Motivo del reenvío" /></label></div><div className="mt-5 flex justify-end gap-2"><Button variant="outline" onClick={() => setResendRecipientId(null)}>Cancelar</Button><Button onClick={executeResend} disabled={resendDraft.reason.trim().length < 3 || smartActionLoading === `resend:${resendRecipientId}`}>{smartActionLoading === `resend:${resendRecipientId}` ? 'Reenviando...' : 'Confirmar reenvío'}</Button></div></div></div>}
 
-    {paidOpen && <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 p-4"><div className="w-full max-w-2xl rounded-2xl bg-white p-6 shadow-2xl"><div className="flex justify-between"><div><div className="page-kicker">Confirmacion</div><h3 className="mt-1 text-xl font-semibold">Marcar recibos como pagados</h3></div><button onClick={() => setPaidOpen(false)}><X /></button></div><label className="mt-5 block space-y-2 text-sm"><span className="font-medium">Fecha de pago</span><Input type="date" max={todayInput()} value={paymentDate} onChange={e => { setPaymentDate(e.target.value); setBulkPreview(null) }} /></label>{bulkPreview?.action === 'markPaid' && <BulkPreviewDetails preview={bulkPreview} />}<div className="mt-6 flex justify-end gap-2"><Button variant="outline" onClick={() => setPaidOpen(false)}>Cancelar</Button>{bulkPreview?.action === 'markPaid' ? <Button onClick={executeBulk} disabled={!bulkPreview.counts.eligible || bulkUpdating}>{bulkUpdating ? 'Guardando...' : 'Confirmar cambios'}</Button> : <Button onClick={() => previewBulk('markPaid')} disabled={!paymentDate || bulkUpdating}>{bulkUpdating ? 'Revisando...' : 'Revisar cambios'}</Button>}</div></div></div>}
-    {boletaOpen && <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 p-4"><div className="w-full max-w-2xl rounded-2xl bg-white p-6 shadow-2xl"><div className="flex justify-between"><div><div className="page-kicker">Confirmacion</div><h3 className="mt-1 text-xl font-semibold">Asociar N° de boleta</h3></div><button onClick={() => setBoletaOpen(false)}><X /></button></div><label className="mt-5 block space-y-2 text-sm"><span className="font-medium">Numero de boleta</span><Input value={boletaDraft} onChange={e => { setBoletaDraft(e.target.value); setBulkPreview(null) }} autoFocus /></label>{bulkPreview?.action === 'associateBoleta' && <BulkPreviewDetails preview={bulkPreview} />}<div className="mt-6 flex justify-end gap-2"><Button variant="outline" onClick={() => setBoletaOpen(false)}>Cancelar</Button>{bulkPreview?.action === 'associateBoleta' ? <Button onClick={executeBulk} disabled={!bulkPreview.counts.eligible || bulkUpdating}>{bulkUpdating ? 'Guardando...' : 'Confirmar cambios'}</Button> : <Button onClick={() => previewBulk('associateBoleta')} disabled={!boletaDraft.trim() || bulkUpdating}>{bulkUpdating ? 'Revisando...' : 'Revisar cambios'}</Button>}</div></div></div>}
+    {paidOpen && <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 p-4"><div className="w-full max-w-2xl rounded-2xl bg-white p-6 shadow-2xl"><div className="flex justify-between"><div><div className="page-kicker">Confirmación</div><h3 className="mt-1 text-xl font-semibold">Marcar recibos como pagados</h3></div><button aria-label="Cerrar confirmación" onClick={() => setPaidOpen(false)}><X /></button></div><label className="mt-5 block space-y-2 text-sm"><span className="font-medium">Fecha de pago</span><Input type="date" max={todayInput()} value={paymentDate} onChange={e => { setPaymentDate(e.target.value); setBulkPreview(null) }} /></label>{bulkPreview?.action === 'markPaid' && <BulkPreviewDetails preview={bulkPreview} />}<div className="mt-6 flex justify-end gap-2"><Button variant="outline" onClick={() => setPaidOpen(false)}>Cancelar</Button>{bulkPreview?.action === 'markPaid' ? <Button onClick={executeBulk} disabled={!bulkPreview.counts.eligible || bulkUpdating}>{bulkUpdating ? 'Guardando...' : 'Confirmar cambios'}</Button> : <Button onClick={() => previewBulk('markPaid')} disabled={!paymentDate || bulkUpdating}>{bulkUpdating ? 'Revisando...' : 'Revisar cambios'}</Button>}</div></div></div>}
+    {boletaOpen && <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 p-4"><div className="w-full max-w-2xl rounded-2xl bg-white p-6 shadow-2xl"><div className="flex justify-between"><div><div className="page-kicker">Confirmación</div><h3 className="mt-1 text-xl font-semibold">Asociar N° de boleta</h3></div><button aria-label="Cerrar confirmación" onClick={() => setBoletaOpen(false)}><X /></button></div><label className="mt-5 block space-y-2 text-sm"><span className="font-medium">Número de boleta</span><Input value={boletaDraft} onChange={e => { setBoletaDraft(e.target.value); setBulkPreview(null) }} autoFocus /></label>{bulkPreview?.action === 'associateBoleta' && <BulkPreviewDetails preview={bulkPreview} />}<div className="mt-6 flex justify-end gap-2"><Button variant="outline" onClick={() => setBoletaOpen(false)}>Cancelar</Button>{bulkPreview?.action === 'associateBoleta' ? <Button onClick={executeBulk} disabled={!bulkPreview.counts.eligible || bulkUpdating}>{bulkUpdating ? 'Guardando...' : 'Confirmar cambios'}</Button> : <Button onClick={() => previewBulk('associateBoleta')} disabled={!boletaDraft.trim() || bulkUpdating}>{bulkUpdating ? 'Revisando...' : 'Revisar cambios'}</Button>}</div></div></div>}
   </div></div>
 }

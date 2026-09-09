@@ -46,7 +46,7 @@ export default function RolHeader({ data, isLoading }: RolHeaderProps) {
 
         <div className="flex min-w-[230px] flex-col items-start gap-3 sm:items-end">
           <RolStatusBadge estado={estado} />
-          {rolId && <RolStatusActions rolId={rolId} current={estado} />}
+          {rolId && <RolStatusActions rolId={rolId} rolNumero={data?.rol?.numero ?? rolId} current={estado} />}
         </div>
       </div>
     </header>

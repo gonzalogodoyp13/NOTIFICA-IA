@@ -1,10 +1,19 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { CalendarDays } from 'lucide-react'
 
 import { DiligenciaCreateSchema } from '@/lib/validations/rol-workspace'
 import { useCreateDiligencia } from '@/lib/hooks/useRolWorkspace'
 import { ModalPortal } from '@/components/ui/modal-portal'
+import {
+  dmyDateToIso,
+  formatDmyDateInput,
+  isIsoDateInFuture,
+  isoDateToDmy,
+  localDateToDmy,
+  localDateToIso,
+} from '@/lib/utils/dateInput'
 
 interface DiligenciaTipo {
   id: string
@@ -28,6 +37,8 @@ export default function NuevaDiligenciaWizard({ rolId, onClose, onCreated }: Nue
   const [tipos, setTipos] = useState<DiligenciaTipo[]>([])
   const [isLoadingTipos, setIsLoadingTipos] = useState(false)
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
+  const [fechaText, setFechaText] = useState('')
+  const calendarInputRef = useRef<HTMLInputElement>(null)
   const [form, setForm] = useState({
     tipoId: '',
     fecha: '',
@@ -35,6 +46,25 @@ export default function NuevaDiligenciaWizard({ rolId, onClose, onCreated }: Nue
   })
 
   const createDiligencia = useCreateDiligencia(rolId)
+
+  const setFecha = (displayValue: string) => {
+    const formatted = formatDmyDateInput(displayValue)
+    const iso = dmyDateToIso(formatted)
+    setFechaText(formatted)
+    setForm(prev => ({ ...prev, fecha: iso ?? '' }))
+  }
+
+  const openDatePicker = () => {
+    const picker = calendarInputRef.current
+    if (!picker) return
+    try {
+      if (typeof picker.showPicker === 'function') picker.showPicker()
+      else picker.click()
+    } catch {
+      picker.focus()
+      picker.click()
+    }
+  }
 
   useEffect(() => {
     let active = true
@@ -84,9 +114,16 @@ export default function NuevaDiligenciaWizard({ rolId, onClose, onCreated }: Nue
       setErrorMsg('Selecciona un tipo de diligencia para continuar.')
       return
     }
-    if (step === 2 && !form.fecha) {
-      setErrorMsg('Ingresa la fecha de encargo para continuar.')
-      return
+    if (step === 2) {
+      const iso = dmyDateToIso(fechaText)
+      if (!iso) {
+        setErrorMsg('La fecha de encargo debe usar el formato DD/MM/AAAA.')
+        return
+      }
+      if (isIsoDateInFuture(iso)) {
+        setErrorMsg('La fecha de encargo no puede estar en el futuro.')
+        return
+      }
     }
     setErrorMsg(null)
     setStep(step + 1)
@@ -169,13 +206,42 @@ export default function NuevaDiligenciaWizard({ rolId, onClose, onCreated }: Nue
               <label className="block text-sm font-medium text-slate-700" htmlFor="diligencia-fecha">
                 Fecha de encargo
               </label>
-              <input
-                id="diligencia-fecha"
-                type="date"
-                className="w-full rounded border border-slate-300 p-2 text-sm"
-                value={form.fecha}
-                onChange={event => setForm(prev => ({ ...prev, fecha: event.target.value }))}
-              />
+              <div className="flex items-stretch gap-2">
+                <button
+                  type="button"
+                  onClick={() => setFecha(localDateToDmy())}
+                  className="rounded border border-sky-200 bg-sky-50 px-3 text-sm font-semibold text-sky-800 hover:bg-sky-100"
+                >
+                  Hoy
+                </button>
+                <div className="relative flex min-w-0 flex-1">
+                  <input
+                    id="diligencia-fecha"
+                    type="text"
+                    inputMode="numeric"
+                    autoComplete="off"
+                    placeholder="DD/MM/AAAA"
+                    maxLength={10}
+                    className="min-w-0 flex-1 rounded-l border border-r-0 border-slate-300 p-2 text-sm outline-none focus:border-sky-400 focus:ring-1 focus:ring-sky-300"
+                    value={fechaText}
+                    onChange={event => setFecha(event.target.value)}
+                  />
+                  <button type="button" aria-label="Abrir calendario" onClick={openDatePicker} className="flex w-11 items-center justify-center rounded-r border border-slate-300 bg-white text-slate-600 hover:bg-sky-50">
+                    <CalendarDays className="h-5 w-5" aria-hidden="true" />
+                  </button>
+                  <input
+                    ref={calendarInputRef}
+                    type="date"
+                    tabIndex={-1}
+                    aria-hidden="true"
+                    max={localDateToIso()}
+                    className="pointer-events-none absolute h-px w-px opacity-0"
+                    value={form.fecha}
+                    onChange={event => setFecha(isoDateToDmy(event.target.value))}
+                  />
+                </div>
+              </div>
+              <p className="mt-1 text-xs text-slate-500">Formato: DD/MM/AAAA. No se permiten fechas futuras.</p>
 
               <label
                 className="mt-4 block text-sm font-medium text-slate-700"
@@ -202,7 +268,7 @@ export default function NuevaDiligenciaWizard({ rolId, onClose, onCreated }: Nue
               </p>
               <p>
                 <span className="font-medium">Fecha:</span>{' '}
-                {form.fecha ? new Date(form.fecha).toLocaleDateString('es-CL') : '-'}
+                {fechaText || '-'}
               </p>
               <p>
                 <span className="font-medium">Observaciones:</span>{' '}
@@ -227,7 +293,7 @@ export default function NuevaDiligenciaWizard({ rolId, onClose, onCreated }: Nue
               type="button"
               onClick={next}
               className="rounded bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:cursor-not-allowed disabled:bg-blue-300"
-              disabled={step === 1 ? !form.tipoId : step === 2 ? !form.fecha : false}
+              disabled={step === 1 ? !form.tipoId : step === 2 ? !dmyDateToIso(fechaText) : false}
             >
               Siguiente
             </button>

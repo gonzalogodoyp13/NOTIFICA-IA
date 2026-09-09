@@ -6,7 +6,7 @@ export async function POST(_: NextRequest, { params }: { params: { operationId: 
   return withApiUser(_, 'post.recibos.bulk.operationId.undo', async user => {
   try {
     return NextResponse.json({ ok: true, data: await undoReceiptBulkOperation({ officeId: user.officeId, userId: user.id, operationId: params.operationId }) })
-  } catch (error) { return NextResponse.json({ ok: false, error: error instanceof Error ? error.message : 'No se pudo deshacer la operacion' }, { status: 400 }) }
+  } catch (error) { return NextResponse.json({ ok: false, error: error instanceof Error ? error.message : 'No se pudo deshacer la operación' }, { status: 400 }) }
 
   })
 }

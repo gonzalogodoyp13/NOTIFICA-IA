@@ -45,7 +45,7 @@ export function reconciliationGroupIdentity(row: CoreReceiptRow & { category: Re
   if (groupBy === 'bank') return { key: row.banco, label: row.banco }
   if (groupBy === 'procurador') return { key: row.procurador, label: row.procurador }
   if (groupBy === 'boleta') return { key: row.numeroBoleta, label: row.numeroBoleta }
-  if (!row.fechaEjecucion) return { key: 'SIN_FECHA', label: 'Sin fecha de ejecucion' }
+  if (!row.fechaEjecucion) return { key: 'SIN_FECHA', label: 'Sin fecha de ejecución' }
   const date = new Date(row.fechaEjecucion)
   return { key: date.toISOString().slice(0, 7), label: new Intl.DateTimeFormat('es-CL', { month: 'long', year: 'numeric', timeZone: 'UTC' }).format(date) }
 }

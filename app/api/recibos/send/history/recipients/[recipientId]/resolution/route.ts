@@ -13,9 +13,9 @@ export async function PATCH(req: NextRequest, { params }: { params: { recipientI
       where: { id: params.recipientId, batch: { officeId: user.officeId } },
       include: { replies: { where: { confirmedClassification: { not: null } }, orderBy: { receivedAt: 'desc' }, take: 1 } },
     })
-    if (!recipient) throw new ApiError('NOT_FOUND', 'El envio no existe.', 404)
+    if (!recipient) throw new ApiError('NOT_FOUND', 'El envío no existe.', 404)
     const classification = recipient.replies[0]?.confirmedClassification
-    if (input.resolved && requiresResolutionNote(classification) && !input.note) throw new ApiError('VALIDATION_ERROR', 'Agrega una nota para resolver un envio observado o que requiere correccion.', 400)
+    if (input.resolved && requiresResolutionNote(classification) && !input.note) throw new ApiError('VALIDATION_ERROR', 'Agrega una nota para resolver un envío observado o que requiere corrección.', 400)
     const updated = await prisma.recibosDispatchRecipient.update({
       where: { id: recipient.id },
       data: input.resolved ? { resolvedAt: new Date(), resolvedByUserId: user.id, resolutionNote: input.note ?? null } : { resolvedAt: null, resolvedByUserId: null, resolutionNote: null },

@@ -6,15 +6,13 @@ import { Button } from '@/components/ui/button'
 
 export type UnmatchedReplyItem = {
   id: string
-  provider: string
-  mailboxAddress: string
   senderEmail: string
   subject: string
   textPreview: string
   receivedAt: string
   matchStatus: 'unmatched' | 'needs_review'
-  matchMethod: string | null
-  candidateRecipientIds: unknown
+  candidateCount: number
+  diagnostics?: { provider: string; mailboxAddress: string; matchMethod: string | null; candidateRecipientIds: unknown }
 }
 
 export type UnmatchedReplyStatus = 'all' | 'unmatched' | 'needs_review'
@@ -35,10 +33,6 @@ type Props = {
   onStatusChange: (status: UnmatchedReplyStatus) => void
   onPageChange: (page: number) => void
   onRefresh: () => void
-}
-
-function candidateCount(value: unknown) {
-  return Array.isArray(value) ? value.filter(candidate => typeof candidate === 'string').length : 0
 }
 
 function receivedDate(value: string) {
@@ -118,7 +112,7 @@ export default function UnmatchedRepliesPanel({
           <>
             <div className="space-y-3 md:hidden">
               {items.map(reply => {
-                const candidates = candidateCount(reply.candidateRecipientIds)
+                const candidates = reply.candidateCount
                 return (
                   <article key={reply.id} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
                     <div className="flex flex-wrap items-start justify-between gap-2">
@@ -129,10 +123,9 @@ export default function UnmatchedRepliesPanel({
                     <p className="mt-1 break-all text-xs text-slate-500">{reply.senderEmail}</p>
                     <p className="mt-3 text-sm leading-6 text-slate-700">{reply.textPreview || 'Sin vista previa disponible.'}</p>
                     <div className="mt-4 flex flex-wrap gap-2 text-xs text-slate-600">
-                      <span className="rounded-full bg-slate-100 px-2.5 py-1">{reply.provider}</span>
-                      <span className="max-w-full truncate rounded-full bg-slate-100 px-2.5 py-1">{reply.mailboxAddress}</span>
                       <span className="rounded-full bg-blue-50 px-2.5 py-1 text-blue-800">{candidates} {candidates === 1 ? 'candidato' : 'candidatos'}</span>
                     </div>
+                    {reply.diagnostics && <details className="mt-3 border-t border-slate-100 pt-3 text-xs text-slate-600"><summary className="cursor-pointer font-semibold text-blue-800">Detalles técnicos</summary><div className="mt-2 space-y-1 break-all"><div>Proveedor: {reply.diagnostics.provider}</div><div>Buzón: {reply.diagnostics.mailboxAddress || '-'}</div><div>Método de asociación: {reply.diagnostics.matchMethod || '-'}</div></div></details>}
                   </article>
                 )
               })}
@@ -147,20 +140,20 @@ export default function UnmatchedRepliesPanel({
                       <th className="px-4 py-3">Fecha</th>
                       <th className="px-4 py-3">Remitente</th>
                       <th className="px-4 py-3">Mensaje</th>
-                      <th className="px-4 py-3">Origen</th>
+                      <th className="px-4 py-3">Detalles</th>
                       <th className="px-4 py-3 text-center">Candidatos</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
                     {items.map(reply => {
-                      const candidates = candidateCount(reply.candidateRecipientIds)
+                      const candidates = reply.candidateCount
                       return (
                         <tr key={reply.id} className="align-top hover:bg-slate-50/80">
                           <td className="px-4 py-4">{statusBadge(reply.matchStatus)}</td>
                           <td className="whitespace-nowrap px-4 py-4 text-xs text-slate-600">{receivedDate(reply.receivedAt)}</td>
                           <td className="max-w-52 px-4 py-4"><div className="break-all font-medium text-slate-900">{reply.senderEmail}</div></td>
                           <td className="max-w-md px-4 py-4"><div className="font-semibold text-slate-900">{reply.subject || 'Sin asunto'}</div><p className="mt-1 line-clamp-3 text-sm leading-5 text-slate-600">{reply.textPreview || 'Sin vista previa disponible.'}</p></td>
-                          <td className="max-w-52 px-4 py-4 text-xs text-slate-600"><div className="font-semibold text-slate-800">{reply.provider}</div><div className="mt-1 break-all">{reply.mailboxAddress}</div></td>
+                          <td className="max-w-52 px-4 py-4 text-xs text-slate-600">{reply.diagnostics ? <details><summary className="cursor-pointer font-semibold text-blue-800">Detalles técnicos</summary><div className="mt-2 break-all"><div>{reply.diagnostics.provider}</div><div>{reply.diagnostics.mailboxAddress || '-'}</div><div>{reply.diagnostics.matchMethod || '-'}</div></div></details> : <span aria-label="Sin detalles técnicos">—</span>}</td>
                           <td className="px-4 py-4 text-center"><span className="inline-flex min-w-8 justify-center rounded-full bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-800">{candidates}</span></td>
                         </tr>
                       )

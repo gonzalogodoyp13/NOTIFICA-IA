@@ -37,7 +37,7 @@ export async function enrichSendPreview(officeId: number, groups: SendPreviewGro
     const current = suggestions.get(key)
     suggestions.set(key, {
       recipientType: recipient.recipientType, recipientId: recipient.recipientId, name: recipient.name,
-      problem: recipient.email?.trim() ? 'Email invalido' : 'Email faltante',
+      problem: recipient.email?.trim() ? 'Correo inválido' : 'Correo faltante',
       affectedReciboCount: (current?.affectedReciboCount ?? 0) + group.reciboCount,
       editUrl: `/ajustes/${recipient.recipientType === 'abogado' ? 'abogados' : 'procuradores'}?editar=${recipient.recipientId}`,
     })

@@ -151,8 +151,8 @@ function groupLabel(mode: ReceiptRecipientMode, recipients: SendRecipient[]) {
 }
 
 function warningForRecipient(recipient: SendRecipient) {
-  if (!recipient.email?.trim()) return `${TYPE_LABELS[recipient.recipientType]} sin email: ${recipient.name}`
-  if (!recipient.validEmail) return `${TYPE_LABELS[recipient.recipientType]} con email invalido: ${recipient.name}`
+  if (!recipient.email?.trim()) return `${TYPE_LABELS[recipient.recipientType]} sin correo: ${recipient.name}`
+  if (!recipient.validEmail) return `${TYPE_LABELS[recipient.recipientType]} con correo inválido: ${recipient.name}`
   return null
 }
 

@@ -18,8 +18,8 @@ import {
 } from '@/lib/hooks/useRolWorkspace'
 import { EstampoGenerateSchema, ReciboGenerateSchema } from '@/lib/validations/rol-workspace'
 import { cleanCuantiaInput } from '@/lib/utils/cuantia'
-import { dmyDateToIso, formatDmyDateInput, isoDateToDmy, localDateToDmy } from '@/lib/utils/dateInput'
-import { parseEstampoTipo, type EstampoTipo } from '@/lib/estampos/selection'
+import { dmyDateToIso, formatDmyDateInput, isIsoDateInFuture, isoDateToDmy, localDateToDmy, localDateToIso } from '@/lib/utils/dateInput'
+import { type EstampoTipo } from '@/lib/estampos/selection'
 import { ModalPortal } from '@/components/ui/modal-portal'
 
 interface EjecutarWizardProps {
@@ -73,6 +73,9 @@ export default function EjecutarWizard({
   const updateMeta = useUpdateNotificacionMeta(rolId, diligencia.id, notificacionId)
   const generateRecibo = useGenerateRecibo(rolId, diligencia.id)
   const calendarInputRef = useRef<HTMLInputElement>(null)
+  const hydratedWorkflowRef = useRef<string | null>(null)
+  const originalLegalDataRef = useRef<string | null>(null)
+  const receiptSubmissionRef = useRef(false)
   const [creatingEstampo, setCreatingEstampo] = useState(false)
   const [renderingEstampoPreview, setRenderingEstampoPreview] = useState(false)
 
@@ -85,6 +88,7 @@ export default function EjecutarWizard({
   const [selectedEstampoTipo, setSelectedEstampoTipo] = useState<EstampoTipo | null>(null)
   const [monto, setMonto] = useState('')
   const [montoManual, setMontoManual] = useState(false)
+  const [amountSource, setAmountSource] = useState<'existing' | 'tariff' | 'manual' | 'empty'>('empty')
   const [saveManualArancelAsDefault, setSaveManualArancelAsDefault] = useState(false)
   const [receiptOperation, setReceiptOperation] = useState<'GENERATE' | 'REGENERATE' | 'CORRECT'>('GENERATE')
   const [correctionReason, setCorrectionReason] = useState('')
@@ -94,6 +98,13 @@ export default function EjecutarWizard({
 
   // UI state
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
+  const [fieldError, setFieldError] = useState<{ field: string; message: string } | null>(null)
+
+  const failField = (field: string, message: string) => {
+    setFieldError({ field, message })
+    setErrorMsg(message)
+    window.setTimeout(() => document.getElementById(field)?.focus(), 0)
+  }
 
   const openExecutionDatePicker = () => {
     const picker = calendarInputRef.current
@@ -109,54 +120,28 @@ export default function EjecutarWizard({
   }
 
   useEffect(() => {
-    if (workflow) {
+    if (workflow && hydratedWorkflowRef.current !== notificacionId) {
       setFechaEjecucion(isoDateToDmy(workflow.execution.fecha ?? ''))
       setHoraEjecucion(workflow.execution.hora ?? '')
       setBancoId(workflow.bankContext.selectedBankId)
       setSelectedEstampoTipo(workflow.selectedEstampoTipo as EstampoTipo | null)
       setMonto(workflow.monto === null ? '' : String(workflow.monto))
+      setMontoManual(false)
+      setAmountSource(workflow.receiptState ? 'existing' : workflow.monto === null ? 'empty' : 'manual')
       setReceiptOperation(workflow.receiptState ? 'REGENERATE' : 'GENERATE')
-    } else if (effectiveMeta) {
-      const ejecucion =
-        effectiveMeta.ejecucion &&
-        typeof effectiveMeta.ejecucion === 'object' &&
-        !Array.isArray(effectiveMeta.ejecucion)
-          ? (effectiveMeta.ejecucion as Record<string, unknown>)
-          : null
-
-      const fechaRaw =
-        (typeof ejecucion?.fecha === 'string' && ejecucion.fecha) ||
-        (typeof effectiveMeta.fechaEjecucion === 'string' && effectiveMeta.fechaEjecucion) ||
-        null
-
-      if (fechaRaw) {
-        const date = new Date(fechaRaw)
-        if (!Number.isNaN(date.getTime())) {
-          setFechaEjecucion(isoDateToDmy(date.toISOString().split('T')[0]))
-        }
-      }
-
-      const horaRaw =
-        (typeof ejecucion?.hora === 'string' && ejecucion.hora) ||
-        (typeof effectiveMeta.horaEjecucion === 'string' && effectiveMeta.horaEjecucion) ||
-        ''
-
-      if (horaRaw) {
-        setHoraEjecucion(horaRaw)
-      }
-      // Use parseEstampoTipo for backward compatibility
-      const estampoTipo = parseEstampoTipo(effectiveMeta)
-      if (estampoTipo) {
-        setSelectedEstampoTipo(estampoTipo)
-      }
-      if (effectiveMeta.monto) {
-        setMonto(String(effectiveMeta.monto))
-      }
       if (effectiveMeta.estampoDraft) {
         setContenidoEstampo(effectiveMeta.estampoDraft as string)
       }
+      originalLegalDataRef.current = JSON.stringify({
+        bancoId: workflow.bankContext.selectedBankId,
+        fecha: workflow.execution.fecha ?? '',
+        hora: workflow.execution.hora ?? '',
+        estampoTipo: workflow.selectedEstampoTipo,
+        monto: workflow.monto,
+      })
+      hydratedWorkflowRef.current = notificacionId
     }
-  }, [effectiveMeta, workflow])
+  }, [effectiveMeta.estampoDraft, notificacionId, workflow])
 
   const selectedEstampo = useMemo(() => {
     if (selectedEstampoTipo?.kind !== 'CUSTOM') return undefined
@@ -189,9 +174,27 @@ export default function EjecutarWizard({
     cleanCuantiaInput(monto) !== null
 
   useEffect(() => {
-    if (step !== 2 || !selectedEstampoTipo || !bancoId || montoManual) return
+    if (step !== 2 || !selectedEstampoTipo || !bancoId || montoManual || amountSource === 'existing') return
     setMonto(selectedArancel ? String(selectedArancel.monto) : '')
-  }, [step, selectedEstampoTipo, bancoId, montoManual, selectedArancel])
+    setAmountSource(selectedArancel ? 'tariff' : 'empty')
+  }, [step, selectedEstampoTipo, bancoId, montoManual, selectedArancel, amountSource])
+
+  const currentLegalData = useMemo(() => JSON.stringify({
+    bancoId,
+    fecha: dmyDateToIso(fechaEjecucion) ?? '',
+    hora: horaEjecucion || '',
+    estampoTipo: selectedEstampoTipo,
+    monto: cleanCuantiaInput(monto),
+  }), [bancoId, fechaEjecucion, horaEjecucion, monto, selectedEstampoTipo])
+
+  const legalDataChanged = !!workflow?.receiptState &&
+    !!originalLegalDataRef.current &&
+    originalLegalDataRef.current !== currentLegalData
+
+  useEffect(() => {
+    if (!workflow?.receiptState) return
+    setReceiptOperation(legalDataChanged ? 'CORRECT' : 'REGENERATE')
+  }, [legalDataChanged, workflow?.receiptState])
 
   useEffect(() => {
     setSaveManualArancelAsDefault(false)
@@ -237,6 +240,7 @@ export default function EjecutarWizard({
         if (!res.ok || result?.ok !== true) {
           throw new Error(
             (result && typeof result.error === 'string' && result.error) ||
+              (result?.error && typeof result.error.message === 'string' && result.error.message) ||
               'No se pudo preparar el texto del estampo.'
           )
         }
@@ -269,6 +273,7 @@ export default function EjecutarWizard({
   // Handle Step I: Save fecha/hora
   const handleStepISave = async (goToNext: boolean) => {
     setErrorMsg(null)
+    setFieldError(null)
 
     if (!notificacion) {
       setErrorMsg('Notificación no encontrada.')
@@ -277,17 +282,22 @@ export default function EjecutarWizard({
 
     const fechaEjecucionIso = dmyDateToIso(fechaEjecucion)
     if (!fechaEjecucionIso) {
-      setErrorMsg('La fecha de ejecución debe tener el formato DD/MM/AAAA.')
+      failField('fecha-ejecucion', 'La fecha de ejecución debe tener el formato DD/MM/AAAA.')
+      return
+    }
+
+    if (isIsoDateInFuture(fechaEjecucionIso)) {
+      failField('fecha-ejecucion', 'La fecha de ejecución no puede estar en el futuro.')
       return
     }
 
     if (!bancoId) {
-      setErrorMsg('Selecciona el banco del recibo.')
+      failField('banco-recibo', 'Selecciona el banco del recibo.')
       return
     }
 
     if (horaEjecucion && !/^([01]\d|2[0-3]):[0-5]\d$/.test(horaEjecucion)) {
-      setErrorMsg('La hora debe estar en formato HH:mm (ej: 14:30).')
+      failField('hora-ejecucion', 'La hora debe estar en formato HH:mm (ej: 14:30).')
       return
     }
 
@@ -317,7 +327,9 @@ export default function EjecutarWizard({
   }
 
   const handleStepIIGenerate = async (continueToStep3: boolean) => {
+    if (receiptSubmissionRef.current) return
     setErrorMsg(null)
+    setFieldError(null)
 
     if (!notificacion) {
       setErrorMsg('Notificación no encontrada.')
@@ -326,23 +338,33 @@ export default function EjecutarWizard({
 
     const fechaEjecucionIso = dmyDateToIso(fechaEjecucion)
     if (!fechaEjecucionIso) {
-      setErrorMsg('La fecha de ejecución debe tener el formato DD/MM/AAAA.')
+      failField('fecha-ejecucion', 'La fecha de ejecución debe tener el formato DD/MM/AAAA.')
+      return
+    }
+
+    if (isIsoDateInFuture(fechaEjecucionIso)) {
+      failField('fecha-ejecucion', 'La fecha de ejecución no puede estar en el futuro.')
       return
     }
 
     if (!bancoId) {
-      setErrorMsg('Selecciona el banco del recibo.')
+      failField('banco-recibo', 'Selecciona el banco del recibo.')
       return
     }
 
     if (!selectedEstampoTipo) {
-      setErrorMsg('Selecciona un tipo de estampo.')
+      failField('tipo-estampo', 'Selecciona un tipo de estampo.')
       return
     }
 
     const montoNum = cleanCuantiaInput(monto)
     if (montoNum === null || montoNum < 0) {
-      setErrorMsg('El monto es requerido y debe ser mayor o igual a 0.')
+      failField('monto', 'El monto es requerido y debe ser mayor o igual a 0.')
+      return
+    }
+
+    if (workflow?.receiptState && receiptOperation === 'REGENERATE' && legalDataChanged) {
+      failField('receipt-operation', 'Cambiaste datos legales del recibo. Debes emitir una corrección con un número nuevo.')
       return
     }
 
@@ -364,6 +386,7 @@ export default function EjecutarWizard({
       return
     }
 
+    receiptSubmissionRef.current = true
     try {
       const generated = await generateRecibo.mutateAsync(validation.data)
       if (continueToStep3) {
@@ -391,6 +414,8 @@ export default function EjecutarWizard({
         setReceiptOperation('CORRECT')
       }
       setErrorMsg(error instanceof Error ? error.message : 'No se pudo generar el recibo.')
+    } finally {
+      receiptSubmissionRef.current = false
     }
   }
 
@@ -470,6 +495,7 @@ export default function EjecutarWizard({
         if (!res.ok || result?.ok !== true) {
           throw new Error(
             (result && typeof result.error === 'string' && result.error) ||
+              (result?.error && typeof result.error.message === 'string' && result.error.message) ||
               'No se pudo generar el estampo.'
           )
         }
@@ -488,8 +514,14 @@ export default function EjecutarWizard({
       .finally(() => setCreatingEstampo(false))
   }
 
-  const isLoading =
-    workflowLoading || updateMeta.isPending || generateRecibo.isPending || creatingEstampo || renderingEstampoPreview
+  const isSavingExecution = updateMeta.isPending && step === 1
+  const isSavingStampDraft = updateMeta.isPending && step === 3
+  const isGeneratingReceipt = generateRecibo.isPending
+  const isGeneratingStamp = creatingEstampo
+  const isMutationPending = updateMeta.isPending || isGeneratingReceipt || isGeneratingStamp
+  const receiptActionDisabled =
+    workflowLoading || isGeneratingReceipt || !bancoId || !selectedEstampoTipo || !monto ||
+    (receiptOperation === 'CORRECT' && correctionReason.trim().length < 3)
 
   if (!notificacion) {
     return (
@@ -526,21 +558,39 @@ export default function EjecutarWizard({
               {step === 2 && 'Datos del recibo'}
               {step === 3 && 'Generar estampo'}
             </h2>
-            <p className="text-xs text-slate-500 mt-1">
-              Paso {step} de 3
-            </p>
+            <p className="mt-1 text-xs text-slate-500">Paso {step} de 3</p>
           </div>
           <button
             type="button"
             className="text-sm text-slate-500 hover:text-slate-700"
             onClick={onClose}
-            disabled={isLoading}
+            disabled={isMutationPending}
           >
             Cerrar
           </button>
         </header>
 
-        <div className="mt-4 space-y-4 text-sm">
+        <ol aria-label="Progreso del asistente" className="mt-5 grid grid-cols-3 gap-2">
+          {['Datos de ejecución', 'Recibo', 'Estampo'].map((label, index) => {
+            const number = index + 1
+            const active = number === step
+            const complete = number < step
+            return (
+              <li key={label} className={`rounded-xl border px-2 py-2 text-center text-[11px] font-semibold ${active ? 'border-blue-300 bg-blue-50 text-blue-800' : complete ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-slate-200 bg-slate-50 text-slate-500'}`}>
+                <span className="block text-[10px] uppercase tracking-wider">{complete ? 'Listo' : `Paso ${number}`}</span>
+                <span className="mt-0.5 block truncate">{label}</span>
+              </li>
+            )
+          })}
+        </ol>
+
+        {workflowLoading && (
+          <div role="status" className="mt-4 rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-sky-800">
+            Cargando datos del flujo…
+          </div>
+        )}
+
+        <fieldset disabled={workflowLoading} className="mt-4 space-y-4 text-sm disabled:opacity-60">
           {/* Step I: Fecha y Hora */}
           {step === 1 && (
             <>
@@ -555,6 +605,8 @@ export default function EjecutarWizard({
                   onChange={event => {
                     setBancoId(event.target.value ? Number(event.target.value) : null)
                     setMontoManual(false)
+                    setAmountSource('tariff')
+                    setFieldError(null)
                   }}
                 >
                   <option value="">Seleccione un banco…</option>
@@ -562,6 +614,7 @@ export default function EjecutarWizard({
                     <option key={bank.id} value={bank.id}>{bank.nombre}</option>
                   ))}
                 </select>
+                {fieldError?.field === 'banco-recibo' && <p className="mt-1 text-xs text-rose-600">{fieldError.message}</p>}
               </div>
               <div>
                 <label className="block font-medium text-slate-700" htmlFor="fecha-ejecucion">
@@ -589,6 +642,7 @@ export default function EjecutarWizard({
                       className="min-w-0 flex-1 rounded-l border border-r-0 border-slate-300 p-2 outline-none focus:border-sky-400 focus:ring-1 focus:ring-sky-300"
                       value={fechaEjecucion}
                       onChange={e => setFechaEjecucion(formatDmyDateInput(e.target.value))}
+                      aria-invalid={fieldError?.field === 'fecha-ejecucion'}
                     />
                     <button
                       type="button"
@@ -606,6 +660,7 @@ export default function EjecutarWizard({
                       type="date"
                       tabIndex={-1}
                       aria-hidden="true"
+                      max={localDateToIso()}
                       className="pointer-events-none absolute h-px w-px opacity-0"
                       value={dmyDateToIso(fechaEjecucion) ?? ''}
                       onChange={event => {
@@ -616,6 +671,7 @@ export default function EjecutarWizard({
                   </div>
                 </div>
                 <p className="mt-1 text-xs text-slate-500">Formato: DD/MM/AAAA (día/mes/año)</p>
+                {fieldError?.field === 'fecha-ejecucion' && <p className="mt-1 text-xs text-rose-600">{fieldError.message}</p>}
               </div>
               <div>
                 <label className="block font-medium text-slate-700" htmlFor="hora-ejecucion">
@@ -629,6 +685,7 @@ export default function EjecutarWizard({
                   onChange={e => setHoraEjecucion(e.target.value)}
                 />
                 <p className="mt-1 text-xs text-slate-500">Formato: HH:mm (ej: 14:30)</p>
+                {fieldError?.field === 'hora-ejecucion' && <p className="mt-1 text-xs text-rose-600">{fieldError.message}</p>}
               </div>
             </>
           )}
@@ -656,6 +713,8 @@ export default function EjecutarWizard({
                     onChange={e => {
                       const value = e.target.value
                       setMontoManual(false)
+                      setAmountSource('tariff')
+                      setFieldError(null)
                       if (value.startsWith('wizard:')) {
                         const categoria = value.replace('wizard:', '')
                         setSelectedEstampoTipo({ kind: 'WIZARD', categoria })
@@ -704,6 +763,7 @@ export default function EjecutarWizard({
                     )}
                   </select>
                 )}
+                {fieldError?.field === 'tipo-estampo' && <p className="mt-1 text-xs text-rose-600">{fieldError.message}</p>}
               </div>
               <div>
                 <label className="block font-medium text-slate-700" htmlFor="monto">
@@ -718,13 +778,19 @@ export default function EjecutarWizard({
                   onChange={e => {
                     setMonto(e.target.value)
                     setMontoManual(true)
+                    setAmountSource('manual')
                   }}
                 />
                 <p className="mt-1 text-xs text-slate-500">
-                  {selectedEstampoTipo?.kind === 'CUSTOM'
-                    ? 'El monto se auto-completará si existe un arancel configurado.'
-                    : 'Ingresa el monto manualmente.'}
+                  {amountSource === 'existing'
+                    ? 'Monto vigente del recibo activo. Solo cambiará si lo editas.'
+                    : amountSource === 'tariff'
+                      ? 'Monto sugerido por el arancel configurado.'
+                      : selectedEstampoTipo?.kind === 'CUSTOM'
+                        ? 'El monto se completará si existe un arancel configurado.'
+                        : 'Ingresa el monto manualmente.'}
                 </p>
+                {fieldError?.field === 'monto' && <p className="mt-1 text-xs text-rose-600">{fieldError.message}</p>}
                 {canSaveManualArancel && (
                   <label className="mt-3 flex items-start gap-2 rounded border border-sky-200 bg-sky-50 p-3 text-sm text-slate-700">
                     <input
@@ -740,7 +806,7 @@ export default function EjecutarWizard({
               {workflow?.receiptState && (
                 <div className="rounded border border-amber-200 bg-amber-50 p-3">
                   <label className="block font-medium text-slate-700" htmlFor="receipt-operation">
-                    Recibo activo {workflow.receiptState.numeroRecibo}
+                    Recibo activo {workflow.receiptState.numeroRecibo} · ${new Intl.NumberFormat('es-CL').format(workflow.monto ?? 0)}
                   </label>
                   <select
                     id="receipt-operation"
@@ -748,12 +814,15 @@ export default function EjecutarWizard({
                     value={receiptOperation}
                     onChange={event => setReceiptOperation(event.target.value as 'REGENERATE' | 'CORRECT')}
                   >
-                    <option value="REGENERATE">Regenerar el mismo recibo</option>
+                    <option value="REGENERATE" disabled={legalDataChanged}>Regenerar el mismo recibo</option>
                     <option value="CORRECT">Corregir y emitir un nuevo número</option>
                   </select>
                   <p className="mt-1 text-xs text-slate-600">
-                    Regenerar conserva el número y solo admite los mismos datos legales.
+                    {legalDataChanged
+                      ? 'Detectamos cambios legales: la corrección emitirá un número nuevo y conservará el anterior en el historial.'
+                      : 'Regenerar conserva el número y solo admite los mismos datos legales.'}
                   </p>
+                  {fieldError?.field === 'receipt-operation' && <p className="mt-1 text-xs text-rose-600">{fieldError.message}</p>}
                 </div>
               )}
               {receiptOperation === 'CORRECT' && (
@@ -792,7 +861,7 @@ export default function EjecutarWizard({
               </p>
             </div>
           )}
-        </div>
+        </fieldset>
 
         {errorMsg && <p className="mt-3 text-sm text-rose-600">{errorMsg}</p>}
         {workflowError && !errorMsg && (
@@ -806,7 +875,7 @@ export default function EjecutarWizard({
             type="button"
             className="rounded bg-slate-200 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-300"
             onClick={onClose}
-            disabled={isLoading}
+            disabled={isMutationPending}
           >
             Cancelar
           </button>
@@ -818,17 +887,17 @@ export default function EjecutarWizard({
                 type="button"
                 className="rounded bg-slate-200 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-300"
                 onClick={() => handleStepISave(false)}
-                disabled={isLoading}
+                disabled={workflowLoading || isMutationPending}
               >
-                Guardar
+                {isSavingExecution ? 'Guardando datos…' : 'Guardar borrador y salir'}
               </button>
               <button
                 type="button"
                 className="rounded bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:cursor-not-allowed disabled:bg-blue-300"
                 onClick={() => handleStepISave(true)}
-                disabled={isLoading}
+                disabled={workflowLoading || isMutationPending || !bancoId || !dmyDateToIso(fechaEjecucion)}
               >
-                {isLoading ? 'Guardando…' : 'Siguiente'}
+                Continuar al recibo
               </button>
             </>
           )}
@@ -840,7 +909,7 @@ export default function EjecutarWizard({
                 type="button"
                 className="rounded bg-slate-200 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-300"
                 onClick={() => setStep(1)}
-                disabled={isLoading}
+                disabled={isMutationPending}
               >
                 Anterior
               </button>
@@ -848,29 +917,17 @@ export default function EjecutarWizard({
                 type="button"
                 className="rounded bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-500 disabled:cursor-not-allowed disabled:bg-emerald-300"
                 onClick={() => handleStepIIGenerate(false)}
-                disabled={
-                  isLoading || !bancoId || !selectedEstampoTipo || !monto ||
-                  (receiptOperation === 'CORRECT' && correctionReason.trim().length < 3)
-                }
+                disabled={receiptActionDisabled}
               >
-                {isLoading
-                  ? 'Generando…'
-                  : receiptOperation === 'CORRECT'
-                    ? 'Emitir corrección'
-                    : receiptOperation === 'REGENERATE'
-                      ? 'Regenerar recibo'
-                      : 'Generar recibo'}
+                {isGeneratingReceipt ? 'Generando recibo…' : 'Generar recibo y salir'}
               </button>
               <button
                 type="button"
                 className="rounded bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:cursor-not-allowed disabled:bg-blue-300"
                 onClick={() => handleStepIIGenerate(true)}
-                disabled={
-                  isLoading || !bancoId || !selectedEstampoTipo || !monto ||
-                  (receiptOperation === 'CORRECT' && correctionReason.trim().length < 3)
-                }
+                disabled={receiptActionDisabled}
               >
-                {isLoading ? 'Generando…' : 'Guardar recibo y continuar'}
+                {isGeneratingReceipt ? 'Generando recibo…' : 'Generar recibo y continuar al estampo'}
               </button>
             </>
           )}
@@ -882,7 +939,7 @@ export default function EjecutarWizard({
                 type="button"
                 className="rounded bg-slate-200 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-300"
                 onClick={() => setStep(2)}
-                disabled={isLoading}
+                disabled={isMutationPending}
               >
                 Anterior
               </button>
@@ -890,17 +947,17 @@ export default function EjecutarWizard({
                 type="button"
                 className="rounded bg-slate-200 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-300"
                 onClick={handleStepIIISave}
-                disabled={isLoading || !contenidoEstampo.trim()}
+                disabled={workflowLoading || isMutationPending || !contenidoEstampo.trim()}
               >
-                {isLoading ? 'Guardando…' : 'Guardar'}
+                {isSavingStampDraft ? 'Guardando borrador…' : 'Guardar borrador y salir'}
               </button>
               <button
                 type="button"
                 className="rounded bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:cursor-not-allowed disabled:bg-blue-300"
                 onClick={handleStepIIIGenerate}
-                disabled={isLoading || !contenidoEstampo.trim()}
+                disabled={workflowLoading || isMutationPending || renderingEstampoPreview || !contenidoEstampo.trim()}
               >
-                {isLoading ? 'Generando…' : 'Generar estampo'}
+                {isGeneratingStamp ? 'Generando estampo…' : renderingEstampoPreview ? 'Cargando vista previa…' : 'Generar estampo'}
               </button>
             </>
           )}

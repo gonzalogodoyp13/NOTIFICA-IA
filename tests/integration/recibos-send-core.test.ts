@@ -64,7 +64,7 @@ describe('receipt send center core', () => {
     expect(preview.groups).toHaveLength(2)
     expect(preview.groups[0].reciboCount).toBe(2)
     expect(preview.groups[0].totalAmount).toBe(3500)
-    expect(preview.groups[1].warnings).toContain('Procurador sin email: Proc B')
+    expect(preview.groups[1].warnings).toContain('Procurador sin correo: Proc B')
     expect(preview.groups[1].canSend).toBe(false)
   })
 
@@ -79,7 +79,7 @@ describe('receipt send center core', () => {
     expect(preview.groups[0].recipientType).toBe('Ambos')
     expect(preview.groups[0].recipients).toHaveLength(2)
     expect(preview.groups[0].canSend).toBe(true)
-    expect(preview.groups[0].warnings).toContain('Abogado sin email: Abogada Uno')
+    expect(preview.groups[0].warnings).toContain('Abogado sin correo: Abogada Uno')
   })
 
   it('aggregates excluded rows by missing recipient reason', () => {

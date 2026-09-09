@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { useDocumentos } from '@/lib/hooks/useRolWorkspace'
+import { formatDateTimeCL } from '@/lib/utils/dateInput'
 
 interface DocumentoListProps {
   rolId: string
@@ -105,7 +106,7 @@ export default function DocumentoList({ rolId }: DocumentoListProps) {
                 <div className="font-medium text-slate-800">{doc.nombre}</div>
                 <div className="mt-1 text-xs text-slate-500">
                   {doc.tipo} · versión {doc.version} ·{' '}
-                  {new Date(doc.createdAt).toLocaleString('es-CL')}
+                  {formatDateTimeCL(doc.createdAt)}
                 </div>
               </div>
               <button

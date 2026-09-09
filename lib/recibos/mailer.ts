@@ -125,7 +125,7 @@ function microsoftGraphAdapter(): MailAdapter {
         method: 'POST',
         headers: { Authorization: `Bearer ${accessToken}`, Prefer: 'IdType="ImmutableId"' },
       })
-      if (!sendResponse.ok) throw new Error('Microsoft Graph rechazo el envio del correo.')
+      if (!sendResponse.ok) throw new Error('Microsoft Graph rechazó el envío del correo.')
       return {
         provider: 'microsoft_graph',
         messageId: String(created.id),

@@ -45,7 +45,7 @@ describe('report safety core', () => {
   })
 
   it('commits immutable tables, constraints, private storage and legacy backfills', () => {
-    const migration = readFileSync(join(process.cwd(), 'prisma/migrations/20260824120000_add_report_versions_and_delivery_attempts/migration.sql'), 'utf8')
+    const migration = readFileSync(join(process.cwd(), 'prisma/migrations/20260824120000_add_report_versions_and_delivery_attempts/migration.sql'), 'utf8').replace(/\r\n/g, '\n')
     expect(migration).toContain('CREATE TABLE "generated_report_versions"')
     expect(migration).toContain('CREATE TABLE "report_delivery_attempts"')
     expect(migration).toContain('CREATE TABLE "report_delivery_attempt_recipients"')

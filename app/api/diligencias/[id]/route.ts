@@ -6,46 +6,14 @@ import { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/prisma'
 import { DiligenciaUpdateSchema } from '@/lib/validations/rol-workspace'
 import { recordCriticalEvent } from '@/lib/audit/activityEvent'
+import { ApiError, apiFailure } from '@/lib/api/server'
+import {
+  assertRoleWorkflowWritable,
+  syncDiligenceWorkflowState,
+  syncRoleProgressState,
+} from '@/lib/roles/workflowState'
 
 export const dynamic = 'force-dynamic'
-
-type RoleStateDb = Pick<Prisma.TransactionClient, 'rolCausa'>
-
-async function syncRolEstado(rolId: string, db: RoleStateDb = prisma) {
-  const rol = await db.rolCausa.findUnique({
-    where: { id: rolId },
-    select: {
-      estado: true,
-      diligencias: {
-        select: { estado: true },
-      },
-    },
-  })
-
-  if (!rol || rol.estado === 'archivado') {
-    return
-  }
-
-  const total = rol.diligencias.length
-  const completadas = rol.diligencias.filter(d => d.estado === 'completada').length
-
-  let nextEstado: 'pendiente' | 'en_proceso' | 'terminado' = rol.estado
-
-  if (total === 0) {
-    nextEstado = 'pendiente'
-  } else if (completadas === total) {
-    nextEstado = 'terminado'
-  } else {
-    nextEstado = 'en_proceso'
-  }
-
-  if (nextEstado !== rol.estado) {
-    await db.rolCausa.update({
-      where: { id: rolId },
-      data: { estado: nextEstado },
-    })
-  }
-}
 
 export async function GET(
   _req: NextRequest,
@@ -78,6 +46,8 @@ export async function GET(
         { status: 404 }
       )
     }
+
+    assertRoleWorkflowWritable(diligencia.rol.estado)
 
     return NextResponse.json({ ok: true, data: diligencia })
   } catch (error) {
@@ -133,6 +103,14 @@ export async function PUT(
     }
 
     const data = parsed.data
+
+    if (data.estado === 'completada') {
+      return apiFailure(new ApiError(
+        'VALIDATION_ERROR',
+        'La diligencia se completa automáticamente cuando todas sus notificaciones tienen recibo y estampo.',
+        400
+      ))
+    }
 
     if (data.tipoId) {
       const tipo = await prisma.diligenciaTipo.findFirst({
@@ -220,7 +198,7 @@ export async function PUT(
       const result = await tx.diligencia.update({
         where: { id: diligencia.id }, data: updateData, include: { tipo: true },
       })
-      await syncRolEstado(diligencia.rol.id, tx)
+      await syncDiligenceWorkflowState(diligencia.id, tx)
       await recordCriticalEvent(tx, user, {
         eventType: 'diligence.updated', module: 'diligencias', result: 'success',
         recordType: 'Diligencia', recordId: result.id, rolId: diligencia.rol.id,
@@ -232,6 +210,7 @@ export async function PUT(
 
     return NextResponse.json({ ok: true, data: updated })
   } catch (error) {
+    if (error instanceof ApiError) return apiFailure(error)
     console.error('Error actualizando diligencia:', error)
     const errorMessage = error instanceof Error ? error.message : 'Error al actualizar la diligencia'
     return NextResponse.json(
@@ -260,6 +239,7 @@ export async function DELETE(
       select: {
         id: true,
         rolId: true,
+        rol: { select: { estado: true } },
       },
     })
 
@@ -270,9 +250,12 @@ export async function DELETE(
       )
     }
 
+
+    assertRoleWorkflowWritable(diligencia.rol.estado)
+
     await prisma.$transaction(async tx => {
       await tx.diligencia.delete({ where: { id: diligencia.id } })
-      await syncRolEstado(diligencia.rolId, tx)
+      await syncRoleProgressState(diligencia.rolId, tx)
       await recordCriticalEvent(tx, user, {
         eventType: 'diligence.deleted', module: 'diligencias', result: 'success',
         recordType: 'Diligencia', recordId: diligencia.id, rolId: diligencia.rolId,
@@ -282,6 +265,7 @@ export async function DELETE(
 
     return NextResponse.json({ ok: true, message: 'Diligencia eliminada correctamente' })
   } catch (error) {
+    if (error instanceof ApiError) return apiFailure(error)
     console.error('Error eliminando diligencia:', error)
     const errorMessage = error instanceof Error ? error.message : 'Error al eliminar la diligencia'
     return NextResponse.json(

@@ -86,6 +86,8 @@ export default function RolWorkspaceClient({ rolId }: RolWorkspaceClientProps) {
               rolData={rolData}
               isRolLoading={isResumenTab ? isRolLoading : false}
               isRolError={isResumenTab ? isRolError : false}
+              rolEstado={headerData?.rol?.estado}
+              rolNumero={headerData?.rol?.numero}
             />
           )}
         </div>

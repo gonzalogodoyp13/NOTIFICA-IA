@@ -880,7 +880,7 @@ model Notificacion {
   id             String      @id
   diligenciaId   String
   meta           Json?
-  createdAt      DateTime?
+  createdAt      DateTime    @default(now())
   updatedAt      DateTime?
   voidedAt       DateTime?
   voidReason     String?

@@ -8,6 +8,7 @@ import { ApiError, apiFailure, handleApiError, withApiUser } from '@/lib/api/ser
 import { deletePdfFromDocumentStorage } from '@/lib/documents/storage'
 import { prisma } from '@/lib/prisma'
 import { asJsonObject } from '@/lib/utils/json'
+import { assertRoleWorkflowWritable, syncDiligenceWorkflowState } from '@/lib/roles/workflowState'
 
 export const dynamic = 'force-dynamic'
 
@@ -36,12 +37,14 @@ export async function PATCH(
         id: params.id,
         officeId: user.officeId,
       },
-      select: { id: true, demanda: { select: { abogadoId: true } } },
+      select: { id: true, estado: true, demanda: { select: { abogadoId: true } } },
     })
 
     if (!rol) {
       return apiFailure(new ApiError('NOT_FOUND', 'Rol no encontrado o no pertenece a tu oficina', 404))
     }
+
+    assertRoleWorkflowWritable(rol.estado)
 
     const diligencia = await prisma.diligencia.findFirst({
       where: {
@@ -125,6 +128,7 @@ export async function PATCH(
           updatedAt: true,
         },
       })
+      await syncDiligenceWorkflowState(diligencia.id, tx)
       await recordCriticalEvent(tx, user, {
         eventType: 'notification.updated',
         module: 'notificaciones',
@@ -158,7 +162,7 @@ export async function PATCH(
         ejecutadoId: updated.ejecutadoId,
         bancoId: updated.bancoId,
         meta: updated.meta,
-        createdAt: updated.createdAt ? updated.createdAt.toISOString() : null,
+        createdAt: updated.createdAt.toISOString(),
         updatedAt: updated.updatedAt ? updated.updatedAt.toISOString() : null,
         step1Done: hasExecutionDate(responseMeta),
       },
@@ -183,12 +187,14 @@ export async function DELETE(
         id: params.id,
         officeId: user.officeId,
       },
-      select: { id: true },
+      select: { id: true, estado: true },
     })
 
     if (!rol) {
       return apiFailure(new ApiError('NOT_FOUND', 'Rol no encontrado o no pertenece a tu oficina', 404))
     }
+
+    assertRoleWorkflowWritable(rol.estado)
 
     const diligencia = await prisma.diligencia.findFirst({
       where: {
@@ -247,6 +253,7 @@ export async function DELETE(
       await tx.notificacion.delete({
         where: { id: params.notificacionId },
       })
+      await syncDiligenceWorkflowState(diligencia.id, tx)
       await recordCriticalEvent(tx, user, {
         eventType: 'notification.deleted',
         module: 'notificaciones',

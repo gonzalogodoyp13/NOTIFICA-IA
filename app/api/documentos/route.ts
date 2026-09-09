@@ -7,6 +7,8 @@ import { prisma } from '@/lib/prisma'
 import { recordCriticalEvent } from '@/lib/audit/activityEvent'
 import { zDocumento, zDocumentoUpdate } from '@/lib/validations/documento'
 import { ZodError } from 'zod'
+import { ApiError, apiFailure } from '@/lib/api/server'
+import { assertRoleWorkflowWritable, syncDiligenceWorkflowState } from '@/lib/roles/workflowState'
 
 export const dynamic = 'force-dynamic'
 
@@ -103,6 +105,8 @@ export async function POST(req: NextRequest) {
       )
     }
 
+    assertRoleWorkflowWritable(rol.estado)
+
     // Verify diligencia belongs to the same rol if provided
     if (parsed.data.diligenciaId) {
       const diligencia = await prisma.diligencia.findFirst({
@@ -157,6 +161,7 @@ export async function POST(req: NextRequest) {
         description: 'Documento creado.',
         metadata: { documentId: created.id, documentType: created.tipo, version: created.version, diligenceId: created.diligenciaId },
       })
+      if (created.diligenciaId) await syncDiligenceWorkflowState(created.diligenciaId, tx)
       return created
     })
 
@@ -167,6 +172,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ ok: true, data: documento })
   } catch (error) {
+    if (error instanceof ApiError) return apiFailure(error)
     if (error instanceof ZodError) {
       return NextResponse.json(
         { ok: false, error: error.errors },
@@ -214,6 +220,7 @@ export async function PUT(req: NextRequest) {
           officeId: user.officeId,
         },
       },
+      include: { rol: { select: { estado: true } } },
     })
 
     if (!documento) {
@@ -222,6 +229,8 @@ export async function PUT(req: NextRequest) {
         { status: 404 }
       )
     }
+
+    assertRoleWorkflowWritable(documento.rol.estado)
 
     // Update documento
     const updated = await prisma.$transaction(async tx => {
@@ -240,11 +249,13 @@ export async function PUT(req: NextRequest) {
         description: 'Documento actualizado.',
         metadata: { documentId: result.id, version: result.version, changedFields: Object.keys(parsed.data).slice(0, 100) },
       })
+      if (result.diligenciaId) await syncDiligenceWorkflowState(result.diligenciaId, tx)
       return result
     })
 
     return NextResponse.json({ ok: true, data: updated })
   } catch (error) {
+    if (error instanceof ApiError) return apiFailure(error)
     if (error instanceof ZodError) {
       return NextResponse.json(
         { ok: false, error: error.errors },
@@ -284,6 +295,7 @@ export async function DELETE(req: NextRequest) {
         },
       },
       include: {
+        rol: { select: { estado: true } },
         versions: {
           where: {
             deletedAt: null,
@@ -303,12 +315,15 @@ export async function DELETE(req: NextRequest) {
       )
     }
 
+    assertRoleWorkflowWritable(documento.rol.estado)
+
     for (const version of documento.versions) {
       await deletePdfFromDocumentStorage(version.storageBucket, version.storageKey)
     }
 
     await prisma.$transaction(async tx => {
       await tx.documento.delete({ where: { id } })
+      if (documento.diligenciaId) await syncDiligenceWorkflowState(documento.diligenciaId, tx)
       await recordCriticalEvent(tx, user, {
         eventType: 'document.deleted', module: 'documents', result: 'success',
         recordType: 'Documento', recordId: id, rolId: documento.rolId,
@@ -319,6 +334,7 @@ export async function DELETE(req: NextRequest) {
 
     return NextResponse.json({ ok: true, message: 'Documento eliminado correctamente' })
   } catch (error) {
+    if (error instanceof ApiError) return apiFailure(error)
     console.error('Error deleting documento:', error)
     return NextResponse.json(
       { ok: false, error: 'Error al eliminar el documento' },

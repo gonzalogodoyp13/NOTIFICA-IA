@@ -6,45 +6,11 @@ import { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/prisma'
 import { DiligenciaScheduleSchema } from '@/lib/validations/rol-workspace'
 import { recordCriticalEvent } from '@/lib/audit/activityEvent'
+import { ApiError, apiFailure } from '@/lib/api/server'
+import { assertRoleWorkflowWritable, syncDiligenceWorkflowState } from '@/lib/roles/workflowState'
 
 export const dynamic = 'force-dynamic'
 
-type RoleStateDb = Pick<Prisma.TransactionClient, 'rolCausa'>
-async function syncRolEstado(rolId: string, db: RoleStateDb = prisma) {
-  const rol = await db.rolCausa.findUnique({
-    where: { id: rolId },
-    select: {
-      estado: true,
-      diligencias: {
-        select: { estado: true },
-      },
-    },
-  })
-
-  if (!rol || rol.estado === 'archivado') {
-    return
-  }
-
-  const total = rol.diligencias.length
-  const completadas = rol.diligencias.filter(d => d.estado === 'completada').length
-
-  let nextEstado: 'pendiente' | 'en_proceso' | 'terminado' = rol.estado
-
-  if (total === 0) {
-    nextEstado = 'pendiente'
-  } else if (completadas === total) {
-    nextEstado = 'terminado'
-  } else {
-    nextEstado = 'en_proceso'
-  }
-
-  if (nextEstado !== rol.estado) {
-    await db.rolCausa.update({
-      where: { id: rolId },
-      data: { estado: nextEstado },
-    })
-  }
-}
 
 export async function PUT(
   req: NextRequest,
@@ -65,6 +31,7 @@ export async function PUT(
           select: {
             id: true,
             demandaId: true,
+            estado: true,
           },
         },
       },
@@ -76,6 +43,8 @@ export async function PUT(
         { status: 404 }
       )
     }
+
+    assertRoleWorkflowWritable(diligencia.rol.estado)
 
     const parsed = DiligenciaScheduleSchema.safeParse(await req.json())
 
@@ -139,7 +108,7 @@ export async function PUT(
         where: { id: diligencia.id },
         data: { fecha: new Date(data.fechaEjecucion), meta: metaToPersist },
       })
-      await syncRolEstado(diligencia.rol.id, tx)
+      await syncDiligenceWorkflowState(diligencia.id, tx)
       await recordCriticalEvent(tx, user, {
         eventType: 'diligence.scheduled', module: 'diligencias', result: 'success',
         recordType: 'Diligencia', recordId: result.id, rolId: diligencia.rol.id,
@@ -151,6 +120,7 @@ export async function PUT(
 
     return NextResponse.json({ ok: true, data: updated })
   } catch (error) {
+    if (error instanceof ApiError) return apiFailure(error)
     console.error('Error programando diligencia:', error)
     return NextResponse.json(
       { ok: false, error: 'Error al programar la diligencia' },

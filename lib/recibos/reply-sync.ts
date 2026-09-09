@@ -251,6 +251,7 @@ export async function listUnmatchedReplies(input: {
   page?: number
   limit?: number
   status?: UnmatchedReplyStatusFilter
+  includeDiagnostics?: boolean
 }) {
   const page = Math.max(1, Math.trunc(input.page ?? 1))
   const limit = Math.min(100, Math.max(1, Math.trunc(input.limit ?? 25)))
@@ -281,7 +282,21 @@ export async function listUnmatchedReplies(input: {
     prisma.recibosDispatchReply.count({ where }),
   ])
   return {
-    items,
+    items: items.map(item => ({
+      id: item.id,
+      senderEmail: item.senderEmail,
+      subject: item.subject,
+      textPreview: item.textPreview,
+      receivedAt: item.receivedAt,
+      matchStatus: item.matchStatus,
+      candidateCount: Array.isArray(item.candidateRecipientIds) ? item.candidateRecipientIds.length : 0,
+      ...(input.includeDiagnostics ? { diagnostics: {
+        provider: item.provider,
+        mailboxAddress: item.mailboxAddress,
+        matchMethod: item.matchMethod,
+        candidateRecipientIds: item.candidateRecipientIds,
+      } } : {}),
+    })),
     pagination: {
       page,
       limit,

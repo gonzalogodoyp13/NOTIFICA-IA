@@ -11,9 +11,9 @@ export const dynamic = 'force-dynamic'
 function summarize(filters: ReceiptFiltersInput) {
   const parts: string[] = []
   if (filters.estados.length) parts.push(`Estado: ${filters.estados.join(', ')}`)
-  if (filters.fechaEjecucionDesde || filters.fechaEjecucionHasta) parts.push(`Ejecucion: ${filters.fechaEjecucionDesde || 'inicio'} a ${filters.fechaEjecucionHasta || 'hoy'}`)
+  if (filters.fechaEjecucionDesde || filters.fechaEjecucionHasta) parts.push(`Ejecución: ${filters.fechaEjecucionDesde || 'inicio'} a ${filters.fechaEjecucionHasta || 'hoy'}`)
   if (filters.numeroBoleta) parts.push(`Boleta: ${filters.numeroBoleta}`)
-  if (filters.montoMin !== undefined || filters.montoMax !== undefined) parts.push(`Monto: ${filters.montoMin ?? 0} a ${filters.montoMax ?? 'sin maximo'}`)
+  if (filters.montoMin !== undefined || filters.montoMax !== undefined) parts.push(`Monto: ${filters.montoMin ?? 0} a ${filters.montoMax ?? 'sin máximo'}`)
   if (filters.rol) parts.push(`ROL: ${filters.rol}`)
   return parts.join(' | ') || 'Filtros aplicados'
 }

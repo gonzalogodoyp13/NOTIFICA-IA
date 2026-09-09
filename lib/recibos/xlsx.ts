@@ -15,14 +15,14 @@ export async function buildRecibosWorkbook(rows: ReceiptListRow[], filterSummary
   const sheet = workbook.addWorksheet('Recibos', { views: [{ state: 'frozen', ySplit: 4 }] })
 
   sheet.mergeCells('A1:P1')
-  sheet.getCell('A1').value = 'Gestion de Recibos'
+  sheet.getCell('A1').value = 'Gestión de Recibos'
   sheet.getCell('A1').font = { bold: true, size: 16, color: { argb: 'FF0F172A' } }
   sheet.mergeCells('A2:P2')
   sheet.getCell('A2').value = `Exportado: ${new Intl.DateTimeFormat('es-CL', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date())}`
   sheet.mergeCells('A3:P3')
   sheet.getCell('A3').value = `Filtros: ${filterSummary || 'Sin resumen'}`
 
-  const headers = ['N° Recibo', 'ROL', 'Tribunal', 'Caratula', 'Gestion', 'Estampo', 'Resultado', 'Abogado', 'Procurador', 'Banco', 'Monto', 'Estado', 'N° Boleta', 'Fecha ejecucion', 'Fecha recibo', 'Fecha pago']
+  const headers = ['N° Recibo', 'ROL', 'Tribunal', 'Carátula', 'Gestión', 'Estampo', 'Resultado', 'Abogado', 'Procurador', 'Banco', 'Monto', 'Estado', 'N° Boleta', 'Fecha ejecución', 'Fecha recibo', 'Fecha pago']
   const headerRow = sheet.addRow(headers)
   headerRow.font = { bold: true, color: { argb: 'FFFFFFFF' } }
   headerRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E3A5F' } }

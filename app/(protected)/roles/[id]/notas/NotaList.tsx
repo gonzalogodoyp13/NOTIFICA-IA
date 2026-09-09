@@ -2,6 +2,7 @@ import { FormEvent, useState } from 'react'
 
 import { useCreateNota, useNotas } from '@/lib/hooks/useRolWorkspace'
 import { NotaCreateSchema } from '@/lib/validations/rol-workspace'
+import { formatDateTimeCL } from '@/lib/utils/dateInput'
 
 interface NotaListProps {
   rolId: string
@@ -38,10 +39,16 @@ export default function NotaList({ rolId }: NotaListProps) {
     <section className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
       <header className="flex items-center justify-between gap-4">
         <h2 className="text-lg font-semibold text-slate-900">Notas internas</h2>
-        {(isLoading || createNota.isPending) && (
+        {isLoading && (
           <span className="inline-flex items-center gap-2 text-xs text-slate-500">
             <span className="h-2 w-2 animate-ping rounded-full bg-slate-400" />
-            Guardando...
+            Cargando notas…
+          </span>
+        )}
+        {createNota.isPending && (
+          <span className="inline-flex items-center gap-2 text-xs text-slate-500">
+            <span className="h-2 w-2 animate-ping rounded-full bg-slate-400" />
+            Guardando nota…
           </span>
         )}
       </header>
@@ -74,7 +81,7 @@ export default function NotaList({ rolId }: NotaListProps) {
             disabled={createNota.isPending || nota.trim().length === 0}
           >
             {createNota.isPending && <span className="h-2 w-2 animate-ping rounded-full bg-white" />}
-            Guardar nota
+            {createNota.isPending ? 'Guardando nota…' : 'Guardar nota'}
           </button>
         </div>
       </form>
@@ -110,7 +117,7 @@ export default function NotaList({ rolId }: NotaListProps) {
               className="rounded-md border border-slate-100 bg-white p-4 shadow-sm"
             >
               <header className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
-                <span>{new Date(notaItem.createdAt).toLocaleString('es-CL')}</span>
+                <span>{formatDateTimeCL(notaItem.createdAt)}</span>
                 <span>ID usuario: {notaItem.userId}</span>
               </header>
               <p className="mt-2 whitespace-pre-line text-sm text-slate-700">{notaItem.contenido}</p>

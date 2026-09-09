@@ -14,7 +14,7 @@ export async function POST(req: NextRequest) {
     const report = await getReconciliation({ officeId: user.officeId, filters: parsed.data.filters, categories: parsed.data.categories, groupBy: parsed.data.groupBy, exportAll: true })
     const workbook = await buildReconciliationWorkbook({ rows: report.rows, kpis: report.kpis, groupBy: parsed.data.groupBy, filterSummary: parsed.data.filterSummary })
     return new NextResponse(workbook, { headers: { 'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'Content-Disposition': 'attachment; filename="conciliacion-recibos.xlsx"', 'Cache-Control': 'no-store' } })
-  } catch (error) { return NextResponse.json({ ok: false, error: error instanceof Error ? error.message : 'Error al exportar conciliacion' }, { status: 400 }) }
+  } catch (error) { return NextResponse.json({ ok: false, error: error instanceof Error ? error.message : 'Error al exportar la conciliación' }, { status: 400 }) }
 
   })
 }

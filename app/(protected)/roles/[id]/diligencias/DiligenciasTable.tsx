@@ -5,8 +5,12 @@ import EjecutarWizard from './EjecutarWizard'
 import EstampoWizardModal from './EstampoWizardModal'
 import NuevaDiligenciaWizard from './NuevaDiligenciaWizard'
 import { ModalPortal } from '@/components/ui/modal-portal'
+import { formatDateCL, formatDateTimeCL } from '@/lib/utils/dateInput'
 
-interface DiligenciasTableProps { rolId: string }
+interface DiligenciasTableProps {
+  rolId: string
+  rolEstado?: string
+}
 
 type VisibleNotificacion = NotificacionItem & {
   _estampoLabel: string
@@ -59,7 +63,7 @@ function getWorkflowStatusClass(status: NotificacionItem['workflowStatus']) {
   }
 }
 
-export default function DiligenciasTable({ rolId }: DiligenciasTableProps) {
+export default function DiligenciasTable({ rolId, rolEstado }: DiligenciasTableProps) {
   const router = useRouter()
   const pathname = usePathname()
   const searchParams = useSearchParams()
@@ -78,6 +82,7 @@ export default function DiligenciasTable({ rolId }: DiligenciasTableProps) {
   const [wizardModalOpen, setWizardModalOpen] = useState<{ diligenciaId: string; categoria: string; notificacionId: string } | null>(null)
   const [ejecutadoModalOpen, setEjecutadoModalOpen] = useState<{ diligenciaId: string; ejecutados: Array<{ id: string; nombre: string; direccion: string }>; startImmediately?: boolean } | null>(null)
   const [selectedEjecutadoId, setSelectedEjecutadoId] = useState('')
+  const isReadOnly = rolEstado === 'terminado' || rolEstado === 'archivado'
 
   const sorted = useMemo(() => (data ?? []).slice().sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()), [data])
 
@@ -87,12 +92,20 @@ export default function DiligenciasTable({ rolId }: DiligenciasTableProps) {
   }
 
   const openWizardForNotificacion = (diligencia: DiligenciaItem, notificacionId: string, step: 1 | 2 | 3) => {
+    if (isReadOnly) {
+      setFlashMessage('Este ROL está en modo de solo lectura.')
+      return
+    }
     setEjecutarTarget(diligencia)
     setEjecutarNotificacionId(notificacionId)
     setEjecutarInitialStep(step)
   }
 
   const openEstampoEditor = (diligencia: DiligenciaItem, notif: VisibleNotificacion) => {
+    if (isReadOnly) {
+      setFlashMessage('Este ROL está en modo de solo lectura.')
+      return
+    }
     if (notif._isWizard && notif._wizardCategoria) {
       setWizardModalOpen({ diligenciaId: diligencia.id, categoria: notif._wizardCategoria, notificacionId: notif.id })
       return
@@ -140,6 +153,10 @@ export default function DiligenciasTable({ rolId }: DiligenciasTableProps) {
   }, [flashMessage])
 
   const createNotificacionForDiligencia = (diligencia: DiligenciaItem, options?: { startImmediately?: boolean; ejecutadoId?: string }) => {
+    if (isReadOnly) {
+      setFlashMessage('Este ROL está en modo de solo lectura.')
+      return
+    }
     const ejecutados = diligencia.ejecutados ?? []
     const startImmediately = options?.startImmediately ?? false
     if (ejecutados.length === 0) {
@@ -213,12 +230,20 @@ export default function DiligenciasTable({ rolId }: DiligenciasTableProps) {
         <button
           type="button"
           onClick={() => setShowWizard(true)}
+          disabled={isReadOnly}
           className={primaryButtonClass}
+          title={isReadOnly ? 'El ROL está en modo de solo lectura' : undefined}
         >
           <span className="text-base leading-none">+</span>
           Nueva diligencia
         </button>
       </header>
+
+      {isReadOnly && (
+        <div className="mt-5 rounded-[20px] border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          <span className="font-semibold">Modo de solo lectura.</span> El ROL está {rolEstado === 'terminado' ? 'terminado' : 'archivado'}; puedes consultar y descargar, pero no modificar sus diligencias.
+        </div>
+      )}
 
       {flashMessage && (
         <div className="mt-5 rounded-[20px] border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
@@ -329,6 +354,9 @@ export default function DiligenciasTable({ rolId }: DiligenciasTableProps) {
                     <div className="mt-2 flex flex-wrap items-center gap-3">
                       <div>
                         <div className="text-xl font-semibold tracking-tight text-slate-900">{diligencia.tipo.nombre}</div>
+                        <span className={`mt-2 inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${diligencia.estado === 'completada' ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : diligencia.estado === 'fallida' ? 'border-rose-200 bg-rose-50 text-rose-700' : 'border-amber-200 bg-amber-50 text-amber-700'}`}>
+                          {diligencia.estado === 'completada' ? 'Completada' : diligencia.estado === 'fallida' ? 'Fallida' : 'Pendiente'}
+                        </span>
                         {diligencia.tipo.descripcion && (
                           <div className="mt-1 text-sm text-slate-500">{diligencia.tipo.descripcion}</div>
                         )}
@@ -338,7 +366,7 @@ export default function DiligenciasTable({ rolId }: DiligenciasTableProps) {
                   <div className={subtleCellClass}>
                     <div className={sectionHeaderClass}>Fecha Encargo</div>
                     <div className="mt-2 text-base font-semibold text-slate-800">
-                      {new Date(diligencia.fecha).toLocaleDateString('es-CL')}
+                      {formatDateCL(diligencia.fecha)}
                     </div>
                   </div>
                   <div className={subtleCellClass}>
@@ -348,7 +376,7 @@ export default function DiligenciasTable({ rolId }: DiligenciasTableProps) {
                         <button
                           type="button"
                           onClick={() => createNotificacionForDiligencia(diligencia, { startImmediately: true })}
-                          disabled={isCreating}
+                          disabled={isCreating || isReadOnly}
                           className={`${primaryButtonClass} min-h-12 px-5`}
                         >
                           {isCreating ? 'Preparando...' : 'Ejecutar'}
@@ -357,7 +385,7 @@ export default function DiligenciasTable({ rolId }: DiligenciasTableProps) {
                         <button
                           type="button"
                           onClick={() => createNotificacionForDiligencia(diligencia)}
-                          disabled={isCreating}
+                          disabled={isCreating || isReadOnly}
                           className={secondaryButtonClass}
                         >
                           {isCreating ? 'Creando...' : 'Nueva Notificacion'}
@@ -384,12 +412,13 @@ export default function DiligenciasTable({ rolId }: DiligenciasTableProps) {
                           <div className="text-[1.15rem] font-semibold text-slate-900">{notif._ejecutadoNombre}</div>
                           <div className="mt-1 text-[0.98rem] leading-7 text-slate-500">{notif._ejecutadoDireccion}</div>
                           <div className="mt-4 flex flex-wrap items-center gap-2 text-xs text-slate-500">
-                            <span>{notif.createdAt ? new Date(notif.createdAt).toLocaleString('es-CL') : 'Sin fecha de creacion'}</span>
+                            <span>{formatDateTimeCL(notif.createdAt)}</span>
+                            <span title={notif.id} className="font-mono text-[11px] font-semibold text-slate-600">Ref. {notif.id.replace(/-/g, '').slice(0, 8).toUpperCase()}</span>
                             <span className={`rounded-full border px-2 py-1 font-medium ${getWorkflowStatusClass(notif.workflowStatus)}`}>
                               {getWorkflowStatusLabel(notif.workflowStatus)}
                             </span>
                           </div>
-                          <div className="mt-auto pt-5">
+                          {!isReadOnly && <div className="mt-auto pt-5">
                             {renderActionButton('Anular Notificacion', event => {
                               event.stopPropagation()
                               const ok = window.confirm('Anular esta notificacion? Se eliminara de la tabla junto con sus recibos y estampos asociados.')
@@ -399,7 +428,7 @@ export default function DiligenciasTable({ rolId }: DiligenciasTableProps) {
                                 { onSuccess: () => setFlashMessage('Notificacion anulada.'), onError: mutationError => setFlashMessage(mutationError.message || 'Error al anular notificacion') }
                               )
                             }, dangerButtonClass, deleteNotificacion.isPending)}
-                          </div>
+                          </div>}
                         </div>
                         <div className={bodyCellClass}>
                           {!notif.step1Done && (
@@ -408,7 +437,7 @@ export default function DiligenciasTable({ rolId }: DiligenciasTableProps) {
                                 <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-sky-700/70">Acciones</div>
                                 <p className="mt-2 max-w-xl text-sm leading-6 text-slate-500">Inicia la ejecucion de esta diligencia para capturar la visita y habilitar el recibo.</p>
                               </div>
-                              {renderActionButton('Ejecutar', event => { event.stopPropagation(); openWizardForNotificacion(diligencia, notif.id, 1) }, `${accentButtonClass} min-h-12 px-5`)}
+                              {renderActionButton('Ejecutar', event => { event.stopPropagation(); openWizardForNotificacion(diligencia, notif.id, 1) }, `${accentButtonClass} min-h-12 px-5`, isReadOnly)}
                             </div>
                           )}
                           {notif.step1Done && !hasReciboPdf && (
@@ -418,8 +447,8 @@ export default function DiligenciasTable({ rolId }: DiligenciasTableProps) {
                                 <p className="mt-2 max-w-xl text-sm leading-6 text-slate-500">La ejecucion ya esta registrada. Continua con el recibo o vuelve a editar los datos previos.</p>
                               </div>
                               <div className="flex flex-wrap items-center gap-2">
-                                {renderActionButton('Editar ejecucion', event => { event.stopPropagation(); openWizardForNotificacion(diligencia, notif.id, 1) }, secondaryButtonClass)}
-                                {renderActionButton('Continuar con recibo', event => { event.stopPropagation(); openWizardForNotificacion(diligencia, notif.id, 2) }, primaryButtonClass)}
+                                {renderActionButton('Editar ejecución', event => { event.stopPropagation(); openWizardForNotificacion(diligencia, notif.id, 1) }, secondaryButtonClass, isReadOnly)}
+                                {renderActionButton('Continuar con recibo', event => { event.stopPropagation(); openWizardForNotificacion(diligencia, notif.id, 2) }, primaryButtonClass, isReadOnly)}
                               </div>
                             </div>
                           )}
@@ -431,7 +460,7 @@ export default function DiligenciasTable({ rolId }: DiligenciasTableProps) {
                                   <>
                                     <p className="mt-2 text-sm leading-6 text-slate-600">El recibo ya fue generado. Ahora puedes continuar con el estampo de esta diligencia.</p>
                                     <div className="mt-4 flex flex-wrap gap-2">
-                                      {renderActionButton('Continuar con estampo', event => { event.stopPropagation(); openEstampoEditor(diligencia, notif) }, accentButtonClass)}
+                                      {renderActionButton('Continuar con estampo', event => { event.stopPropagation(); openEstampoEditor(diligencia, notif) }, accentButtonClass, isReadOnly)}
                                     </div>
                                   </>
                                 ) : (
@@ -439,7 +468,7 @@ export default function DiligenciasTable({ rolId }: DiligenciasTableProps) {
                                     <div className="mt-2 text-lg font-semibold text-slate-900">{notif._estampoLabel}</div>
                                     <div className="mt-4 flex flex-wrap gap-2">
                                       {notif.latestEstampoId && renderActionButton('Ver estampo', event => handleViewDocumento(event, notif.latestEstampoId!), successButtonClass)}
-                                      {renderActionButton('Editar', event => { event.stopPropagation(); openEstampoEditor(diligencia, notif) }, secondaryButtonClass)}
+                                      {!isReadOnly && renderActionButton('Editar', event => { event.stopPropagation(); openEstampoEditor(diligencia, notif) }, secondaryButtonClass)}
                                     </div>
                                   </>
                                 )}
@@ -448,7 +477,7 @@ export default function DiligenciasTable({ rolId }: DiligenciasTableProps) {
                                 <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-sky-700/70">Recibo</div>
                                 <p className="mt-2 text-sm leading-6 text-slate-600">El recibo ya forma parte del flujo. Puedes verlo o volver al paso correspondiente.</p>
                                 <div className="mt-4 flex flex-wrap gap-2">
-                                  {renderActionButton('Editar recibo', event => { event.stopPropagation(); openWizardForNotificacion(diligencia, notif.id, 2) }, secondaryButtonClass)}
+                                  {!isReadOnly && renderActionButton('Editar recibo', event => { event.stopPropagation(); openWizardForNotificacion(diligencia, notif.id, 2) }, secondaryButtonClass)}
                                   {notif.latestReciboId && renderActionButton('Ver recibo', event => handleViewDocumento(event, notif.latestReciboId!), successButtonClass)}
                                 </div>
                               </div>

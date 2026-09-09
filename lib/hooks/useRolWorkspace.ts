@@ -25,7 +25,7 @@ const NotificacionItemSchema = z.object({
   meta: z.unknown().nullable().optional(),
   ejecutadoId: z.string().nullable().optional(),
   bancoId: z.number().int().positive().nullable().optional(),
-  createdAt: z.string().nullable(),
+  createdAt: z.string(),
   updatedAt: z.string().nullable(),
   voidedAt: z.string().nullable().optional(),
   voidReason: z.string().nullable().optional(),
@@ -424,6 +424,9 @@ export function applyStampGenerationToCache(
     { queryKey: ['rol', rolId, 'diligencias', diligenciaId, 'notificaciones', notificacionId, 'workflow'] },
     current => current && generated.notificacion ? { ...current, notification: generated.notificacion } : current
   )
+  void queryClient.invalidateQueries({ queryKey: diligenciasKey(rolId) })
+  void queryClient.invalidateQueries({ queryKey: rolQueryKey(rolId) })
+  void queryClient.invalidateQueries({ queryKey: rolHeaderKey(rolId) })
 }
 
 export class ApiClientError extends Error {
@@ -607,6 +610,7 @@ export function useChangeRolStatus(rolId: string) {
       if (!response.ok || payload?.ok !== true) {
         throw new Error(
           (payload && typeof payload.error === 'string' && payload.error) ||
+            (payload?.error && typeof payload.error.message === 'string' && payload.error.message) ||
             'Error al cambiar el estado del ROL'
         )
       }
@@ -640,6 +644,7 @@ export function useCreateDiligencia(
       if (!response.ok || result?.ok !== true) {
         throw new Error(
           (result && typeof result.error === 'string' && result.error) ||
+            (result?.error && typeof result.error.message === 'string' && result.error.message) ||
             'Error al crear diligencia'
         )
       }
@@ -703,6 +708,7 @@ async function createNotificacion(
   if (!response.ok || result?.ok !== true) {
     throw new Error(
       (result && typeof result.error === 'string' && result.error) ||
+        (result?.error && typeof result.error.message === 'string' && result.error.message) ||
         'Error al crear notificación'
     )
   }
@@ -737,6 +743,9 @@ export function useCreateNotificacion(
             )
           )
       )
+      void queryClient.invalidateQueries({ queryKey: diligenciasKey(rolId) })
+      void queryClient.invalidateQueries({ queryKey: rolQueryKey(rolId) })
+      void queryClient.invalidateQueries({ queryKey: rolHeaderKey(rolId) })
     },
   })
 }
@@ -873,6 +882,9 @@ export function useGenerateRecibo(
       if (generated.defaultArancelSaved) {
         void queryClient.invalidateQueries({ queryKey: ['rol', rolId, 'diligencias'] })
       }
+      void queryClient.invalidateQueries({ queryKey: diligenciasKey(rolId) })
+      void queryClient.invalidateQueries({ queryKey: rolQueryKey(rolId) })
+      void queryClient.invalidateQueries({ queryKey: rolHeaderKey(rolId) })
       if (typeof generated.cacheRevision === 'number') {
         advanceCacheRevision(generated.cacheRevision)
       }
@@ -972,7 +984,8 @@ async function deleteNotificacion(
   if (!response.ok || result?.ok !== true) {
     const message =
       (result && typeof result.error === 'string' && result.error) ||
-      'Error al anular notificación'
+        (result?.error && typeof result.error.message === 'string' && result.error.message) ||
+        'Error al anular notificación'
     throw new Error(message)
   }
 }
@@ -1002,6 +1015,9 @@ export function useDeleteNotificacion(
             )
           )
       )
+      void queryClient.invalidateQueries({ queryKey: diligenciasKey(rolId) })
+      void queryClient.invalidateQueries({ queryKey: rolQueryKey(rolId) })
+      void queryClient.invalidateQueries({ queryKey: rolHeaderKey(rolId) })
 
       queryClient.setQueryData(
         documentosKey(rolId),

@@ -37,7 +37,10 @@ async function verifyWorkbooks() {
   await management.xlsx.load(await buildRecibosWorkbook([row], 'Monto maximo: 999999999') as any)
   const managementSheet = management.getWorksheet('Recibos')
   assert.ok(managementSheet)
+  assert.equal(managementSheet.getCell('A1').value, 'Gestión de Recibos')
   assert.equal(managementSheet.getCell('A4').value, 'N° Recibo')
+  assert.equal(managementSheet.getCell('D4').value, 'Carátula')
+  assert.equal(managementSheet.getCell('N4').value, 'Fecha ejecución')
   assert.equal(managementSheet.getCell('K5').value, 20000)
   assert.equal(managementSheet.getColumn(11).numFmt, '$#,##0;[Red]-$#,##0')
   assert.ok(managementSheet.getCell('N5').value instanceof Date)
@@ -48,8 +51,10 @@ async function verifyWorkbooks() {
     kpis: { total: 1, reconciled: 1, reconciliationPercentage: 100, missingBoleta: 0, pendingPayment: 0, paidWithoutBoleta: 0, totalAmount: 20000 },
     groupBy: 'category', filterSummary: 'Monto maximo: 999999999',
   }) as any)
-  const reconciliationSheet = reconciliation.getWorksheet('Conciliacion')
+  const reconciliationSheet = reconciliation.getWorksheet('Conciliación')
   assert.ok(reconciliationSheet)
+  assert.equal(reconciliationSheet.getCell('A1').value, 'Conciliación de Recibos')
+  assert.equal(reconciliationSheet.getCell('A8').value, 'Categoría')
   assert.equal(reconciliationSheet.getCell('B8').value, 'N° Recibo')
   assert.equal(reconciliationSheet.getCell('J9').value, 20000)
   assert.equal(reconciliationSheet.getColumn(10).numFmt, '$#,##0;[Red]-$#,##0')

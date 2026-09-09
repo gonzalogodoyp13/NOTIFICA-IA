@@ -79,11 +79,11 @@ type ReceiptDb = typeof prisma | Prisma.TransactionClient
 export async function buildReceiptBulkPreview(officeId: number, input: ReceiptBulkInput, db: ReceiptDb = prisma): Promise<ReceiptBulkPreview> {
   const ids = normalizeIds(input.reciboIds)
   if (!ids.length) throw new Error('Debes seleccionar al menos un recibo.')
-  if (ids.length > 25) throw new Error('Las acciones masivas admiten hasta 25 recibos de la pagina actual.')
+  if (ids.length > 25) throw new Error('Las acciones masivas admiten hasta 25 recibos de la página actual.')
 
   const paymentDate = input.action === 'markPaid' ? proposedPaymentDate(input.fechaPago) : null
   const boletaNumber = input.action === 'associateBoleta' ? input.numeroBoleta?.trim() : null
-  if (input.action === 'associateBoleta' && !boletaNumber) throw new Error('Debes ingresar un numero de boleta.')
+  if (input.action === 'associateBoleta' && !boletaNumber) throw new Error('Debes ingresar un número de boleta.')
 
   const receipts = await db.recibo.findMany({
     where: { id: { in: ids }, status: 'ACTIVE', rol: { officeId } },
@@ -203,16 +203,16 @@ function snapshots(value: Prisma.JsonValue): OperationSnapshot[] {
 
 export async function operationUndoability(officeId: number, operationId: string, db: ReceiptDb = prisma) {
   const operation = await db.receiptBulkOperation.findFirst({ where: { id: operationId, officeId } })
-  if (!operation) return { reversible: false, reason: 'Operacion no encontrada.' }
-  if (operation.undoneAt) return { reversible: false, reason: 'La operacion ya fue deshecha.' }
+  if (!operation) return { reversible: false, reason: 'Operación no encontrada.' }
+  if (operation.undoneAt) return { reversible: false, reason: 'La operación ya fue deshecha.' }
   const after = snapshots(operation.afterState)
   for (const state of after) {
     if (state.targetType === 'receipt') {
       const receipt = await db.recibo.findFirst({ where: { id: state.targetId, status: 'ACTIVE', rol: { officeId } }, select: { numeroBoleta: true } })
-      if (!receipt || (receipt.numeroBoleta ?? null) !== (state.boletaNumber ?? null)) return { reversible: false, reason: 'Un recibo cambio despues de la operacion.' }
+      if (!receipt || (receipt.numeroBoleta ?? null) !== (state.boletaNumber ?? null)) return { reversible: false, reason: 'Un recibo cambió después de la operación.' }
     } else {
       const diligence = await db.diligencia.findFirst({ where: { id: state.targetId, rol: { officeId } }, select: { estadoCobro: true, fechaPago: true } })
-      if (!diligence || diligence.estadoCobro !== state.paymentStatus || normalizeDate(diligence.fechaPago) !== (state.paymentDate ?? null)) return { reversible: false, reason: 'Una diligencia cambio despues de la operacion.' }
+      if (!diligence || diligence.estadoCobro !== state.paymentStatus || normalizeDate(diligence.fechaPago) !== (state.paymentDate ?? null)) return { reversible: false, reason: 'Una diligencia cambió después de la operación.' }
     }
   }
   return { reversible: true, reason: null }
@@ -222,7 +222,7 @@ export async function undoReceiptBulkOperation(params: { officeId: number; userI
   return prisma.$transaction(async tx => {
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`receipt-bulk-${params.officeId}`}))`
     const undoability = await operationUndoability(params.officeId, params.operationId, tx)
-    if (!undoability.reversible) throw new Error(undoability.reason ?? 'La operacion no se puede deshacer.')
+    if (!undoability.reversible) throw new Error(undoability.reason ?? 'La operación no se puede deshacer.')
     const operation = await tx.receiptBulkOperation.findFirstOrThrow({ where: { id: params.operationId, officeId: params.officeId } })
     for (const state of snapshots(operation.beforeState)) {
       if (state.targetType === 'receipt') await tx.recibo.update({ where: { id: state.targetId }, data: { numeroBoleta: state.boletaNumber ?? null } })
@@ -235,7 +235,7 @@ export async function undoReceiptBulkOperation(params: { officeId: number; userI
       result: 'success',
       recordType: 'ReceiptBulkOperation',
       recordId: operation.id,
-      description: 'Operacion masiva de recibos deshecha.',
+      description: 'Operación masiva de recibos deshecha.',
       metadata: {
         operationId: operation.id,
         action: operation.action,

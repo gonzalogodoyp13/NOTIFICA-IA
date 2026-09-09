@@ -1,11 +1,12 @@
 import { withApiUser } from '@/lib/api/server'
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
-
 import { Prisma } from '@prisma/client'
 
 import { prisma } from '@/lib/prisma'
 import { recordCriticalEvent } from '@/lib/audit/activityEvent'
+import { ApiError, apiFailure } from '@/lib/api/server'
+import { assertRoleWorkflowWritable, syncDiligenceWorkflowState } from '@/lib/roles/workflowState'
 
 export const dynamic = 'force-dynamic'
 
@@ -23,43 +24,6 @@ const CompleteSchema = z.object({
     ),
 })
 
-type RoleStateDb = Pick<Prisma.TransactionClient, 'rolCausa'>
-async function syncRolEstado(rolId: string, db: RoleStateDb = prisma) {
-  const rol = await db.rolCausa.findUnique({
-    where: { id: rolId },
-    select: {
-      estado: true,
-      diligencias: {
-        select: { estado: true },
-      },
-    },
-  })
-
-  if (!rol || rol.estado === 'archivado') {
-    return
-  }
-
-  const total = rol.diligencias.length
-  const completadas = rol.diligencias.filter(d => d.estado === 'completada').length
-
-  let nextEstado: 'pendiente' | 'en_proceso' | 'terminado' = rol.estado
-
-  if (total === 0) {
-    nextEstado = 'pendiente'
-  } else if (completadas === total) {
-    nextEstado = 'terminado'
-  } else {
-    nextEstado = 'en_proceso'
-  }
-
-  if (nextEstado !== rol.estado) {
-    await db.rolCausa.update({
-      where: { id: rolId },
-      data: { estado: nextEstado },
-    })
-  }
-}
-
 export async function PUT(
   req: NextRequest,
   { params }: { params: { id: string } }
@@ -76,7 +40,7 @@ export async function PUT(
       },
       include: {
         rol: {
-          select: { id: true },
+          select: { id: true, estado: true },
         },
       },
     })
@@ -87,6 +51,8 @@ export async function PUT(
         { status: 404 }
       )
     }
+
+    assertRoleWorkflowWritable(diligencia.rol.estado)
 
     const parsed = CompleteSchema.safeParse(await req.json())
 
@@ -116,10 +82,17 @@ export async function PUT(
     const updated = await prisma.$transaction(async tx => {
       const result = await tx.diligencia.update({
         where: { id: diligencia.id },
-        data: { estado: 'completada', fecha: data.fechaRealizacion ? new Date(data.fechaRealizacion) : diligencia.fecha, meta: metaToPersist },
+        data: { fecha: data.fechaRealizacion ? new Date(data.fechaRealizacion) : diligencia.fecha, meta: metaToPersist },
         include: { tipo: true },
       })
-      await syncRolEstado(diligencia.rol.id, tx)
+      const derivedStatus = await syncDiligenceWorkflowState(diligencia.id, tx)
+      if (derivedStatus !== 'completada') {
+        throw new ApiError(
+          'VALIDATION_ERROR',
+          'La diligencia aún tiene notificaciones sin recibo o estampo vigente.',
+          400
+        )
+      }
       await recordCriticalEvent(tx, user, {
         eventType: 'diligence.completed', module: 'diligencias', result: 'success',
         recordType: 'Diligencia', recordId: result.id, rolId: diligencia.rol.id,
@@ -131,6 +104,7 @@ export async function PUT(
 
     return NextResponse.json({ ok: true, data: updated })
   } catch (error) {
+    if (error instanceof ApiError) return apiFailure(error)
     console.error('Error completando diligencia:', error)
     return NextResponse.json(
       { ok: false, error: 'Error al completar la diligencia' },

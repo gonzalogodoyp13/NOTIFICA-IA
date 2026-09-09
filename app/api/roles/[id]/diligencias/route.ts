@@ -8,6 +8,7 @@ import { prisma } from '@/lib/prisma'
 import { DiligenciaCreateSchema } from '@/lib/validations/rol-workspace'
 import { serializeNotification } from '@/lib/workflow/notificationView'
 import { recordCriticalEvent } from '@/lib/audit/activityEvent'
+import { assertRoleWorkflowWritable, syncRoleProgressState } from '@/lib/roles/workflowState'
 
 export const dynamic = 'force-dynamic'
 
@@ -31,43 +32,6 @@ function mapDiligencia(diligencia: any) {
     notificaciones: (diligencia.notificaciones ?? []).map((notification: any) =>
       serializeNotification(notification, diligencia)
     ),
-  }
-}
-
-type RoleStateDb = Pick<Prisma.TransactionClient, 'rolCausa'>
-async function syncRolEstado(rolId: string, db: RoleStateDb = prisma) {
-  const rol = await db.rolCausa.findUnique({
-    where: { id: rolId },
-    select: {
-      estado: true,
-      diligencias: {
-        select: { estado: true },
-      },
-    },
-  })
-
-  if (!rol || rol.estado === 'archivado') {
-    return
-  }
-
-  const total = rol.diligencias.length
-  const completadas = rol.diligencias.filter(d => d.estado === 'completada').length
-
-  let nextEstado: 'pendiente' | 'en_proceso' | 'terminado' = rol.estado
-
-  if (total === 0) {
-    nextEstado = 'pendiente'
-  } else if (completadas === total) {
-    nextEstado = 'terminado'
-  } else {
-    nextEstado = 'en_proceso'
-  }
-
-  if (nextEstado !== rol.estado) {
-    await db.rolCausa.update({
-      where: { id: rolId },
-      data: { estado: nextEstado },
-    })
   }
 }
 
@@ -208,6 +172,8 @@ export async function POST(
       return apiFailure(new ApiError('NOT_FOUND', 'Rol no encontrado o no pertenece a tu oficina', 404))
     }
 
+    assertRoleWorkflowWritable(rol.estado)
+
     const payload = parseApiInput(DiligenciaCreateSchema, await req.json())
 
     const tipo = await prisma.diligenciaTipo.findFirst({
@@ -269,7 +235,7 @@ export async function POST(
         data: { rolId: rol.id, tipoId: payload.tipoId, fecha: new Date(payload.fecha), estado: 'pendiente', meta: metaToPersist },
         include: { tipo: true },
       })
-      await syncRolEstado(rol.id, tx)
+      await syncRoleProgressState(rol.id, tx)
       await recordCriticalEvent(tx, user, {
         eventType: 'diligence.created', module: 'diligencias', result: 'success',
         recordType: 'Diligencia', recordId: created.id, rolId: rol.id, rol: rol.rol,
@@ -288,6 +254,7 @@ export async function POST(
       }),
     })
   } catch (error) {
+    if (error instanceof ApiError) return apiFailure(error)
     return apiFailure(new ApiError('INTERNAL_ERROR', 'Ocurrió un error inesperado', 500))
   }
 

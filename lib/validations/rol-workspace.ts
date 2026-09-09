@@ -17,7 +17,7 @@ const timeRegex = /^([01]\d|2[0-3]):[0-5]\d$/
 
 export const DiligenciaCreateSchema = z.object({
   tipoId: z.string().min(1, 'tipoId es requerido'),
-  fecha: isoDate,
+  fecha: isoDate.refine(value => new Date(value) <= new Date(), 'La fecha no puede estar en el futuro'),
   observaciones: z.string().max(1000, 'Observaciones demasiado extensas').optional(),
   ejecutadoId: z.string().min(1, 'ejecutadoId es requerido').optional(),
   direccionId: z.string().min(1, 'direccionId es requerido').optional(),
@@ -41,7 +41,10 @@ export const DiligenciaScheduleSchema = z.object({
 })
 
 const receiptExecutionSchema = z.object({
-  fecha: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'La fecha debe usar el formato YYYY-MM-DD'),
+  fecha: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, 'La fecha debe usar el formato YYYY-MM-DD')
+    .refine(value => new Date(`${value}T00:00:00.000Z`) <= new Date(), 'La fecha no puede estar en el futuro'),
   hora: z
     .union([z.literal(''), z.string().regex(timeRegex, 'Hora inválida, use el formato HH:mm')])
     .optional()

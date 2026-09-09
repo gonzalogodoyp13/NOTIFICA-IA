@@ -2,8 +2,9 @@ import { NextRequest, NextResponse } from 'next/server'
 
 import { randomUUID } from 'crypto'
 import { recordCriticalEvent } from '@/lib/audit/activityEvent'
-import { handleApiError, withApiUser } from '@/lib/api/server'
+import { ApiError, handleApiError, withApiUser } from '@/lib/api/server'
 import { prisma } from '@/lib/prisma'
+import { assertRoleWorkflowWritable, syncDiligenceWorkflowState } from '@/lib/roles/workflowState'
 
 export const dynamic = 'force-dynamic'
 
@@ -20,7 +21,7 @@ export async function POST(
         id: params.id,
         officeId: user.officeId,
       },
-      select: { id: true },
+      select: { id: true, estado: true },
     })
 
     if (!rol) {
@@ -29,6 +30,8 @@ export async function POST(
         { status: 404 }
       )
     }
+
+    assertRoleWorkflowWritable(rol.estado)
 
     // Parse request body (allow empty for backward compatibility)
     const body = await req.json().catch(() => ({}))
@@ -120,6 +123,7 @@ export async function POST(
           updatedAt: true,
         },
       })
+      await syncDiligenceWorkflowState(params.diligenciaId, tx)
       await recordCriticalEvent(tx, user, {
         eventType: 'notification.created',
         module: 'notificaciones',
@@ -144,7 +148,7 @@ export async function POST(
         diligenciaId: notificacion.diligenciaId,
         ejecutadoId: notificacion.ejecutadoId,
         meta: notificacion.meta,
-        createdAt: notificacion.createdAt ? notificacion.createdAt.toISOString() : null,
+        createdAt: notificacion.createdAt.toISOString(),
         updatedAt: notificacion.updatedAt ? notificacion.updatedAt.toISOString() : null,
         workflowStatus: 'nueva',
         step1Done: false,
@@ -156,7 +160,9 @@ export async function POST(
       },
     })
   } catch (error) {
-    console.error('Error creando notificación:', error)
+    if (!(error instanceof ApiError)) {
+      console.error('Error creando notificación:', error)
+    }
     return handleApiError(error, { operation: 'notification.create', request: req })
   }
   })

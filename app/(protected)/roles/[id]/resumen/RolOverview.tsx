@@ -4,6 +4,7 @@ import { FileText, NotebookPen, Printer, Receipt, Scale, TimerReset } from 'luci
 import { type RolWorkspaceData } from '@/lib/hooks/useRolWorkspace'
 import EjecutadoSelector from './EjecutadoSelector'
 import MembreteModal from './MembreteModal'
+import { formatDateCL, formatDateTimeCL } from '@/lib/utils/dateInput'
 
 interface RolOverviewProps {
   rolData?: RolWorkspaceData
@@ -157,7 +158,7 @@ export default function RolOverview({ rolData, isRolLoading, isRolError, rolId }
               <div key={item.id} className="flex flex-col gap-1 text-sm text-slate-600">
                 <div className="font-medium text-slate-900">{item.tipo.nombre}</div>
                 <div className="text-xs text-slate-500">
-                  Fecha: {new Date(item.fecha).toLocaleDateString('es-CL')}
+                  Fecha: {formatDateCL(item.fecha)}
                 </div>
                 <div className="text-xs capitalize text-slate-500">Estado: {item.estado}</div>
               </div>
@@ -172,7 +173,7 @@ export default function RolOverview({ rolData, isRolLoading, isRolError, rolId }
                   Tipo: {doc.tipo} - v{doc.version}
                 </div>
                 <div className="text-xs text-slate-500">
-                  Creado: {new Date(doc.createdAt).toLocaleString('es-CL')}
+                  Creado: {formatDateTimeCL(doc.createdAt)}
                 </div>
               </div>
             )}
