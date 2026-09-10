@@ -103,7 +103,28 @@ const reportRestoreMetadata = z.object({
   sizeBytes: z.number().int().nonnegative(),
 }).strict()
 
+const signingMetadata = z.object({
+  jobId: id,
+  itemId: id.optional(),
+  deviceId: id.optional(),
+  attemptNumber: z.number().int().nonnegative().optional(),
+  status: z.string().min(1).max(40).optional(),
+  errorCode: z.string().min(1).max(80).optional(),
+  signatureId: id.optional(),
+}).strict()
+
 export const ACTIVITY_EVENT_CATALOG = {
+  'signing.requested': { module: 'documents', critical: true, metadata: signingMetadata },
+  'signing.claimed': { module: 'documents', critical: true, metadata: signingMetadata },
+  'signing.started': { module: 'documents', critical: true, metadata: signingMetadata },
+  'signing.lease_renewed': { module: 'documents', critical: true, metadata: signingMetadata },
+  'signing.lease_expired': { module: 'documents', critical: true, metadata: signingMetadata },
+  'signing.released': { module: 'documents', critical: true, metadata: signingMetadata },
+  'signing.failed': { module: 'documents', critical: true, metadata: signingMetadata },
+  'signing.completed': { module: 'documents', critical: true, metadata: signingMetadata },
+  'signing.retried': { module: 'documents', critical: true, metadata: signingMetadata },
+  'signing.cancelled': { module: 'documents', critical: true, metadata: signingMetadata },
+  'signing.job_status_changed': { module: 'documents', critical: true, metadata: signingMetadata },
   'auth.login': { module: 'auth', critical: false, metadata: emptyMetadata },
   'auth.logout': { module: 'auth', critical: false, metadata: emptyMetadata },
   'notification.created': { module: 'notificaciones', critical: true, metadata: notificationMetadata },

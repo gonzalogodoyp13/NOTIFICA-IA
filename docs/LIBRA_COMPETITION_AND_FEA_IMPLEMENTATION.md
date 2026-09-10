@@ -270,6 +270,13 @@ Coding agents should treat these as project constraints unless the product owner
 
 ### 2.4 Rules for coding-agent phase execution
 
+**Owner-authorized sequencing exception (September 2026):** Phases 1 and 2 may
+be implemented and verified before Phase 0 completes because their generic
+database and queue contracts do not depend on signing hardware. Real token and
+PAdES-LT execution still require Phase 0 evidence. See
+[the Phase 1/2 implementation record](SIGNING_PHASES_1_2_IMPLEMENTATION.md) for
+the backend contracts, verification and decisions that later phases must preserve.
+
 Each phase below is intended to be one bounded coding assignment. A coding agent should:
 
 1. Read this complete document before beginning its assigned phase.

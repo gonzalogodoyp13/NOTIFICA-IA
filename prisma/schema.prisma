@@ -10,6 +10,8 @@ datasource db {
 }
 
 model User {
+  requestedSigningJobs                 SigningJob[]
+  createdDeviceEnrollments             DeviceEnrollment[]
   id                                   String                            @id @default(cuid())
   authUserId                           String                            @unique
   email                                String                            @unique
@@ -41,9 +43,17 @@ model User {
 
   @@index([officeId])
   @@map("users")
+  @@unique([id, officeId])
 }
 
 model Office {
+  signingDevices                SigningDevice[]
+  deviceEnrollments             DeviceEnrollment[]
+  signingJobs                   SigningJob[]
+  signingItems                  SigningItem[]
+  signingAttempts               SigningAttempt[]
+  documentSignatures            DocumentSignature[]
+  documentDeliveries            DocumentDelivery[]
   id                            Int                            @id @default(autoincrement())
   nombre                        String
   cacheRevision                 Int                            @default(1)
@@ -838,6 +848,7 @@ model Ejecutado {
 }
 
 model RolCausa {
+  @@unique([id, officeId])
   id          String       @id
   demandaId   String?      @unique
   officeId    Int
@@ -899,6 +910,8 @@ model Notificacion {
 }
 
 model Documento {
+  // Filled from RolCausa by a BEFORE INSERT trigger for existing writers.
+  officeId            Int                @default(dbgenerated())
   id                  String             @id @default(cuid())
   rolId               String
   diligenciaId        String?
@@ -924,17 +937,23 @@ model Documento {
   notificacion        Notificacion?      @relation(fields: [notificacionId], references: [id])
   estampoBase         EstampoBase?       @relation(fields: [estampoBaseId], references: [id])
   estampo             Estampo?           @relation(fields: [estampoId], references: [id])
-  rol                 RolCausa           @relation(fields: [rolId], references: [id])
+  rol                 RolCausa           @relation(fields: [rolId, officeId], references: [id, officeId], onUpdate: Restrict)
   versions            DocumentoVersion[] @relation("DocumentoVersions")
   currentVersion      DocumentoVersion?  @relation("DocumentoCurrentVersion", fields: [currentVersionId], references: [id], onDelete: SetNull)
 
   @@index([rolId, createdAt])
+  @@unique([id, officeId])
   @@index([currentVersionId])
   @@index([notificacionId, tipo, voidedAt, createdAt])
   @@index([diligenciaId, tipo, voidedAt, createdAt])
 }
 
 model DocumentoVersion {
+  // Filled from Documento by a BEFORE INSERT trigger for existing writers.
+  officeId            Int         @default(dbgenerated())
+  signingItems        SigningItem[]
+  sourceSignatures    DocumentSignature[] @relation("SignatureSource")
+  signedSignatures    DocumentSignature[] @relation("SignatureOutput")
   id                  String      @id @default(cuid())
   documentoId         String
   versionNumber       Int
@@ -948,11 +967,12 @@ model DocumentoVersion {
   createdByUserId     String?
   deletedAt           DateTime?
   deletedByUserId     String?
-  documento           Documento   @relation("DocumentoVersions", fields: [documentoId], references: [id], onDelete: Cascade)
+  documento           Documento   @relation("DocumentoVersions", fields: [documentoId, officeId], references: [id, officeId], onDelete: Cascade, onUpdate: Restrict)
   currentForDocuments Documento[] @relation("DocumentoCurrentVersion")
   recibos             Recibo[]
 
   @@unique([documentoId, versionNumber])
+  @@unique([id, officeId, documentoId])
   @@index([documentoId, createdAt])
   @@index([storageBucket, storageKey])
 }
@@ -1416,4 +1436,257 @@ enum ReceiptStatus {
   ACTIVE
   VOIDED
   CORRECTED
+}
+enum SigningDeviceRole {
+  SIGNER
+  RECEIVER
+  SIGNER_RECEIVER
+}
+
+enum SigningDeviceHealth {
+  OFFLINE
+  AGENT_ONLINE_TOKEN_MISSING
+  TOKEN_READY
+  CERT_EXPIRING
+  CERT_EXPIRED
+  DRIVER_ERROR
+}
+
+enum SigningJobStatus {
+  QUEUED
+  RUNNING
+  WAITING_FOR_OPERATOR
+  COMPLETED
+  PARTIAL
+  FAILED
+  CANCELLED
+}
+
+enum SigningItemStatus {
+  QUEUED
+  CLAIMED
+  SIGNING
+  RETRY_PENDING
+  WAITING_FOR_OPERATOR
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+enum SignatureLevel {
+  PADES_B
+  PADES_T
+  PADES_LT
+  PADES_LTA
+}
+
+enum SigningAttemptResult {
+  RUNNING
+  SUCCEEDED
+  RETRYABLE_FAILURE
+  PERMANENT_FAILURE
+  OPERATOR_REQUIRED
+  LEASE_EXPIRED
+  RELEASED
+  CANCELLED
+}
+
+enum DocumentDeliveryStatus {
+  PENDING
+  DOWNLOADING
+  DELIVERED
+  RETRY_PENDING
+  FAILED
+  CANCELLED
+}
+
+model SigningDevice {
+  id                    String @id @default(cuid())
+  officeId              Int
+  name                  String
+  role                  SigningDeviceRole
+  health                SigningDeviceHealth @default(OFFLINE)
+  publicKey             String? @unique
+  certificateThumbprint String?
+  certificateIssuer     String?
+  certificateSubject    String?
+  certificateExpiresAt  DateTime?
+  providerType          String?
+  agentVersion          String?
+  lastHeartbeatAt       DateTime?
+  revokedAt             DateTime?
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+  office                Office @relation(fields: [officeId], references: [id], onDelete: Restrict)
+  enrollments           DeviceEnrollment[]
+  claimedItems          SigningItem[]
+  attempts              SigningAttempt[]
+  signatures            DocumentSignature[]
+  deliveries            DocumentDelivery[]
+
+  @@unique([id, officeId])
+  @@index([officeId, health, createdAt])
+  @@map("signing_devices")
+}
+
+model DeviceEnrollment {
+  id              String @id @default(cuid())
+  officeId        Int
+  role            SigningDeviceRole
+  secretHash      String @unique
+  expiresAt       DateTime
+  consumedAt      DateTime?
+  revokedAt       DateTime?
+  deviceId        String?
+  createdByUserId String
+  createdAt       DateTime @default(now())
+  office          Office @relation(fields: [officeId], references: [id], onDelete: Restrict)
+  device          SigningDevice? @relation(fields: [deviceId, officeId], references: [id, officeId], onDelete: Restrict, onUpdate: Restrict)
+  createdBy       User @relation(fields: [createdByUserId, officeId], references: [id, officeId], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([id, officeId])
+  @@index([officeId, expiresAt])
+  @@index([deviceId, officeId])
+  @@index([createdByUserId, officeId])
+  @@map("device_enrollments")
+}
+
+model SigningJob {
+  id                 String @id @default(cuid())
+  officeId           Int
+  requestedByUserId  String
+  idempotencyKey      String
+  requestHash        String
+  signerFingerprint  String
+  requestedLevel     SignatureLevel @default(PADES_LT)
+  status             SigningJobStatus @default(QUEUED)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+  completedAt        DateTime?
+  office             Office @relation(fields: [officeId], references: [id], onDelete: Restrict)
+  requestedBy        User @relation(fields: [requestedByUserId, officeId], references: [id, officeId], onDelete: Restrict, onUpdate: Restrict)
+  items              SigningItem[]
+
+  @@unique([id, officeId, signerFingerprint])
+  @@unique([officeId, idempotencyKey])
+  @@index([officeId, status, createdAt])
+  @@index([requestedByUserId, officeId])
+  @@map("signing_jobs")
+}
+
+model SigningItem {
+  id                 String @id @default(cuid())
+  officeId           Int
+  jobId              String
+  documentoId        String
+  sourceVersionId    String
+  sourceChecksum     String
+  signerFingerprint  String
+  status             SigningItemStatus @default(QUEUED)
+  leaseOwner         String?
+  // A fresh random fence for every claim, including reclaims by the same device.
+  leaseToken         String?
+  leaseExpiresAt     DateTime?
+  attemptCount       Int @default(0)
+  maxAttempts        Int @default(4)
+  availableAt        DateTime @default(now())
+  errorCode          String?
+  safeError          String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+  completedAt        DateTime?
+  office             Office @relation(fields: [officeId], references: [id], onDelete: Restrict)
+  job                SigningJob @relation(fields: [jobId, officeId, signerFingerprint], references: [id, officeId, signerFingerprint], onDelete: Restrict, onUpdate: Restrict)
+  sourceVersion      DocumentoVersion @relation(fields: [sourceVersionId, officeId, documentoId], references: [id, officeId, documentoId], onDelete: Restrict, onUpdate: Restrict)
+  device             SigningDevice? @relation(fields: [leaseOwner, officeId], references: [id, officeId], onDelete: Restrict, onUpdate: Restrict)
+  attempts           SigningAttempt[]
+  signature          DocumentSignature?
+
+  @@unique([id, officeId])
+  @@unique([id, officeId, sourceVersionId, documentoId, signerFingerprint], map: "signing_items_signature_identity_key")
+  @@unique([jobId, sourceVersionId])
+  @@index([officeId, status, availableAt, createdAt])
+  @@index([leaseOwner, leaseExpiresAt])
+  @@index([sourceVersionId, officeId, documentoId])
+  @@map("signing_items")
+}
+
+model SigningAttempt {
+  id              String @id @default(cuid())
+  officeId        Int
+  itemId          String
+  deviceId        String
+  attemptNumber   Int
+  leaseToken      String @unique
+  result          SigningAttemptResult @default(RUNNING)
+  errorCode       String?
+  safeError       String?
+  startedAt       DateTime @default(now())
+  completedAt     DateTime?
+  office          Office @relation(fields: [officeId], references: [id], onDelete: Restrict)
+  item            SigningItem @relation(fields: [itemId, officeId], references: [id, officeId], onDelete: Restrict, onUpdate: Restrict)
+  device          SigningDevice @relation(fields: [deviceId, officeId], references: [id, officeId], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([itemId, attemptNumber])
+  @@index([officeId, result, startedAt])
+  @@index([deviceId, officeId])
+  @@map("signing_attempts")
+}
+
+model DocumentSignature {
+  id                  String @id @default(cuid())
+  officeId            Int
+  itemId              String @unique
+  deviceId            String
+  documentoId         String
+  sourceVersionId     String
+  signedVersionId     String
+  signerFingerprint   String
+  certificateIssuer   String
+  providerType        String
+  level               SignatureLevel
+  digestAlgorithm     String @default("SHA256")
+  sourceChecksum      String
+  signedChecksum      String
+  timestampAt         DateTime
+  revocationCheckedAt DateTime
+  validatedAt         DateTime
+  createdAt           DateTime @default(now())
+  office              Office @relation(fields: [officeId], references: [id], onDelete: Restrict)
+  item                SigningItem @relation(fields: [itemId, officeId, sourceVersionId, documentoId, signerFingerprint], references: [id, officeId, sourceVersionId, documentoId, signerFingerprint], onDelete: Restrict, onUpdate: Restrict, map: "document_signatures_item_identity_fkey")
+  device              SigningDevice @relation(fields: [deviceId, officeId], references: [id, officeId], onDelete: Restrict, onUpdate: Restrict)
+  sourceVersion       DocumentoVersion @relation("SignatureSource", fields: [sourceVersionId, officeId, documentoId], references: [id, officeId, documentoId], onDelete: Restrict, onUpdate: Restrict)
+  signedVersion       DocumentoVersion @relation("SignatureOutput", fields: [signedVersionId, officeId, documentoId], references: [id, officeId, documentoId], onDelete: Restrict, onUpdate: Restrict)
+  deliveries          DocumentDelivery[]
+
+  @@unique([id, officeId])
+  @@unique([officeId, sourceVersionId, signerFingerprint], map: "document_signatures_source_signer_key")
+  @@unique([signedVersionId])
+  @@unique([itemId, officeId, sourceVersionId, documentoId, signerFingerprint], map: "document_signatures_item_identity_key")
+  @@index([officeId, documentoId, createdAt])
+  @@index([deviceId, officeId])
+  @@map("document_signatures")
+}
+
+model DocumentDelivery {
+  id              String @id @default(cuid())
+  officeId        Int
+  signatureId     String
+  deviceId        String
+  status          DocumentDeliveryStatus @default(PENDING)
+  attemptCount    Int @default(0)
+  availableAt     DateTime @default(now())
+  deliveredAt     DateTime?
+  errorCode       String?
+  safeError       String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  office          Office @relation(fields: [officeId], references: [id], onDelete: Restrict)
+  signature       DocumentSignature @relation(fields: [signatureId, officeId], references: [id, officeId], onDelete: Restrict, onUpdate: Restrict)
+  device          SigningDevice @relation(fields: [deviceId, officeId], references: [id, officeId], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([signatureId, deviceId])
+  @@index([officeId, status, createdAt])
+  @@index([deviceId, status, availableAt, id])
+  @@map("document_deliveries")
 }
