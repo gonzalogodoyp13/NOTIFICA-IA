@@ -3,6 +3,7 @@ vi.mock('server-only', () => ({}))
 import { SigningItemStatus, SigningJobStatus } from '@prisma/client'
 import { aggregateJobStatus, assertItemTransition, assertJobTransition, CreateSigningJobSchema, safeSigningError, assertEligibleVersion } from '../../lib/signing/core'
 import { validateCatalogEvent } from '../../lib/audit/catalog'
+import { SigningEvidenceSchema, meetsRequestedSigningLevel } from '../../lib/signing/core'
 
 describe('signing domain contracts', () => {
   const expected: Record<SigningItemStatus, SigningItemStatus[]> = {
@@ -50,13 +51,40 @@ describe('signing domain contracts', () => {
     expect(safeSigningError('TSA_UNAVAILABLE')).toMatchObject({ retryable: true })
     expect(safeSigningError('REVOCATION_UNAVAILABLE')).toMatchObject({ retryable: true })
   })
-  it('rejects extra credential fields, weak signature levels and malformed fingerprints', () => {
+  it('accepts basic signing but rejects credentials, unsupported profiles and malformed fingerprints', () => {
     const input = { idempotencyKey: 'test', sourceVersionIds: ['v1'], signerFingerprint: 'a'.repeat(64) }
     expect(CreateSigningJobSchema.parse(input).requestedLevel).toBe('PADES_LT')
-    for (const extra of [{ pin: '1234' }, { requestedLevel: 'PADES_B' }, { signerFingerprint: 'wrong' }, { sourceVersionIds: [] }]) {
+    expect(CreateSigningJobSchema.parse({ ...input, requestedLevel: 'PADES_B' }).requestedLevel).toBe('PADES_B')
+    for (const extra of [{ pin: '1234' }, { requestedLevel: 'PADES_X' }, { signerFingerprint: 'wrong' }, { sourceVersionIds: [] }]) {
       expect(() => CreateSigningJobSchema.parse({ ...input, ...extra })).toThrow()
     }
     expect(() => validateCatalogEvent('signing.claimed', 'documents', { jobId: 'j', pin: '1234' })).toThrow()
+  })
+  it('requires timestamp evidence only for timestamped profiles, and validation and revocation for all', () => {
+    const common = { signedVersionId: 'output', signedChecksum: 'b'.repeat(64), signerFingerprint: 'a'.repeat(64),
+      certificateIssuer: 'Test issuer', providerType: 'TEST', revocationCheckedAt: new Date(), validatedAt: new Date() }
+    for (const level of ['PADES_B', 'PADES_LT', 'PADES_LTA'] as const) {
+      expect(SigningEvidenceSchema.safeParse({ ...common, level, timestampAt: new Date() }).success).toBe(true)
+      for (const timestampAt of [null, undefined]) {
+        const result = SigningEvidenceSchema.safeParse({ ...common, level, timestampAt })
+        expect(result.success).toBe(level === 'PADES_B')
+        if (result.success) expect(result.data.timestampAt).toBeNull()
+      }
+      for (const patch of [{ revocationCheckedAt: undefined }, { validatedAt: undefined }, { signedChecksum: 'bad' }, { pin: 'secret' }]) {
+        expect(SigningEvidenceSchema.safeParse({ ...common, level, timestampAt: new Date(), ...patch }).success).toBe(false)
+      }
+    }
+  })
+  it('enforces the requested minimum profile without downgrade', () => {
+    const levels = ['PADES_B', 'PADES_T', 'PADES_LT', 'PADES_LTA'] as const
+    levels.forEach((requested, requestedIndex) => levels.forEach((actual, actualIndex) => {
+      expect(meetsRequestedSigningLevel(actual, requested)).toBe(actualIndex >= requestedIndex)
+    }))
+  })
+  it('distinguishes a locked token session from an incorrect PIN without automatic retries', () => {
+    expect(safeSigningError('PIN_REQUIRED')).toMatchObject({ code: 'PIN_REQUIRED', retryable: false, operatorRequired: true })
+    expect(safeSigningError('PIN_REQUIRED').message).not.toBe(safeSigningError('PIN_INCORRECT').message)
+    expect(safeSigningError('PIN_REQUIRED pin=1234').code).toBe('UNKNOWN')
   })
   it('rejects foreign, voided, deleted, superseded, missing and non-PDF source versions', () => {
     const valid = { id: 'v', officeId: 1, checksumSha256: 'a'.repeat(64), mimeType: 'application/pdf', sizeBytes: 2,

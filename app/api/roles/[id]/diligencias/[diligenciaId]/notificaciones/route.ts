@@ -1,3 +1,4 @@
+import { workflowTransaction } from '@/lib/signing/transaction'
 import { NextRequest, NextResponse } from 'next/server'
 
 import { randomUUID } from 'crypto'
@@ -105,7 +106,7 @@ export async function POST(
     }
 
     // Crear nueva notificación
-    const notificacion = await prisma.$transaction(async tx => {
+    const notificacion = await workflowTransaction(prisma, { officeId: user.officeId, userId: user.id }, async tx => {
       const created = await tx.notificacion.create({
         data: {
           id: randomUUID(),
@@ -123,7 +124,7 @@ export async function POST(
           updatedAt: true,
         },
       })
-      await syncDiligenceWorkflowState(params.diligenciaId, tx)
+      await syncDiligenceWorkflowState(params.diligenciaId, tx, { officeId: user.officeId, userId: user.id })
       await recordCriticalEvent(tx, user, {
         eventType: 'notification.created',
         module: 'notificaciones',

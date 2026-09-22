@@ -1,3 +1,4 @@
+import { workflowTransaction } from '@/lib/signing/transaction'
 import { withApiUser } from '@/lib/api/server'
 import { NextRequest, NextResponse } from 'next/server'
 import { Prisma } from '@prisma/client'
@@ -282,7 +283,7 @@ export async function POST(
       fileName: documento.nombre,
       createdAt: documento.createdAt,
     })
-    const documentoWithVersion = await prisma.$transaction(async tx => {
+    const documentoWithVersion = await workflowTransaction(prisma, { officeId: user.officeId, userId: user.id }, async tx => {
       const documentVersion = await tx.documentoVersion.create({
         data: { documentoId: documento.id, versionNumber: 1, ...storedPdf, createdByUserId: user.id },
       })
@@ -295,14 +296,14 @@ export async function POST(
           data: { meta: { ...notificacionMeta, estampoDraft: filled } },
         })
       }
-      await syncDiligenceWorkflowState(diligencia.id, tx)
+      const workflow = await syncDiligenceWorkflowState(diligencia.id, tx, { officeId: user.officeId, userId: user.id })
       const queuedEvent = await enqueueExternalEvent(tx, user, {
         eventType: 'stamp.generated', module: 'documents', result: 'success',
         recordType: 'Documento', recordId: updated.id, rolId: diligencia.rolId, rol: diligencia.rol.rol,
         description: 'Estampo generado.', deduplicationKey: `stamp:${documentVersion.id}:generated`,
         metadata: { documentId: updated.id, documentVersionId: documentVersion.id, templateId: estampo.id, templateSlug: `custom-${estampo.id}`, templateCategory: estampo.tipo, notificationId: notificacionId, version: 1 },
       })
-      return { documento: updated, outboxId: queuedEvent.id }
+      return { documento: updated, outboxId: queuedEvent.id, signing: workflow.signing }
     })
     await processActivityOutbox(1, documentoWithVersion.outboxId).catch(() => undefined)
     const completedDocumento = documentoWithVersion.documento
@@ -335,6 +336,7 @@ export async function POST(
           estampoBase: null,
         },
         notificacion: serializedNotificacion,
+        signing: documentoWithVersion.signing,
       },
     })
   } catch (error) {

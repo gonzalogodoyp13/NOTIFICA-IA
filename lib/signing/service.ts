@@ -7,36 +7,68 @@ import { recordCriticalEvent } from '../audit/activityEvent'
 import { prisma } from '../prisma'
 import {
   aggregateJobStatus, assertEligibleVersion, assertItemTransition, assertJobTransition, CreateSigningJobSchema,
-  Identifier, LeaseSchema, retryDelayMs, safeSigningError, Sha256, SigningContextSchema,
+  Identifier, LeaseSchema, retryDelayMs, safeSigningError, SigningContextSchema,
+  SigningEvidenceSchema, meetsRequestedSigningLevel,
   SigningError, type SigningContext, type SigningLease,
 } from './core'
+
+import { lockSigningOffice } from './transaction'
 
 type Tx = Prisma.TransactionClient
 const leaseDuration = z.number().int().min(1_000).max(300_000)
 const clearLease = { leaseOwner: null, leaseToken: null, leaseExpiresAt: null }
 const terminalJobs = ['COMPLETED', 'PARTIAL', 'FAILED', 'CANCELLED']
-const EvidenceSchema = z.object({
-  signedVersionId: Identifier, signedChecksum: Sha256,
-  certificateIssuer: z.string().min(1).max(500), providerType: z.string().min(1).max(80),
-  signerFingerprint: Sha256, level: z.enum(['PADES_LT', 'PADES_LTA']),
-  timestampAt: z.date(), revocationCheckedAt: z.date(), validatedAt: z.date(),
-}).strict()
-export type ValidatedSigningEvidence = z.infer<typeof EvidenceSchema>
+export type ValidatedSigningEvidence = z.input<typeof SigningEvidenceSchema>
+
+/** Internal transaction primitive; the caller owns the office lock and commit. */
+export async function createSigningJobInTransaction(tx: Tx, context: SigningContext, raw: z.input<typeof CreateSigningJobSchema>) {
+  SigningContextSchema.parse(context)
+  const input = CreateSigningJobSchema.parse(raw)
+  const sourceVersionIds = Array.from(new Set(input.sourceVersionIds)).sort()
+  const requestHash = createHash('sha256').update(JSON.stringify({ ...input, sourceVersionIds })).digest('hex')
+  const now = await lockSigningOffice(tx, context.officeId)
+  const actor = await tx.user.findFirst({ where: { id: context.userId, officeId: context.officeId, isActive: true } })
+  if (!actor) throw new SigningError('FORBIDDEN')
+  const existing = await tx.signingJob.findUnique({ where: { officeId_idempotencyKey: { officeId: context.officeId, idempotencyKey: input.idempotencyKey } }, include: { items: true } })
+  if (existing) {
+    if (existing.requestHash !== requestHash) throw new SigningError('IDEMPOTENCY_CONFLICT')
+    return existing
+  }
+  const versions = await tx.documentoVersion.findMany({ where: { id: { in: sourceVersionIds }, officeId: context.officeId }, include: { documento: true, signedSignatures: { select: { id: true } } } })
+  if (versions.length !== sourceVersionIds.length) throw new SigningError('NOT_FOUND')
+  for (const v of versions) {
+    assertEligibleVersion(v, context.officeId)
+    if (v.signedSignatures.length) throw new SigningError('INELIGIBLE_SOURCE')
+  }
+  const alreadySigned = await tx.documentSignature.count({ where: { officeId: context.officeId, sourceVersionId: { in: sourceVersionIds }, signerFingerprint: input.signerFingerprint } })
+  if (alreadySigned) throw new SigningError('ALREADY_SIGNED')
+  const active = await tx.signingItem.count({ where: { officeId: context.officeId, sourceVersionId: { in: sourceVersionIds }, signerFingerprint: input.signerFingerprint, status: { notIn: ['FAILED', 'CANCELLED'] } } })
+  if (active) throw new SigningError('ALREADY_QUEUED')
+  const job = await tx.signingJob.create({ data: { officeId: context.officeId, requestedByUserId: context.userId,
+    idempotencyKey: input.idempotencyKey, requestHash, signerFingerprint: input.signerFingerprint, requestedLevel: input.requestedLevel } })
+  await tx.signingItem.createMany({ data: versions.map(v => ({ jobId: job.id, officeId: context.officeId,
+    documentoId: v.documentoId, sourceVersionId: v.id, sourceChecksum: v.checksumSha256,
+    signerFingerprint: input.signerFingerprint, maxAttempts: input.maxAttempts, availableAt: now })) })
+  await recordCriticalEvent(tx, { officeId: context.officeId, id: context.userId, source: 'INTERNAL' }, {
+    eventType: 'signing.requested', module: 'documents', recordType: 'SigningJob', recordId: job.id,
+    metadata: { jobId: job.id, status: job.status },
+  })
+  return tx.signingJob.findUniqueOrThrow({ where: { id: job.id }, include: { items: true } })
+}
 
 /** Internal orchestration only. Phase 4 must authenticate callers before using
  * this service. complete() accepts evidence from the future independent Phase 7
  * validator; it does not perform PDF cryptography or promote document versions.
  */
-export function createSigningService(db: PrismaClient = prisma) {
+export function createSigningService(db: PrismaClient = prisma,
+  deviceGuard?: (tx: Tx, officeId: number, deviceId: string, now: Date) => Promise<void>) {
   async function transaction<T>(officeId: number, run: (tx: Tx, now: Date) => Promise<T>) {
     z.number().int().positive().parse(officeId)
     return db.$transaction(async tx => {
       // All mutations for an office take this lock first. This also serializes
       // aggregate recalculation, cancellation, retries and idempotent creation.
       // Offices remain independent; the token itself processes PDFs serially.
-      await tx.$executeRaw`SELECT pg_advisory_xact_lock(734201, ${officeId}::integer)`
-      const [clock] = await tx.$queryRaw<Array<{ now: Date }>>`SELECT clock_timestamp() AS now`
-      return run(tx, clock.now)
+      return run(tx, await lockSigningOffice(tx, officeId))
     }, { timeout: 30_000, maxWait: 15_000 })
   }
 
@@ -48,6 +80,7 @@ export function createSigningService(db: PrismaClient = prisma) {
   }
   async function device(tx: Tx, officeId: number, deviceId: string) {
     Identifier.parse(deviceId)
+    if (deviceGuard) await deviceGuard(tx, officeId, deviceId, await lockSigningOffice(tx, officeId))
     const actor = await tx.signingDevice.findFirst({ where: { id: deviceId, officeId, revokedAt: null, role: { in: ['SIGNER', 'SIGNER_RECEIVER'] } } })
     if (!actor) throw new SigningError('FORBIDDEN')
     return actor
@@ -109,34 +142,7 @@ export function createSigningService(db: PrismaClient = prisma) {
   return {
     async createJob(context: SigningContext, raw: z.input<typeof CreateSigningJobSchema>) {
       SigningContextSchema.parse(context)
-      const input = CreateSigningJobSchema.parse(raw)
-      const sourceVersionIds = Array.from(new Set(input.sourceVersionIds)).sort()
-      const requestHash = createHash('sha256').update(JSON.stringify({ ...input, sourceVersionIds })).digest('hex')
-      return transaction(context.officeId, async (tx, now) => {
-        await user(tx, context)
-        const existing = await tx.signingJob.findUnique({ where: { officeId_idempotencyKey: { officeId: context.officeId, idempotencyKey: input.idempotencyKey } }, include: { items: true } })
-        if (existing) {
-          if (existing.requestHash !== requestHash) throw new SigningError('IDEMPOTENCY_CONFLICT')
-          return existing
-        }
-        const versions = await tx.documentoVersion.findMany({ where: { id: { in: sourceVersionIds }, officeId: context.officeId }, include: { documento: true, signedSignatures: { select: { id: true } } } })
-        if (versions.length !== sourceVersionIds.length) throw new SigningError('NOT_FOUND')
-        for (const v of versions) {
-          assertEligibleVersion(v, context.officeId)
-          if (v.signedSignatures.length) throw new SigningError('INELIGIBLE_SOURCE')
-        }
-        const alreadySigned = await tx.documentSignature.count({ where: { officeId: context.officeId, sourceVersionId: { in: sourceVersionIds }, signerFingerprint: input.signerFingerprint } })
-        if (alreadySigned) throw new SigningError('ALREADY_SIGNED')
-        const active = await tx.signingItem.count({ where: { officeId: context.officeId, sourceVersionId: { in: sourceVersionIds }, signerFingerprint: input.signerFingerprint, status: { notIn: ['FAILED', 'CANCELLED'] } } })
-        if (active) throw new SigningError('ALREADY_QUEUED')
-        const job = await tx.signingJob.create({ data: { officeId: context.officeId, requestedByUserId: context.userId,
-          idempotencyKey: input.idempotencyKey, requestHash, signerFingerprint: input.signerFingerprint, requestedLevel: input.requestedLevel } })
-        await tx.signingItem.createMany({ data: versions.map(v => ({ jobId: job.id, officeId: context.officeId,
-          documentoId: v.documentoId, sourceVersionId: v.id, sourceChecksum: v.checksumSha256,
-          signerFingerprint: input.signerFingerprint, maxAttempts: input.maxAttempts, availableAt: now })) })
-        await audit(tx, context.officeId, 'signing.requested', { jobId: job.id, status: job.status }, context.userId)
-        return tx.signingJob.findUniqueOrThrow({ where: { id: job.id }, include: { items: true } })
-      })
+      return transaction(context.officeId, tx => createSigningJobInTransaction(tx, context, raw))
     },
 
     async getJob(context: SigningContext, jobId: string) {
@@ -232,13 +238,13 @@ export function createSigningService(db: PrismaClient = prisma) {
 
     async complete(lease: SigningLease, raw: ValidatedSigningEvidence) {
       LeaseSchema.parse(lease)
-      const evidence = EvidenceSchema.parse(raw)
+      const evidence = SigningEvidenceSchema.parse(raw)
       return transaction(lease.officeId, async (tx, now) => {
         await device(tx, lease.officeId, lease.deviceId)
         const prior = await tx.documentSignature.findFirst({ where: { officeId: lease.officeId, itemId: lease.itemId } })
         if (prior) {
           const attempt = await tx.signingAttempt.findFirst({ where: { officeId: lease.officeId, itemId: lease.itemId, deviceId: lease.deviceId, leaseToken: lease.leaseToken, result: 'SUCCEEDED' } })
-          if (!attempt || prior.signedVersionId !== evidence.signedVersionId || prior.signedChecksum !== evidence.signedChecksum || prior.signerFingerprint !== evidence.signerFingerprint) throw new SigningError('RESULT_CONFLICT')
+          if (!attempt || prior.signedVersionId !== evidence.signedVersionId || prior.signedChecksum !== evidence.signedChecksum || prior.signerFingerprint !== evidence.signerFingerprint || prior.level !== evidence.level) throw new SigningError('RESULT_CONFLICT')
           return prior
         }
         const item = await ownedLease(tx, lease, now)
@@ -246,7 +252,7 @@ export function createSigningService(db: PrismaClient = prisma) {
         await eligible(tx, item)
         const job = await tx.signingJob.findUniqueOrThrow({ where: { id: item.jobId } })
         if (evidence.signerFingerprint !== item.signerFingerprint ||
-          (job.requestedLevel === 'PADES_LTA' && evidence.level !== 'PADES_LTA')) throw new SigningError('INVALID_EVIDENCE')
+          !meetsRequestedSigningLevel(evidence.level, job.requestedLevel)) throw new SigningError('INVALID_EVIDENCE')
         const output = await tx.documentoVersion.findFirst({ where: { id: evidence.signedVersionId, officeId: lease.officeId,
           documentoId: item.documentoId, deletedAt: null, mimeType: 'application/pdf', checksumSha256: evidence.signedChecksum } })
         if (!output || output.id === item.sourceVersionId || output.sizeBytes <= 0) throw new SigningError('INVALID_EVIDENCE')

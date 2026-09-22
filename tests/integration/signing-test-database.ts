@@ -11,8 +11,8 @@ export async function createSigningTestDatabase() {
   const url = new URL(process.env.DIRECT_URL ?? process.env.DATABASE_URL!)
   const admin = new PrismaClient({ datasourceUrl: url.toString() })
   const schema = `signing_test_${randomUUID().replaceAll('-', '')}`
-  const tables = ['offices', 'users', 'Tribunal', 'RolCausa', 'Documento', 'DocumentoVersion',
-    'signing_devices', 'device_enrollments', 'signing_jobs', 'signing_items', 'signing_attempts',
+  const tables = ['offices', 'users', 'Tribunal', 'RolCausa', 'DiligenciaTipo', 'Diligencia', 'notificaciones', 'Documento', 'DocumentoVersion',
+    'signing_devices', 'device_enrollments', 'device_challenges', 'device_sessions', 'device_rate_limits', 'signing_jobs', 'signing_items', 'signing_attempts',
     'document_signatures', 'document_deliveries', 'activity_events']
   const functions = ['derive_document_office', 'check_signing_artifact', 'protect_signing_artifact', 'prevent_activity_history_mutation']
   let created = false

@@ -1,3 +1,4 @@
+import { workflowTransaction } from '@/lib/signing/transaction'
 import { withApiUser } from '@/lib/api/server'
 // API route: /api/documentos
 // GET/POST/PUT/DELETE: CRUD operations for Documento (ROL Phase 4)
@@ -141,7 +142,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Create Documento
-    const documento = await prisma.$transaction(async tx => {
+    const documento = await workflowTransaction(prisma, { officeId: user.officeId, userId: user.id }, async tx => {
       const created = await tx.documento.create({
         data: {
           rolId: parsed.data.rolId, diligenciaId: parsed.data.diligenciaId || null,
@@ -161,7 +162,7 @@ export async function POST(req: NextRequest) {
         description: 'Documento creado.',
         metadata: { documentId: created.id, documentType: created.tipo, version: created.version, diligenceId: created.diligenciaId },
       })
-      if (created.diligenciaId) await syncDiligenceWorkflowState(created.diligenciaId, tx)
+      if (created.diligenciaId) await syncDiligenceWorkflowState(created.diligenciaId, tx, { officeId: user.officeId, userId: user.id })
       return created
     })
 
@@ -233,7 +234,7 @@ export async function PUT(req: NextRequest) {
     assertRoleWorkflowWritable(documento.rol.estado)
 
     // Update documento
-    const updated = await prisma.$transaction(async tx => {
+    const updated = await workflowTransaction(prisma, { officeId: user.officeId, userId: user.id }, async tx => {
       const result = await tx.documento.update({
         where: { id }, data: parsed.data,
         include: {
@@ -249,7 +250,7 @@ export async function PUT(req: NextRequest) {
         description: 'Documento actualizado.',
         metadata: { documentId: result.id, version: result.version, changedFields: Object.keys(parsed.data).slice(0, 100) },
       })
-      if (result.diligenciaId) await syncDiligenceWorkflowState(result.diligenciaId, tx)
+      if (result.diligenciaId) await syncDiligenceWorkflowState(result.diligenciaId, tx, { officeId: user.officeId, userId: user.id })
       return result
     })
 
@@ -317,13 +318,9 @@ export async function DELETE(req: NextRequest) {
 
     assertRoleWorkflowWritable(documento.rol.estado)
 
-    for (const version of documento.versions) {
-      await deletePdfFromDocumentStorage(version.storageBucket, version.storageKey)
-    }
-
-    await prisma.$transaction(async tx => {
+    await workflowTransaction(prisma, { officeId: user.officeId, userId: user.id }, async tx => {
       await tx.documento.delete({ where: { id } })
-      if (documento.diligenciaId) await syncDiligenceWorkflowState(documento.diligenciaId, tx)
+      if (documento.diligenciaId) await syncDiligenceWorkflowState(documento.diligenciaId, tx, { officeId: user.officeId, userId: user.id })
       await recordCriticalEvent(tx, user, {
         eventType: 'document.deleted', module: 'documents', result: 'success',
         recordType: 'Documento', recordId: id, rolId: documento.rolId,
@@ -331,6 +328,13 @@ export async function DELETE(req: NextRequest) {
         metadata: { documentId: id, documentType: documento.tipo, version: documento.version, deletedVersionCount: documento.versions.length },
       })
     })
+
+    // A pinned signing source may reject the transaction; preserve its stored PDF.
+    for (const version of documento.versions) {
+      await deletePdfFromDocumentStorage(version.storageBucket, version.storageKey).catch(() => {
+          console.warn('[documents] Storage cleanup pending after committed document deletion.')
+        })
+    }
 
     return NextResponse.json({ ok: true, message: 'Documento eliminado correctamente' })
   } catch (error) {

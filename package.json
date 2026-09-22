@@ -15,7 +15,7 @@
     "verify:audit-retirement": "ts-node --project scripts/tsconfig.json scripts/verify-audit-retirement.ts",
     "test:phase6": "ts-node --project scripts/tsconfig.json scripts/verify-phase6-recibos.ts",
     "test:integration": "vitest run",
-    "test:signing": "vitest run tests/integration/signing-core.test.ts",
+    "test:signing": "vitest run tests/integration/signing-core.test.ts tests/integration/signing-automatic-config.test.ts",
     "test:signing:database": "node scripts/test-signing-database.mjs",
     "test:e2e": "playwright test --config=playwright.config.ts",
     "test:qa": "ts-node --project scripts/tsconfig.json scripts/run-qa-tests.ts",

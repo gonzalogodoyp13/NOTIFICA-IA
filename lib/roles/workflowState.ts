@@ -1,6 +1,9 @@
 import 'server-only'
 
 import { Prisma } from '@prisma/client'
+import { randomUUID } from 'node:crypto'
+import { SigningContextSchema, type SigningContext } from '@/lib/signing/core'
+import { emptySigningResult, enqueueCompletedDiligence } from '@/lib/signing/automaticEnqueue'
 
 import { ApiError } from '@/lib/api/server'
 import { prisma } from '@/lib/prisma'
@@ -46,20 +49,25 @@ export async function syncRoleProgressState(rolId: string, db: WorkflowDb = pris
 
 export async function syncDiligenceWorkflowState(
   diligenciaId: string,
-  db: WorkflowDb = prisma
+  db: Prisma.TransactionClient,
+  context: SigningContext
 ) {
-  const diligence = await db.diligencia.findUnique({
-    where: { id: diligenciaId },
+  SigningContextSchema.parse(context)
+  const diligence = await db.diligencia.findFirst({
+    where: { id: diligenciaId, rol: { officeId: context.officeId } },
     select: {
       id: true,
       rolId: true,
       estado: true,
+      meta: true,
+      rol: { select: { estado: true } },
       notificaciones: {
         where: { voidedAt: null },
         select: {
           documentos: {
             where: {
               voidedAt: null,
+              officeId: context.officeId,
               tipo: { in: ['Recibo', 'Estampo'] },
               OR: [
                 { pdfId: { not: null } },
@@ -73,7 +81,8 @@ export async function syncDiligenceWorkflowState(
     },
   })
 
-  if (!diligence) return null
+  if (!diligence) throw new ApiError('NOT_FOUND', 'Diligencia no encontrada.', 404)
+  assertRoleWorkflowWritable(diligence.rol.estado)
 
   const nextStatus = deriveDiligenceWorkflowStatus({
     currentStatus: diligence.estado,
@@ -82,7 +91,19 @@ export async function syncDiligenceWorkflowState(
     ),
   })
 
-  if (nextStatus !== diligence.estado) {
+  let signing = emptySigningResult('NOT_COMPLETED')
+  if (nextStatus === 'completada') {
+    const meta = diligence.meta && typeof diligence.meta === 'object' && !Array.isArray(diligence.meta)
+      ? diligence.meta as Prisma.JsonObject : {}
+    const completionEventId = diligence.estado === 'completada' && typeof meta.signingCompletionEventId === 'string'
+      ? meta.signingCompletionEventId : randomUUID()
+    if (nextStatus !== diligence.estado || completionEventId !== meta.signingCompletionEventId) {
+      await db.diligencia.update({ where: { id: diligence.id }, data: {
+        estado: nextStatus, meta: { ...meta, signingCompletionEventId: completionEventId, completadaEn: new Date().toISOString() },
+      } })
+    }
+    signing = await enqueueCompletedDiligence(db, context, diligence, completionEventId)
+  } else if (nextStatus !== diligence.estado) {
     await db.diligencia.update({
       where: { id: diligence.id },
       data: { estado: nextStatus },
@@ -90,5 +111,5 @@ export async function syncDiligenceWorkflowState(
   }
 
   await syncRoleProgressState(diligence.rolId, db)
-  return nextStatus
+  return { status: nextStatus, signing }
 }

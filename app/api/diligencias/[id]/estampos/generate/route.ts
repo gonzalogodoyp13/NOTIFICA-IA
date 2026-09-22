@@ -1,3 +1,4 @@
+import { workflowTransaction } from '@/lib/signing/transaction'
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 
@@ -166,7 +167,7 @@ export async function POST(
       fileName: documento.nombre,
       createdAt: documento.createdAt,
     })
-    const documentoWithVersion = await prisma.$transaction(async tx => {
+    const documentoWithVersion = await workflowTransaction(prisma, { officeId: user.officeId, userId: user.id }, async tx => {
       const documentVersion = await tx.documentoVersion.create({
         data: {
           documentoId: documento.id,
@@ -180,7 +181,7 @@ export async function POST(
         data: { currentVersionId: documentVersion.id },
         include: { currentVersion: true },
       })
-      await syncDiligenceWorkflowState(diligencia.id, tx)
+      const workflow = await syncDiligenceWorkflowState(diligencia.id, tx, { officeId: user.officeId, userId: user.id })
       const queuedEvent = await enqueueExternalEvent(tx, user, {
         eventType: 'stamp.generated',
         module: 'documents',
@@ -201,7 +202,7 @@ export async function POST(
           version: 1,
         },
       })
-      return { documento: updated, outboxId: queuedEvent.id }
+      return { documento: updated, outboxId: queuedEvent.id, signing: workflow.signing }
     })
     await processActivityOutbox(1, documentoWithVersion.outboxId).catch(error => {
       console.error('[stamp] Immediate activity outbox drain failed:', error)
@@ -244,6 +245,7 @@ export async function POST(
           },
         },
         notificacion: serializedNotificacion,
+        signing: documentoWithVersion.signing,
       },
     })
   } catch (error) {

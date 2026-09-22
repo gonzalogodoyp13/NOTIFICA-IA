@@ -35,5 +35,9 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+/.tools/
+/agents/windows/**/bin/
+/agents/windows/**/obj/
+/agents/windows/artifacts/
 
 

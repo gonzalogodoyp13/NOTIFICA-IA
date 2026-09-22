@@ -13,10 +13,10 @@ describe.skipIf(process.env.SIGNING_DATABASE_TESTS !== '1')('signing Phase 2: re
   beforeAll(async () => { sandbox = await createSigningTestDatabase(); service = createSigningService(sandbox.db) }, 120_000)
   afterAll(async () => { if (sandbox) await sandbox.dispose() }, 60_000)
 
-  async function setup(count = 1, maxAttempts = 4) {
+  async function setup(count = 1, maxAttempts = 4, requestedLevel: 'PADES_B' | 'PADES_LT' | 'PADES_LTA' = 'PADES_LT') {
     const f = await signingFixture(sandbox.db)
     const versions = await Promise.all(Array.from({ length: count }, () => f.document()))
-    const input = { idempotencyKey: randomUUID(), sourceVersionIds: versions.map(v => v.source.id), signerFingerprint: fingerprint, maxAttempts }
+    const input = { idempotencyKey: randomUUID(), sourceVersionIds: versions.map(v => v.source.id), signerFingerprint: fingerprint, maxAttempts, requestedLevel }
     const job = await service.createJob(f.context, input)
     const claim = () => service.claim(f.office.id, f.device.id)
     const lease = (item: SigningItem) => ({ officeId: f.office.id, deviceId: f.device.id, itemId: item.id, leaseToken: item.leaseToken! })
@@ -26,6 +26,63 @@ describe.skipIf(process.env.SIGNING_DATABASE_TESTS !== '1')('signing Phase 2: re
       timestampAt: new Date(), revocationCheckedAt: new Date(), validatedAt: new Date() })
     return { ...f, versions, input, job, claim, lease, evidence }
   }
+
+  it('completes basic signing without timestamp evidence and preserves idempotency and immutable evidence', async () => {
+    const f = await setup(1, 4, 'PADES_B')
+    const item = (await f.claim())!
+    await service.start(f.lease(item))
+    const evidence = { ...f.evidence(item), level: 'PADES_B' as const, timestampAt: undefined }
+    const signature = await service.complete(f.lease(item), evidence)
+    expect(signature.level).toBe('PADES_B')
+    expect(signature.timestampAt).toBeNull()
+    expect(signature.revocationCheckedAt).toEqual(evidence.revocationCheckedAt)
+    expect((await service.complete(f.lease(item), evidence)).id).toBe(signature.id)
+    await expect(service.complete(f.lease(item), f.evidence(item))).rejects.toThrow('RESULT_CONFLICT')
+    expect((await service.getJob(f.context, f.job.id)).status).toBe('COMPLETED')
+    expect(await sandbox.db.documentSignature.count({ where: { officeId: f.office.id } })).toBe(1)
+    await expect(service.createJob(f.context, { ...f.input, requestedLevel: 'PADES_LT' })).rejects.toThrow('IDEMPOTENCY_CONFLICT')
+  }, 60_000)
+
+  it.each(['PADES_LT', 'PADES_LTA'] as const)('rejects missing timestamps and downgraded results for %s without success side effects', async requestedLevel => {
+    const f = await setup(1, 4, requestedLevel)
+    const item = (await f.claim())!
+    await service.start(f.lease(item))
+    await expect(service.complete(f.lease(item), { ...f.evidence(item), level: requestedLevel, timestampAt: null })).rejects.toThrow()
+    await expect(service.complete(f.lease(item), { ...f.evidence(item), level: 'PADES_B', timestampAt: null })).rejects.toThrow('INVALID_EVIDENCE')
+    if (requestedLevel === 'PADES_LTA') await expect(service.complete(f.lease(item), f.evidence(item))).rejects.toThrow('INVALID_EVIDENCE')
+    expect(await sandbox.db.documentSignature.count({ where: { officeId: f.office.id } })).toBe(0)
+    expect(await sandbox.db.activityEvent.count({ where: { officeId: f.office.id, eventType: 'signing.completed' } })).toBe(0)
+    expect((await service.getJob(f.context, f.job.id)).items[0].status).toBe('SIGNING')
+    await service.complete(f.lease(item), { ...f.evidence(item), level: requestedLevel })
+    expect((await service.getJob(f.context, f.job.id)).status).toBe('COMPLETED')
+  }, 60_000)
+
+  it.each(['PADES_B', 'PADES_LT'] as const)('accepts stronger validated evidence for a %s request', async requestedLevel => {
+    const f = await setup(1, 4, requestedLevel)
+    const item = (await f.claim())!
+    await service.start(f.lease(item))
+    expect((await service.complete(f.lease(item), { ...f.evidence(item), level: 'PADES_LTA' })).level).toBe('PADES_LTA')
+  }, 60_000)
+
+  it('pauses a locked session until an authorized operator retries, with no PIN stored', async () => {
+    const f = await setup(1, 4, 'PADES_B')
+    const item = (await f.claim())!
+    await service.fail(f.lease(item), 'PIN_REQUIRED')
+    expect(await f.claim()).toBeNull()
+    const waiting = await service.getJob(f.context, f.job.id)
+    expect(waiting.status).toBe('WAITING_FOR_OPERATOR')
+    expect(waiting.items[0].errorCode).toBe('PIN_REQUIRED')
+    expect(waiting.items[0].attempts[0].result).toBe('OPERATOR_REQUIRED')
+    const ordinary = await sandbox.db.user.update({ where: { id: f.user.id }, data: { isOfficeAdmin: false } })
+    await expect(service.retry({ officeId: f.office.id, userId: ordinary.id }, item.id)).rejects.toThrow('FORBIDDEN')
+    await sandbox.db.user.update({ where: { id: f.user.id }, data: { isOfficeAdmin: true } })
+    await service.retry(f.context, item.id)
+    const resumed = (await f.claim())!
+    expect(resumed.leaseToken).not.toBe(item.leaseToken)
+    await service.start(f.lease(resumed))
+    await service.complete(f.lease(resumed), { ...f.evidence(resumed), level: 'PADES_B', timestampAt: null })
+    expect((await service.getJob(f.context, f.job.id)).status).toBe('COMPLETED')
+  }, 60_000)
 
   it('runs a fake batch from QUEUED to COMPLETED; repeated completion never duplicates signatures or audit', async () => {
     const f = await setup(2)

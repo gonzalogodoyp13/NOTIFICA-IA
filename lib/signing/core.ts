@@ -1,16 +1,34 @@
 import 'server-only'
 import { z } from 'zod'
-import type { SigningItemStatus, SigningJobStatus } from '@prisma/client'
+import type { SignatureLevel, SigningItemStatus, SigningJobStatus } from '@prisma/client'
 
 export const Identifier = z.string().min(1).max(120).regex(/^[a-zA-Z0-9_-]+$/)
 export const Sha256 = z.string().regex(/^[a-f0-9]{64}$/)
+export const SupportedSigningLevel = z.enum(['PADES_B', 'PADES_LT', 'PADES_LTA'])
+const profileRank: Record<SignatureLevel, number> = { PADES_B: 0, PADES_T: 1, PADES_LT: 2, PADES_LTA: 3 }
+export function meetsRequestedSigningLevel(actual: SignatureLevel, requested: SignatureLevel) {
+  return profileRank[actual] >= profileRank[requested]
+}
+
+// Basic signatures need no TSA. Validation and revocation checks remain
+// mandatory for every profile; only timestamp evidence is profile-dependent.
+export const SigningEvidenceSchema = z.object({
+  signedVersionId: Identifier, signedChecksum: Sha256,
+  certificateIssuer: z.string().min(1).max(500), providerType: z.string().min(1).max(80),
+  signerFingerprint: Sha256, level: SupportedSigningLevel,
+  timestampAt: z.date().nullable().default(null), revocationCheckedAt: z.date(), validatedAt: z.date(),
+}).strict().superRefine((evidence, ctx) => {
+  if (evidence.level !== 'PADES_B' && evidence.timestampAt === null) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['timestampAt'], message: 'Timestamp evidence is required for this signature level.' })
+  }
+})
 export const SigningContextSchema = z.object({ officeId: z.number().int().positive(), userId: Identifier }).strict()
 export type SigningContext = z.infer<typeof SigningContextSchema>
 export const CreateSigningJobSchema = z.object({
   idempotencyKey: Identifier,
   signerFingerprint: Sha256,
   sourceVersionIds: z.array(Identifier).min(1).max(500),
-  requestedLevel: z.enum(['PADES_LT', 'PADES_LTA']).default('PADES_LT'),
+  requestedLevel: SupportedSigningLevel.default('PADES_LT'),
   maxAttempts: z.number().int().min(1).max(20).default(4),
 }).strict()
 
@@ -33,7 +51,8 @@ const ERRORS = {
   REVOCATION_UNAVAILABLE: ['Revocation evidence temporarily unavailable.', true],
   TOKEN_MISSING: ['Connect the signing token.', false],
   DRIVER_MISSING: ['Install the configured token driver.', false],
-  PIN_INCORRECT: ['Local operator action is required.', false],
+  PIN_REQUIRED: ['Unlock the local token session by entering its PIN on the signing device.', false],
+  PIN_INCORRECT: ['The token PIN was incorrect. Operator action is required on the signing device.', false],
   CERT_EXPIRED: ['The signing certificate has expired.', false],
   VALIDATION_FAILED: ['Signature validation failed.', false],
   CHECKSUM_MISMATCH: ['Document checksum verification failed.', false],
@@ -43,7 +62,7 @@ const ERRORS = {
 export function safeSigningError(value: unknown) {
   const code = typeof value === 'string' && Object.hasOwn(ERRORS, value) ? value as keyof typeof ERRORS : 'UNKNOWN'
   const [message, retryable] = ERRORS[code]
-  return { code, message, retryable, operatorRequired: ['PIN_INCORRECT', 'TOKEN_MISSING', 'DRIVER_MISSING'].includes(code) }
+  return { code, message, retryable, operatorRequired: ['PIN_REQUIRED', 'PIN_INCORRECT', 'TOKEN_MISSING', 'DRIVER_MISSING'].includes(code) }
 }
 
 export function assertEligibleVersion(version: {

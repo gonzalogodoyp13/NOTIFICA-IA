@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest'
 import { signingFixture, hashA, hashB, fingerprint } from './signing-support'
 
 const enabled = process.env.SIGNING_DATABASE_TESTS === '1'
-const tables = ['signing_devices', 'device_enrollments', 'signing_jobs', 'signing_items', 'signing_attempts', 'document_signatures', 'document_deliveries']
+const tables = ['signing_devices', 'device_enrollments', 'device_challenges', 'device_sessions', 'signing_jobs', 'signing_items', 'signing_attempts', 'document_signatures', 'document_deliveries']
 
 describe.skipIf(!enabled)('signing Phase 1: live PostgreSQL migration and authorization', () => {
   it('enforces all tenant FKs, unique identities, immutable sources, RLS and grants; rolls back all fixtures', async () => {
@@ -58,6 +58,19 @@ describe.skipIf(!enabled)('signing Phase 1: live PostgreSQL migration and author
           sourceVersionId: av.source.id, signedVersionId: av.output.id, signerFingerprint: fingerprint,
           certificateIssuer: 'TEST', providerType: 'TEST', level: 'PADES_LT' as const, sourceChecksum: hashA,
           signedChecksum: hashB, timestampAt: new Date(), revocationCheckedAt: new Date(), validatedAt: new Date() }
+        for (const level of ['PADES_T', 'PADES_LT', 'PADES_LTA'] as const) {
+          await rejected(() => tx.documentSignature.create({ data: { ...signatureData, level, timestampAt: null } }), /signature_timestamp_level_check/)
+        }
+        await tx.$executeRawUnsafe('SAVEPOINT basic_signature')
+        const basic = await tx.documentSignature.create({ data: { ...signatureData, level: 'PADES_B', timestampAt: null } })
+        expect(basic.timestampAt).toBeNull()
+        await tx.$executeRawUnsafe('ROLLBACK TO SAVEPOINT basic_signature')
+        const nullability = await tx.$queryRaw<Array<{ column_name: string; is_nullable: string }>>`
+          SELECT column_name, is_nullable FROM information_schema.columns
+          WHERE table_schema = 'public' AND table_name = 'document_signatures'
+            AND column_name IN ('timestampAt', 'revocationCheckedAt', 'validatedAt')`
+        expect(Object.fromEntries(nullability.map(c => [c.column_name, c.is_nullable])))
+          .toEqual({ timestampAt: 'YES', revocationCheckedAt: 'NO', validatedAt: 'NO' })
         await rejected(() => tx.documentSignature.create({ data: { ...signatureData, deviceId: b.device.id } }))
         await rejected(() => tx.documentSignature.create({ data: { ...signatureData, signedVersionId: bv.output.id } }))
         await rejected(() => tx.documentSignature.create({ data: { ...signatureData, sourceVersionId: bv.source.id } }))
@@ -75,11 +88,17 @@ describe.skipIf(!enabled)('signing Phase 1: live PostgreSQL migration and author
         await rejected(() => tx.documentSignature.update({ where: { id: signature.id }, data: { providerType: 'changed' } }))
         const rls = await tx.$queryRaw<Array<{ relname: string; relrowsecurity: boolean }>>`
           SELECT relname, relrowsecurity FROM pg_class WHERE relnamespace = 'public'::regnamespace AND relname = ANY(${tables}::text[])`
-        expect(rls).toHaveLength(7)
+        expect(rls).toHaveLength(tables.length)
         expect(rls.every(r => r.relrowsecurity)).toBe(true)
         const grants = await tx.$queryRaw<unknown[]>`SELECT * FROM information_schema.role_table_grants
           WHERE table_schema = 'public' AND table_name = ANY(${tables}::text[]) AND grantee IN ('anon','authenticated','service_role','PUBLIC')`
         expect(grants).toHaveLength(0)
+        const rateGrants = await tx.$queryRaw<unknown[]>`SELECT * FROM information_schema.role_table_grants
+          WHERE table_schema = 'public' AND table_name = 'device_rate_limits' AND grantee IN ('anon','authenticated','service_role','PUBLIC')`
+        expect(rateGrants).toHaveLength(0)
+        expect(await tx.$queryRaw`SELECT relrowsecurity FROM pg_class WHERE oid = 'public.device_rate_limits'::regclass`).toEqual([{ relrowsecurity: true }])
+        await rejected(() => tx.deviceChallenge.create({ data: { officeId: a.office.id, deviceId: b.device.id, nonceHash: hashA, expiresAt: new Date() } }))
+        await rejected(() => tx.deviceSession.create({ data: { officeId: a.office.id, deviceId: b.device.id, tokenHash: hashB, expiresAt: new Date() } }))
         for (const role of ['anon', 'authenticated']) {
           for (const table of tables) {
             // Each role is tested with office A's identity against office B.

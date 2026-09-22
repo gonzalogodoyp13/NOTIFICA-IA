@@ -45,6 +45,9 @@ for (const file of checkedFiles) {
     const hasHandler = /export async function (?:GET|POST|PUT|PATCH|DELETE)/.test(source)
     const allowedWithoutUser = file.includes(path.join('api', 'internal'))
       || file === path.join('app', 'api', 'ping', 'route.ts')
+      || (file === path.join('app', 'api', 'signing', 'device', '[action]', 'route.ts')
+        && source.includes('createDeviceHandler')
+        && source.includes("return withRequestTiming(req, 'signing.device', () => handleDeviceRequest(req, params.action))"))
     if (hasHandler && !allowedWithoutUser && !source.includes('withApiUser')) {
       failures.push(`${file}: protected route does not use withApiUser`)
     }

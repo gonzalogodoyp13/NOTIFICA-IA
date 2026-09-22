@@ -114,6 +114,21 @@ const signingMetadata = z.object({
 }).strict()
 
 export const ACTIVITY_EVENT_CATALOG = {
+  'signing.document_excluded': { module: 'documents', critical: true, metadata: z.object({
+    diligenceId: id, completionEventId: id, documentId: id, sourceVersionId: id.nullable(), jobId: id.optional(),
+    reason: z.enum(['MISSING_PDF', 'VOIDED', 'ALREADY_SIGNED', 'ALREADY_QUEUED', 'INVALID_STATE']),
+  }).strict() },
+  'signing.completion_evaluated': { module: 'documents', critical: true, metadata: z.object({
+    diligenceId: id, completionEventId: id, jobId: id.nullable(),
+    status: z.enum(['QUEUED', 'EXISTING_JOB', 'NO_ELIGIBLE_DOCUMENTS']),
+    queuedCount: z.number().int().nonnegative(), excludedCount: z.number().int().nonnegative(),
+  }).strict() },
+  'device.enrollment_created': { module: 'security', critical: true, metadata: z.object({ entityId: id }).strict() },
+  'device.enrollment_revoked': { module: 'security', critical: true, metadata: z.object({ entityId: id }).strict() },
+  'device.enrolled': { module: 'security', critical: true, metadata: z.object({ entityId: id }).strict() },
+  'device.revoked': { module: 'security', critical: true, metadata: z.object({ entityId: id }).strict() },
+  'device.health_changed': { module: 'security', critical: true, metadata: z.object({ entityId: id }).strict() },
+  'device.delivery_acknowledged': { module: 'security', critical: true, metadata: z.object({ entityId: id }).strict() },
   'signing.requested': { module: 'documents', critical: true, metadata: signingMetadata },
   'signing.claimed': { module: 'documents', critical: true, metadata: signingMetadata },
   'signing.started': { module: 'documents', critical: true, metadata: signingMetadata },

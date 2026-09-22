@@ -1,3 +1,5 @@
+import { completionMetadataForUpdate } from '@/lib/signing/completionMetadata'
+import { workflowTransaction } from '@/lib/signing/transaction'
 import { withApiUser } from '@/lib/api/server'
 import { NextRequest, NextResponse } from 'next/server'
 
@@ -103,12 +105,12 @@ export async function PUT(
     const metaToPersist =
       Object.keys(mergedMeta).length > 0 ? (mergedMeta as Prisma.JsonObject) : undefined
 
-    const updated = await prisma.$transaction(async tx => {
+    const updated = await workflowTransaction(prisma, { officeId: user.officeId, userId: user.id }, async tx => {
       const result = await tx.diligencia.update({
         where: { id: diligencia.id },
-        data: { fecha: new Date(data.fechaEjecucion), meta: metaToPersist },
+        data: { fecha: new Date(data.fechaEjecucion), meta: await completionMetadataForUpdate(tx, diligencia.id, metaToPersist ?? {}) },
       })
-      await syncDiligenceWorkflowState(diligencia.id, tx)
+      await syncDiligenceWorkflowState(diligencia.id, tx, { officeId: user.officeId, userId: user.id })
       await recordCriticalEvent(tx, user, {
         eventType: 'diligence.scheduled', module: 'diligencias', result: 'success',
         recordType: 'Diligencia', recordId: result.id, rolId: diligencia.rol.id,

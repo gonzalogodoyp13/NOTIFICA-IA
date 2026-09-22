@@ -1,3 +1,6 @@
+import { completionMetadataForUpdate } from '@/lib/signing/completionMetadata'
+import { workflowTransaction } from '@/lib/signing/transaction'
+import { syncDiligenceWorkflowState } from '@/lib/roles/workflowState'
 import { withApiUser } from '@/lib/api/server'
 // API route: /api/diligencias
 // GET: List all diligencias for given rolId (ROL Phase 4)
@@ -118,13 +121,13 @@ export async function POST(req: NextRequest) {
     }
 
     // Create Diligencia
-    const diligencia = await prisma.$transaction(async tx => {
+    const diligencia = await workflowTransaction(prisma, { officeId: user.officeId, userId: user.id }, async tx => {
       const created = await tx.diligencia.create({
         data: {
           rolId: parsed.data.rolId,
           tipoId: parsed.data.tipoId,
           fecha: parsed.data.fecha,
-          estado: parsed.data.estado,
+          estado: parsed.data.estado === 'fallida' ? 'fallida' : 'pendiente',
           meta: parsed.data.meta ? (parsed.data.meta as Prisma.InputJsonValue) : undefined,
         },
         include: {
@@ -139,7 +142,8 @@ export async function POST(req: NextRequest) {
         description: 'Diligencia creada.',
         metadata: { diligenceId: created.id, typeId: created.tipoId, status: created.estado },
       })
-      return created
+      const workflow = await syncDiligenceWorkflowState(created.id, tx, { officeId: user.officeId, userId: user.id })
+      return { ...created, estado: workflow.status, signing: workflow.signing }
     })
 
     return NextResponse.json({ ok: true, data: diligencia })
@@ -204,12 +208,12 @@ export async function PUT(req: NextRequest) {
     }
 
     // Update diligencia
-    const updated = await prisma.$transaction(async tx => {
+    const updated = await workflowTransaction(prisma, { officeId: user.officeId, userId: user.id }, async tx => {
       const result = await tx.diligencia.update({
         where: { id },
         data: {
-          ...parsed.data,
-          ...(parsed.data.meta ? { meta: parsed.data.meta as Prisma.InputJsonValue } : {}),
+          estado: parsed.data.estado === 'completada' ? undefined : parsed.data.estado,
+          ...(parsed.data.meta ? { meta: await completionMetadataForUpdate(tx, id, parsed.data.meta as Prisma.JsonObject) } : {}),
         },
         include: {
           tipo: {
@@ -223,7 +227,8 @@ export async function PUT(req: NextRequest) {
         description: 'Diligencia actualizada.',
         metadata: { diligenceId: result.id, changedFields: Object.keys(parsed.data).slice(0, 100) },
       })
-      return result
+      const workflow = await syncDiligenceWorkflowState(result.id, tx, { officeId: user.officeId, userId: user.id })
+      return { ...result, estado: workflow.status, signing: workflow.signing }
     })
 
     return NextResponse.json({ ok: true, data: updated })
@@ -286,7 +291,7 @@ export async function DELETE(req: NextRequest) {
     //   )
     // }
 
-    await prisma.$transaction(async tx => {
+    await workflowTransaction(prisma, { officeId: user.officeId, userId: user.id }, async tx => {
       await tx.diligencia.delete({ where: { id } })
       await recordCriticalEvent(tx, user, {
         eventType: 'diligence.deleted', module: 'diligencias', result: 'success',

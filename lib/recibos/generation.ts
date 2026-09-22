@@ -1,3 +1,4 @@
+import { workflowTransaction } from '@/lib/signing/transaction'
 import 'server-only'
 
 import { randomUUID } from 'crypto'
@@ -250,7 +251,7 @@ async function reserveGeneration(params: {
   idempotencyKey: string
   currentMeta: Record<string, unknown>
 }) {
-  return prisma.$transaction(async tx => {
+  return workflowTransaction(prisma, { officeId: params.context.officeId, userId: params.context.id }, async tx => {
     await tx.$executeRaw`
       SELECT pg_advisory_xact_lock(hashtext(${`receipt-notification-${params.input.notificacionId}`}))
     `
@@ -573,7 +574,7 @@ export async function generateReceipt(params: {
     )
   }
 
-  const finalized = await prisma.$transaction(async tx => {
+  const finalized = await workflowTransaction(prisma, { officeId: params.context.officeId, userId: params.context.id }, async tx => {
     await tx.$executeRaw`
       SELECT pg_advisory_xact_lock(hashtext(${`receipt-reservation-${reservation.id}`}))
     `
@@ -794,7 +795,7 @@ export async function generateReceipt(params: {
       data: { bancoId: params.input.bancoId, meta: nextMeta, updatedAt: fechaGeneracion },
     })
     await tx.diligencia.update({ where: { id: diligenciaId }, data: { estadoCobro: 'NO_PAGADO' } })
-    await syncDiligenceWorkflowState(diligenciaId, tx)
+    const workflow = await syncDiligenceWorkflowState(diligenciaId, tx, { officeId: params.context.officeId, userId: params.context.id })
 
     const eventType = eventTypeFor(currentReservation.operation)
     const queuedEvent = await enqueueExternalEvent(tx, params.context, {
@@ -847,6 +848,7 @@ export async function generateReceipt(params: {
       reservationId: currentReservation.id,
       tariffChanged,
       response: {
+        signing: workflow.signing,
         operation: operationResult(currentReservation.operation),
         documento: receiptDocumentView(documento, notification.diligencia),
         recibo: receiptView(receipt),

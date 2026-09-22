@@ -1,3 +1,5 @@
+import { completionMetadataForUpdate } from '@/lib/signing/completionMetadata'
+import { workflowTransaction } from '@/lib/signing/transaction'
 import { withApiUser } from '@/lib/api/server'
 import { NextRequest, NextResponse } from 'next/server'
 
@@ -194,11 +196,11 @@ export async function PUT(
     updateData.meta =
       Object.keys(mergedMeta).length > 0 ? (mergedMeta as Prisma.JsonObject) : undefined
 
-    const updated = await prisma.$transaction(async tx => {
+    const updated = await workflowTransaction(prisma, { officeId: user.officeId, userId: user.id }, async tx => {
       const result = await tx.diligencia.update({
-        where: { id: diligencia.id }, data: updateData, include: { tipo: true },
+        where: { id: diligencia.id }, data: { ...updateData, meta: await completionMetadataForUpdate(tx, diligencia.id, mergedMeta as Prisma.JsonObject) }, include: { tipo: true },
       })
-      await syncDiligenceWorkflowState(diligencia.id, tx)
+      await syncDiligenceWorkflowState(diligencia.id, tx, { officeId: user.officeId, userId: user.id })
       await recordCriticalEvent(tx, user, {
         eventType: 'diligence.updated', module: 'diligencias', result: 'success',
         recordType: 'Diligencia', recordId: result.id, rolId: diligencia.rol.id,
@@ -253,7 +255,7 @@ export async function DELETE(
 
     assertRoleWorkflowWritable(diligencia.rol.estado)
 
-    await prisma.$transaction(async tx => {
+    await workflowTransaction(prisma, { officeId: user.officeId, userId: user.id }, async tx => {
       await tx.diligencia.delete({ where: { id: diligencia.id } })
       await syncRoleProgressState(diligencia.rolId, tx)
       await recordCriticalEvent(tx, user, {
@@ -276,4 +278,3 @@ export async function DELETE(
 
   })
 }
-

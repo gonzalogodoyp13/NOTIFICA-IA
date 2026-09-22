@@ -1514,6 +1514,9 @@ model SigningDevice {
   providerType          String?
   agentVersion          String?
   lastHeartbeatAt       DateTime?
+  diskFreeBytes         BigInt?
+  healthErrorCode       String?
+  lastSuccessfulContactAt DateTime?
   revokedAt             DateTime?
   createdAt             DateTime @default(now())
   updatedAt             DateTime @updatedAt
@@ -1523,6 +1526,8 @@ model SigningDevice {
   attempts              SigningAttempt[]
   signatures            DocumentSignature[]
   deliveries            DocumentDelivery[]
+  challenges            DeviceChallenge[]
+  sessions              DeviceSession[]
 
   @@unique([id, officeId])
   @@index([officeId, health, createdAt])
@@ -1549,6 +1554,42 @@ model DeviceEnrollment {
   @@index([deviceId, officeId])
   @@index([createdByUserId, officeId])
   @@map("device_enrollments")
+}
+
+model DeviceChallenge {
+  id         String @id @default(uuid())
+  officeId   Int
+  deviceId   String
+  nonceHash  String
+  expiresAt  DateTime
+  consumedAt DateTime?
+  device     SigningDevice @relation(fields: [deviceId, officeId], references: [id, officeId], onDelete: Cascade, map: "device_challenges_device_fkey")
+
+  @@index([expiresAt], map: "device_challenges_expires_idx")
+  @@index([deviceId, officeId], map: "device_challenges_device_idx")
+  @@map("device_challenges")
+}
+
+model DeviceSession {
+  id         String @id @default(uuid())
+  officeId   Int
+  deviceId   String
+  tokenHash  String @unique
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  device     SigningDevice @relation(fields: [deviceId, officeId], references: [id, officeId], onDelete: Cascade, map: "device_sessions_device_fkey")
+
+  @@index([expiresAt], map: "device_sessions_expires_idx")
+  @@index([deviceId, officeId], map: "device_sessions_device_idx")
+  @@map("device_sessions")
+}
+
+model DeviceRateLimit {
+  key       String @id
+  windowAt  DateTime
+  count     Int
+  @@index([windowAt], map: "device_rate_limits_window_idx")
+  @@map("device_rate_limits")
 }
 
 model SigningJob {
@@ -1648,7 +1689,7 @@ model DocumentSignature {
   digestAlgorithm     String @default("SHA256")
   sourceChecksum      String
   signedChecksum      String
-  timestampAt         DateTime
+  timestampAt         DateTime?
   revocationCheckedAt DateTime
   validatedAt         DateTime
   createdAt           DateTime @default(now())

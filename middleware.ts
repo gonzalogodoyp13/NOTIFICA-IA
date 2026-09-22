@@ -17,6 +17,14 @@ export async function middleware(request: NextRequest) {
     },
   })
 
+  // Device credentials are independent of browser/Supabase sessions. Their
+  // route enforces HTTPS, challenge/session authentication and office scope.
+  if (request.nextUrl.pathname.startsWith('/api/signing/device/')) {
+    response.headers.set('x-request-id', requestId)
+    response.headers.set('Cache-Control', 'private, no-store')
+    return response
+  }
+
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,

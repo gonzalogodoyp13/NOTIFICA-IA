@@ -1,3 +1,4 @@
+import { workflowTransaction } from '@/lib/signing/transaction'
 import { NextRequest, NextResponse } from 'next/server'
 
 import { Prisma } from '@prisma/client'
@@ -107,7 +108,7 @@ export async function PATCH(
       ...(incomingMeta as Record<string, unknown>),
     }
 
-    const updated = await prisma.$transaction(async tx => {
+    const updated = await workflowTransaction(prisma, { officeId: user.officeId, userId: user.id }, async tx => {
       const result = await tx.notificacion.update({
         where: { id: existing.id },
         data: {
@@ -128,7 +129,7 @@ export async function PATCH(
           updatedAt: true,
         },
       })
-      await syncDiligenceWorkflowState(diligencia.id, tx)
+      await syncDiligenceWorkflowState(diligencia.id, tx, { officeId: user.officeId, userId: user.id })
       await recordCriticalEvent(tx, user, {
         eventType: 'notification.updated',
         module: 'notificaciones',
@@ -235,13 +236,7 @@ export async function DELETE(
       },
     })
 
-    for (const documento of documentos) {
-      for (const version of documento.versions) {
-        await deletePdfFromDocumentStorage(version.storageBucket, version.storageKey)
-      }
-    }
-
-    await prisma.$transaction(async tx => {
+    await workflowTransaction(prisma, { officeId: user.officeId, userId: user.id }, async tx => {
       const receipts = await tx.recibo.deleteMany({
         where: { notificacionId: params.notificacionId },
       })
@@ -253,7 +248,7 @@ export async function DELETE(
       await tx.notificacion.delete({
         where: { id: params.notificacionId },
       })
-      await syncDiligenceWorkflowState(diligencia.id, tx)
+      await syncDiligenceWorkflowState(diligencia.id, tx, { officeId: user.officeId, userId: user.id })
       await recordCriticalEvent(tx, user, {
         eventType: 'notification.deleted',
         module: 'notificaciones',
@@ -270,6 +265,15 @@ export async function DELETE(
         },
       })
     })
+
+    // A pinned signing source may reject the transaction; preserve its stored PDF.
+    for (const documento of documentos) {
+      for (const version of documento.versions) {
+        await deletePdfFromDocumentStorage(version.storageBucket, version.storageKey).catch(() => {
+          console.warn('[documents] Storage cleanup pending after committed document deletion.')
+        })
+      }
+    }
 
     return NextResponse.json({ ok: true, mode: 'DELETED' })
   } catch (error) {
