@@ -1,5 +1,6 @@
+import FirmadosCenter from './FirmadosCenter'
 export const dynamic = 'force-dynamic'
 
 export default function FirmadosPage() {
-  return <div className="app-shell" />
+  return <FirmadosCenter />
 }

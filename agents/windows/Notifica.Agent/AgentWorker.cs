@@ -13,8 +13,10 @@ internal sealed class AgentWorker : IDisposable
     private Identity? identity;
     private DateTimeOffset? lastContact;
     internal volatile bool SigningActive;
+    internal Signing.RemoteSigning? Remote { get; }
+    internal ReceiverMirror Mirror { get; }
     private volatile AgentStatus status = new("WAITING_ENROLLMENT", "OFFLINE", null, null, null, null, null);
-    internal AgentStatus Status => status with { DeviceKeyFingerprint = DeviceKey.Hash(key.PublicKey) };
+    internal AgentStatus Status => status with { DeviceKeyFingerprint = DeviceKey.Hash(key.PublicKey), MirrorError = Mirror.ErrorCode };
     internal async Task WaitForProbeIdle(CancellationToken ct)
     {
         await operations.WaitAsync(ct);
@@ -26,11 +28,13 @@ internal sealed class AgentWorker : IDisposable
         Directory.CreateDirectory(config.DataDirectory);
         key = new DeviceKey(config);
         api = new DeviceApi(config, key, testHandler);
+        Mirror = new(config, api, () => identity);
         string path = Path.Combine(config.DataDirectory, "identity.json");
         if (File.Exists(path)) identity = JsonSerializer.Deserialize<Identity>(File.ReadAllText(path), Configuration.Json);
         if (config.ControlledSigning is not null && identity is not null) throw new InvalidOperationException("CONTROLLED_MODE_REQUIRES_UNENROLLED_DEVICE");
+        if (config.SigningEngine is not null) Remote = new(config, api, () => identity, active => SigningActive = active, WaitForProbeIdle);
     }
-    internal async Task Enroll(string code, string name, CancellationToken ct)
+    internal async Task Enroll(string code, string name, CancellationToken ct, string? receiverDirectory = null)
     {
         if (config.ControlledSigning is not null) throw new InvalidOperationException("CONTROLLED_MODE_CANNOT_ENROLL");
         if (!System.Text.RegularExpressions.Regex.IsMatch(code, "^[A-Za-z0-9_-]{43}$") || name.Length is < 1 or > 100 || name.Trim() != name)
@@ -39,6 +43,15 @@ internal sealed class AgentWorker : IDisposable
         try
         {
             if (identity is not null) throw new InvalidOperationException("ALREADY_ENROLLED");
+            if (receiverDirectory is not null) {
+                Signing.LocalSigningFiles.RequireLocalPath(receiverDirectory);
+                Directory.CreateDirectory(receiverDirectory);
+                // Check service-account write access before consuming the enrollment code.
+                string probe = Path.Combine(receiverDirectory, ".notifica-" + Guid.NewGuid().ToString("N") + ".part");
+                using (var file = new FileStream(probe, FileMode.CreateNew, FileAccess.Write, FileShare.None)) file.Flush(true);
+                File.Delete(probe);
+                ReceiverMirror.SaveJson(Path.Combine(config.DataDirectory, "receiver-folder.json"), Path.GetFullPath(receiverDirectory));
+            }
             identity = await api.Enroll(code, name, ct);
             string temporary = Path.Combine(config.DataDirectory, "identity.json.part");
             await File.WriteAllTextAsync(temporary, JsonSerializer.Serialize(identity, Configuration.Json), ct);
@@ -69,7 +82,7 @@ internal sealed class AgentWorker : IDisposable
                     await api.Authenticate(identity, ct);
                     var disk = new DriveInfo(Path.GetPathRoot(config.DataDirectory)!);
                     var response = await api.Post("heartbeat", new {
-                        agentVersion = "0.5.0", role = identity.Role, diskFreeBytes = disk.AvailableFreeSpace,
+                        agentVersion = "0.9.0", role = identity.Role, diskFreeBytes = disk.AvailableFreeSpace,
                         lastSuccessfulContactAt = lastContact?.UtcDateTime.ToString("O"), token = token.Token,
                         certificate = token.Certificate is null ? null : new {
                             fingerprint = token.Certificate.Fingerprint, subject = token.Certificate.Subject, issuer = token.Certificate.Issuer,

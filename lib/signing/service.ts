@@ -1,4 +1,5 @@
 import 'server-only'
+import { scheduleSignatureDeliveries } from './deliveries'
 
 import { createHash, randomUUID } from 'node:crypto'
 import { Prisma, type PrismaClient, type SigningItem, type SigningAttemptResult } from '@prisma/client'
@@ -56,9 +57,9 @@ export async function createSigningJobInTransaction(tx: Tx, context: SigningCont
   return tx.signingJob.findUniqueOrThrow({ where: { id: job.id }, include: { items: true } })
 }
 
-/** Internal orchestration only. Phase 4 must authenticate callers before using
- * this service. complete() accepts evidence from the future independent Phase 7
- * validator; it does not perform PDF cryptography or promote document versions.
+/** Internal orchestration only; device callers must supply an authentication guard.
+ * complete() accepts independently validated evidence. With a reserved artifact,
+ * it creates and promotes its version atomically; PDF validation stays outside the transaction.
  */
 export function createSigningService(db: PrismaClient = prisma,
   deviceGuard?: (tx: Tx, officeId: number, deviceId: string, now: Date) => Promise<void>) {
@@ -87,7 +88,7 @@ export function createSigningService(db: PrismaClient = prisma,
   }
   async function audit(tx: Tx, officeId: number, event: string, metadata: {
     jobId: string; itemId?: string; deviceId?: string; attemptNumber?: number;
-    status?: string; errorCode?: string; signatureId?: string;
+    status?: string; errorCode?: string; signatureId?: string; reviewed?: boolean;
   }, userId?: string) {
     await recordCriticalEvent(tx, { officeId, ...(userId ? { user: { id: userId }, actorType: 'USER' as const } : { actorType: 'SYSTEM' as const }), source: 'INTERNAL' }, {
       eventType: event, module: 'documents', recordType: metadata.itemId ? 'SigningItem' : 'SigningJob',
@@ -236,7 +237,8 @@ export function createSigningService(db: PrismaClient = prisma,
       })
     },
 
-    async complete(lease: SigningLease, raw: ValidatedSigningEvidence) {
+    async complete(lease: SigningLease, raw: ValidatedSigningEvidence,
+      artifact?: { id: string; validation: Prisma.InputJsonObject }) {
       LeaseSchema.parse(lease)
       const evidence = SigningEvidenceSchema.parse(raw)
       return transaction(lease.officeId, async (tx, now) => {
@@ -253,6 +255,17 @@ export function createSigningService(db: PrismaClient = prisma,
         const job = await tx.signingJob.findUniqueOrThrow({ where: { id: item.jobId } })
         if (evidence.signerFingerprint !== item.signerFingerprint ||
           !meetsRequestedSigningLevel(evidence.level, job.requestedLevel)) throw new SigningError('INVALID_EVIDENCE')
+        if (artifact) {
+          const upload = await tx.signingArtifact.findFirst({ where: { id: artifact.id, officeId: lease.officeId,
+            itemId: item.id, deviceId: lease.deviceId, leaseToken: lease.leaseToken, state: 'PENDING', expiresAt: { gt: now },
+            checksumSha256: evidence.signedChecksum } })
+          if (!upload) throw new SigningError('INVALID_ARTIFACT')
+          const latest = await tx.documentoVersion.aggregate({ where: { documentoId: item.documentoId, officeId: lease.officeId }, _max: { versionNumber: true } })
+          await tx.documentoVersion.create({ data: { id: evidence.signedVersionId, officeId: lease.officeId,
+            documentoId: item.documentoId, versionNumber: (latest._max.versionNumber ?? 0) + 1,
+            storageBucket: upload.storageBucket, storageKey: upload.storageKey, checksumSha256: upload.checksumSha256,
+            sizeBytes: upload.sizeBytes, fileName: `${item.documentoId}-firmado.pdf`, mimeType: 'application/pdf' } })
+        }
         const output = await tx.documentoVersion.findFirst({ where: { id: evidence.signedVersionId, officeId: lease.officeId,
           documentoId: item.documentoId, deletedAt: null, mimeType: 'application/pdf', checksumSha256: evidence.signedChecksum } })
         if (!output || output.id === item.sourceVersionId || output.sizeBytes <= 0) throw new SigningError('INVALID_EVIDENCE')
@@ -262,16 +275,28 @@ export function createSigningService(db: PrismaClient = prisma,
         await tx.signingItem.update({ where: { id: item.id }, data: { status: 'COMPLETED', ...clearLease, completedAt: now, errorCode: null, safeError: null } })
         await audit(tx, lease.officeId, 'signing.completed', { jobId: item.jobId, itemId: item.id, deviceId: lease.deviceId, signatureId: signature.id, attemptNumber: item.attemptCount })
         await aggregate(tx, lease.officeId, item.jobId, now)
+        if (artifact) {
+          const promoted = await tx.documento.updateMany({ where: { id: item.documentoId, officeId: lease.officeId,
+            currentVersionId: item.sourceVersionId, voidedAt: null }, data: { currentVersionId: evidence.signedVersionId } })
+          if (promoted.count !== 1) throw new SigningError('INELIGIBLE_SOURCE')
+          await tx.signingArtifact.update({ where: { id: artifact.id }, data: { state: 'COMMITTED', validation: artifact.validation } })
+          await scheduleSignatureDeliveries(tx, lease.officeId, signature.id)
+        }
         return signature
       })
     },
 
-    async retry(context: SigningContext, itemId: string) {
+    async retry(context: SigningContext, itemId: string, review?: { attemptCount: number; reviewed: boolean }) {
       SigningContextSchema.parse(context); Identifier.parse(itemId)
       return transaction(context.officeId, async (tx, now) => {
         await user(tx, context, true)
         const item = await tx.signingItem.findFirst({ where: { id: itemId, officeId: context.officeId } })
         if (!item) throw new SigningError('NOT_FOUND')
+        if (review && (review.attemptCount !== item.attemptCount || !review.reviewed)) throw new SigningError('RECOVERY_REVIEW_REQUIRED')
+        if (review && item.status === 'QUEUED' && await tx.activityEvent.count({ where: {
+          officeId: context.officeId, eventType: 'signing.retried', recordType: 'SigningItem', recordId: item.id,
+          AND: [{ metadata: { path: ['attemptNumber'], equals: review.attemptCount } }, { metadata: { path: ['reviewed'], equals: true } }],
+        } })) return
         assertItemTransition(item.status, 'QUEUED')
         if (!['FAILED', 'WAITING_FOR_OPERATOR'].includes(item.status)) throw new SigningError('INVALID_TRANSITION')
         if (item.attemptCount >= item.maxAttempts) throw new SigningError('ATTEMPTS_EXHAUSTED')
@@ -280,18 +305,22 @@ export function createSigningService(db: PrismaClient = prisma,
         if (await tx.signingItem.count({ where: { officeId: context.officeId, sourceVersionId: item.sourceVersionId, signerFingerprint: item.signerFingerprint,
           id: { not: item.id }, status: { notIn: ['FAILED', 'CANCELLED'] } } })) throw new SigningError('ALREADY_QUEUED')
         await tx.signingItem.update({ where: { id: item.id }, data: { status: 'QUEUED', availableAt: now, completedAt: null, errorCode: null, safeError: null } })
-        await audit(tx, context.officeId, 'signing.retried', { jobId: item.jobId, itemId: item.id, attemptNumber: item.attemptCount }, context.userId)
+        await audit(tx, context.officeId, 'signing.retried', { jobId: item.jobId, itemId: item.id, attemptNumber: item.attemptCount,
+          ...(review ? { reviewed: true } : {}) }, context.userId)
         await aggregate(tx, context.officeId, item.jobId, now)
       })
     },
 
-    async cancel(context: SigningContext, itemId: string) {
+    async cancel(context: SigningContext, itemId: string, guard?: { attemptCount: number; beforeSigningOnly: boolean }) {
       SigningContextSchema.parse(context); Identifier.parse(itemId)
       return transaction(context.officeId, async (tx, now) => {
         await user(tx, context, true)
         const item = await tx.signingItem.findFirst({ where: { id: itemId, officeId: context.officeId } })
         if (!item) throw new SigningError('NOT_FOUND')
         if (item.status === 'CANCELLED') return
+        if (guard && (guard.attemptCount !== item.attemptCount || guard.beforeSigningOnly && await tx.activityEvent.count({
+          where: { officeId: context.officeId, eventType: 'signing.started', recordType: 'SigningItem', recordId: item.id },
+        }))) throw new SigningError('SIGNING_ALREADY_STARTED')
         assertItemTransition(item.status, 'CANCELLED')
         if (item.status === 'CLAIMED') await endAttempt(tx, item, 'CANCELLED', now)
         await tx.signingItem.update({ where: { id: item.id }, data: { status: 'CANCELLED', ...clearLease, completedAt: now } })

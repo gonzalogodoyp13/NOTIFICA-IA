@@ -57,12 +57,13 @@ const ERRORS = {
   VALIDATION_FAILED: ['Signature validation failed.', false],
   CHECKSUM_MISMATCH: ['Document checksum verification failed.', false],
   LEASE_EXPIRED: ['The signing lease expired.', false],
+  OUTCOME_UNKNOWN: ['The signing outcome requires operator review before another token operation.', false],
   UNKNOWN: ['Signing failed; review the operation.', false],
 } as const
 export function safeSigningError(value: unknown) {
   const code = typeof value === 'string' && Object.hasOwn(ERRORS, value) ? value as keyof typeof ERRORS : 'UNKNOWN'
   const [message, retryable] = ERRORS[code]
-  return { code, message, retryable, operatorRequired: ['PIN_REQUIRED', 'PIN_INCORRECT', 'TOKEN_MISSING', 'DRIVER_MISSING'].includes(code) }
+  return { code, message, retryable, operatorRequired: ['PIN_REQUIRED', 'PIN_INCORRECT', 'TOKEN_MISSING', 'DRIVER_MISSING', 'OUTCOME_UNKNOWN'].includes(code) }
 }
 
 export function assertEligibleVersion(version: {

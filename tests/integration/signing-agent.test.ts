@@ -169,7 +169,7 @@ describe.skipIf(process.env.SIGNING_AGENT_TESTS !== '1')('real Windows agent and
     expect(await post('input', lease, signer.token)).toMatchObject({ status: 200, body: { data: {
       authorized: true, checksumSha256: version.source.checksumSha256, transferAvailable: false } } })
     expect((await post('renew', lease, signer.token)).status).toBe(200)
-    expect((await post('result', lease, signer.token)).body.error.code).toBe('ARTIFACT_VALIDATION_NOT_AVAILABLE')
+    expect((await post('result', lease, signer.token)).body.error.code).toBe('PDF_BODY_REQUIRED')
     await service.revoke(office.context, signer.deviceId)
     for (const action of ['claim', 'input', 'renew', 'result']) {
       expect((await post(action, action === 'claim' ? {} : lease, signer.token)).status).toBe(401)

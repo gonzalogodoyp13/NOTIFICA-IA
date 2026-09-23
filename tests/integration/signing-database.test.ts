@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest'
 import { signingFixture, hashA, hashB, fingerprint } from './signing-support'
 
 const enabled = process.env.SIGNING_DATABASE_TESTS === '1'
-const tables = ['signing_devices', 'device_enrollments', 'device_challenges', 'device_sessions', 'signing_jobs', 'signing_items', 'signing_attempts', 'document_signatures', 'document_deliveries']
+const tables = ['signing_devices', 'device_enrollments', 'device_challenges', 'device_sessions', 'signing_jobs', 'signing_items', 'signing_attempts', 'document_signatures', 'document_deliveries', 'signing_artifacts']
 
 describe.skipIf(!enabled)('signing Phase 1: live PostgreSQL migration and authorization', () => {
   it('enforces all tenant FKs, unique identities, immutable sources, RLS and grants; rolls back all fixtures', async () => {

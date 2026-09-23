@@ -111,6 +111,7 @@ const signingMetadata = z.object({
   status: z.string().min(1).max(40).optional(),
   errorCode: z.string().min(1).max(80).optional(),
   signatureId: id.optional(),
+  reviewed: z.boolean().optional(),
 }).strict()
 
 export const ACTIVITY_EVENT_CATALOG = {
@@ -129,6 +130,7 @@ export const ACTIVITY_EVENT_CATALOG = {
   'device.revoked': { module: 'security', critical: true, metadata: z.object({ entityId: id }).strict() },
   'device.health_changed': { module: 'security', critical: true, metadata: z.object({ entityId: id }).strict() },
   'device.delivery_acknowledged': { module: 'security', critical: true, metadata: z.object({ entityId: id }).strict() },
+  'device.delivery_failed': { module: 'security', critical: true, metadata: z.object({ entityId: id }).strict() },
   'signing.requested': { module: 'documents', critical: true, metadata: signingMetadata },
   'signing.claimed': { module: 'documents', critical: true, metadata: signingMetadata },
   'signing.started': { module: 'documents', critical: true, metadata: signingMetadata },

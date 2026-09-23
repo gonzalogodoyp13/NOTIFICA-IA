@@ -37,7 +37,7 @@ export function createServerSupabaseClient() {
   )
 }
 
-export function createServerSupabaseStorageClient(options: { requireServiceRole?: boolean } = {}) {
+export function createServerSupabaseStorageClient(options: { requireServiceRole?: boolean; timeoutMs?: number } = {}) {
   const supabaseUrl = process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
   const supabaseKey = options.requireServiceRole
@@ -51,6 +51,9 @@ export function createServerSupabaseStorageClient(options: { requireServiceRole?
   }
 
   return createServerClient(supabaseUrl, supabaseKey, {
+    ...(options.timeoutMs ? { global: { fetch: (input: RequestInfo | URL, init?: RequestInit) => fetch(input, {
+      ...init, signal: init?.signal ? AbortSignal.any([init.signal, AbortSignal.timeout(options.timeoutMs!)]) : AbortSignal.timeout(options.timeoutMs!),
+    }) } } : {}),
     cookies: {
       getAll() { return [] },
       setAll() {},

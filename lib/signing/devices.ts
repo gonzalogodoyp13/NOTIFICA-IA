@@ -6,6 +6,8 @@ import { prisma } from '../prisma'
 import { recordCriticalEvent } from '../audit/activityEvent'
 import { lockSigningOffice } from './transaction'
 import { createSigningService } from './service'
+import { createArtifactService, signingStorage, type ArtifactDependencies } from './artifacts'
+import { createDeliveryService, seedReceiverDeliveries } from './deliveries'
 import { type SigningContext, SigningError } from './core'
 import { Certificate, DeviceError, DeviceId, DeviceLease, Enroll, Heartbeat, Role, Secret, SessionProof,
   enrollmentMessage, observedHealth, publicIdentity, sessionMessage, sha256, verifyProof } from './deviceProtocol'
@@ -16,7 +18,7 @@ const signerRoles = ['SIGNER', 'SIGNER_RECEIVER']
 const receiverRoles = ['RECEIVER', 'SIGNER_RECEIVER']
 const sessionMs = 5 * 60_000
 const staleMs = 90_000
-export function createDeviceService(db: PrismaClient = prisma) {
+export function createDeviceService(db: PrismaClient = prisma, artifactDependencies: ArtifactDependencies = {}) {
   async function transaction<T>(officeId: number, fn: (tx: Tx, now: Date) => Promise<T>) {
     return db.$transaction(async tx => fn(tx, await lockSigningOffice(tx, officeId)), { timeout: 30_000, maxWait: 15_000 })
   }
@@ -61,7 +63,17 @@ export function createDeviceService(db: PrismaClient = prisma) {
         "windowAt" = date_trunc('minute', clock_timestamp()) RETURNING count`
     if (rows[0].count > limit) throw new DeviceError('RATE_LIMITED', 429)
   }
+  const artifacts = createArtifactService(db, authenticated, artifactDependencies)
+  const deliveries = createDeliveryService(db, authenticated, artifactDependencies.storage ?? signingStorage)
   return {
+    pendingDeliveries: deliveries.pending,
+    beginDelivery: deliveries.begin,
+    downloadDelivery: deliveries.download,
+    failDelivery: deliveries.fail,
+    download: artifacts.download,
+    submitArtifact: artifacts.submit,
+    authorizeUpload: artifacts.authorizeUpload,
+    cleanupArtifacts: artifacts.cleanup,
     // DB-backed fixed windows work across processes. Counts commit even when the
     // subsequent authentication/operation fails. Keys contain hashes, never secrets.
     throttle,
@@ -108,6 +120,7 @@ export function createDeviceService(db: PrismaClient = prisma) {
         const consumed = await tx.deviceEnrollment.updateMany({ where: { id: enrollment.id, consumedAt: null, revokedAt: null, expiresAt: { gt: now } }, data: { consumedAt: now, deviceId: device.id } })
         if (consumed.count !== 1) throw new DeviceError('ENROLLMENT_INVALID', 401)
         await audit(tx, device.officeId, 'device.enrolled', device.id)
+        await seedReceiverDeliveries(tx, device)
         return { deviceId: device.id, officeId: device.officeId, role: device.role }
       })
     },
@@ -183,7 +196,7 @@ export function createDeviceService(db: PrismaClient = prisma) {
         return { health, serverTime: now, heartbeatAfterSeconds: 30 }
       })
     },
-    async queue(token: string, action: 'claim' | 'renew' | 'release' | 'fail', raw: unknown) {
+    async queue(token: string, action: 'claim' | 'renew' | 'release' | 'fail' | 'start', raw: unknown) {
       const officeId = await sessionOffice(token)
       const identity = await withDevice(token, 'signer', async (_tx, device) => device)
       // Recheck session and revocation inside the queue's existing office lock.
@@ -194,33 +207,47 @@ export function createDeviceService(db: PrismaClient = prisma) {
       })
       if (action === 'claim') {
         z.object({}).strict().parse(raw)
+        try { await artifacts.cleanup(officeId) } catch { console.warn('SIGNING_ARTIFACT_CLEANUP_PENDING') }
         const item = await queue.claim(officeId, identity.id)
         if (!item) return null
         return { itemId: item.id, leaseToken: item.leaseToken, leaseExpiresAt: item.leaseExpiresAt, sourceVersionId: item.sourceVersionId, sourceChecksum: item.sourceChecksum }
       }
-      const input = (action === 'fail' ? DeviceLease.extend({ errorCode: z.enum(['NETWORK', 'STORAGE', 'TSA_UNAVAILABLE', 'REVOCATION_UNAVAILABLE', 'PIN_REQUIRED', 'PIN_INCORRECT', 'TOKEN_MISSING', 'DRIVER_MISSING', 'CERT_EXPIRED', 'CHECKSUM_MISMATCH', 'VALIDATION_FAILED', 'UNKNOWN']) }).strict() : DeviceLease).parse(raw)
+      const input = (action === 'fail' ? DeviceLease.extend({ errorCode: z.enum(['NETWORK', 'STORAGE', 'TSA_UNAVAILABLE', 'REVOCATION_UNAVAILABLE', 'PIN_REQUIRED', 'PIN_INCORRECT', 'TOKEN_MISSING', 'DRIVER_MISSING', 'CERT_EXPIRED', 'CHECKSUM_MISMATCH', 'VALIDATION_FAILED', 'OUTCOME_UNKNOWN', 'UNKNOWN']) }).strict() : DeviceLease).parse(raw)
       const lease = { officeId, deviceId: identity.id, itemId: input.itemId, leaseToken: input.leaseToken }
       if (action === 'renew') return { leaseExpiresAt: (await queue.renew(lease)).leaseExpiresAt }
+      if (action === 'start') {
+        if (!artifacts.ready()) throw new DeviceError('VALIDATOR_NOT_CONFIGURED', 503)
+        await queue.start(lease); return { accepted: true }
+      }
       if (action === 'release') await queue.release(lease)
       else await queue.fail(lease, 'errorCode' in input ? input.errorCode : 'UNKNOWN')
       return { accepted: true }
     },
-    async input(token: string, raw: unknown) {
-      return withDevice(token, 'signer', async (tx, device, now) => {
-        const item = await validLease(tx, device, raw, now)
-        const source = await tx.documentoVersion.findFirst({ where: { id: item.sourceVersionId, officeId: device.officeId }, include: { documento: true } })
-        if (!source || source.checksumSha256 !== item.sourceChecksum || source.documento.currentVersionId !== source.id || source.documento.voidedAt || source.deletedAt) throw new SigningError('INELIGIBLE_SOURCE')
-        // Phase 4 is authorization only. Phase 7 attaches authenticated transfer;
-        // storage locators/URLs and infrastructure credentials never leave here.
-        return { authorized: true, sourceVersionId: source.id, checksumSha256: source.checksumSha256, sizeBytes: source.sizeBytes,
-          expiresAt: item.leaseExpiresAt, transferAvailable: false }
+    async recovery(token: string, raw: unknown) {
+      const lease = DeviceLease.parse(raw)
+      return withDevice(token, 'signer', async (tx, device) => {
+        const attempt = await tx.signingAttempt.findFirst({ where: { officeId: device.officeId, deviceId: device.id,
+          itemId: lease.itemId, leaseToken: lease.leaseToken }, include: { item: { include: { signature: true } } } })
+        if (!attempt) throw new DeviceError('STALE_LEASE', 409)
+        if (attempt.result === 'RUNNING' || attempt.item.signature) return { released: false }
+        const started = await tx.activityEvent.count({ where: { officeId: device.officeId,
+          eventType: 'signing.started', recordType: 'SigningItem', recordId: lease.itemId,
+          metadata: { path: ['attemptNumber'], equals: attempt.attemptNumber } } })
+        const reviewed = await tx.activityEvent.count({ where: { officeId: device.officeId,
+          eventType: 'signing.retried', recordType: 'SigningItem', recordId: lease.itemId,
+          AND: [{ metadata: { path: ['attemptNumber'], equals: attempt.attemptNumber } }, { metadata: { path: ['reviewed'], equals: true } }],
+        } })
+        return { released: !started || reviewed > 0 }
       })
+    },
+    async input(token: string, raw: unknown) {
+      return artifacts.metadata(token, raw)
     },
     async result(token: string, raw: unknown) {
       return withDevice(token, 'signer', async (tx, device, now) => {
         // Never accept a device's assertion that its PDF has been validated.
         await validLease(tx, device, raw, now)
-        throw new DeviceError('ARTIFACT_VALIDATION_NOT_AVAILABLE', 503)
+        throw new DeviceError('PDF_BODY_REQUIRED', 415)
       })
     },
     async acknowledge(token: string, raw: unknown) {
@@ -230,7 +257,7 @@ export function createDeviceService(db: PrismaClient = prisma) {
         if (!row) throw new DeviceError('NOT_FOUND', 404)
         if (row.signature.signedChecksum !== input.checksumSha256 || !['DOWNLOADING', 'DELIVERED'].includes(row.status)) throw new DeviceError('DELIVERY_CONFLICT', 409)
         if (row.status !== 'DELIVERED') {
-          await tx.documentDelivery.update({ where: { id: row.id }, data: { status: 'DELIVERED', deliveredAt: now } })
+          await tx.documentDelivery.update({ where: { id: row.id }, data: { status: 'DELIVERED', deliveredAt: now, errorCode: null, safeError: null } })
           await audit(tx, device.officeId, 'device.delivery_acknowledged', row.id)
         }
         return { delivered: true }

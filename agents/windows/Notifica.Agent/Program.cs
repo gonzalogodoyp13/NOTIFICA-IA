@@ -12,6 +12,7 @@ internal static class Program
             Signing.ProcessPrivacy.Apply();
             if (args.Contains("--self-test")) return SelfTest.Run().GetAwaiter().GetResult();
             if (args.Contains("--signing-self-test")) return Signing.SigningSelfTest.Run().GetAwaiter().GetResult();
+            if (args.Contains("--transfer-self-test")) return Signing.TransferSelfTest.Run().GetAwaiter().GetResult();
             if (args.Contains("--signing-worker")) return Signing.SigningWorker.Run().GetAwaiter().GetResult();
             if (args.Contains("--signing-worker-wait-test")) return Signing.SigningWorker.WaitSelfTest();
             int dialogTest = Array.IndexOf(args, "--signing-dialog-self-test");
@@ -20,6 +21,12 @@ internal static class Program
             if (dssTest >= 0 && dssTest + 1 < args.Length) return Signing.DssSelfTest.Run(args[dssTest + 1]).GetAwaiter().GetResult();
             int controlledTest = Array.IndexOf(args, "--controlled-self-test");
             if (controlledTest >= 0 && controlledTest + 1 < args.Length) return Signing.ControlledSigningSelfTest.Run(args[controlledTest + 1]).GetAwaiter().GetResult();
+            int recoveryTest = Array.IndexOf(args, "--recovery-self-test");
+            if (args.Contains("--receiver-self-test")) {
+                try { return ReceiverSelfTest.Run().GetAwaiter().GetResult(); }
+                catch (Exception error) { Console.Error.WriteLine($"RECEIVER_SELF_TEST: {error}"); return 1; }
+            }
+            if (recoveryTest >= 0 && recoveryTest + 1 < args.Length) return Signing.RecoverySelfTest.Run(args[recoveryTest + 1]).GetAwaiter().GetResult();
             int configIndex = Array.IndexOf(args, "--config");
             string configPath = configIndex >= 0 && configIndex + 1 < args.Length ? Path.GetFullPath(args[configIndex + 1])
                 : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "NotificaIA", "Agent", "config.json");
@@ -99,9 +106,11 @@ internal static class Program
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct);
         using var worker = new AgentWorker(config, path);
         Task connectivity = worker.Run(linked.Token), pipe = LocalPipe.Serve(config, worker, linked.Token);
-        await Task.WhenAny(connectivity, pipe);
+        Task remote = worker.Remote?.Run(linked.Token) ?? Task.Delay(Timeout.Infinite, linked.Token);
+        Task mirror = worker.Mirror.Run(linked.Token);
+        await Task.WhenAny(connectivity, pipe, remote, mirror);
         linked.Cancel();
-        try { await Task.WhenAll(connectivity, pipe); }
+        try { await Task.WhenAll(connectivity, pipe, remote, mirror); }
         catch (OperationCanceledException) when (linked.IsCancellationRequested) { }
     }
 }

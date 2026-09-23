@@ -6,6 +6,9 @@ const result = spawnSync(process.execPath, [
   'tests/integration/signing-database.test.ts', 'tests/integration/signing-service.test.ts',
   'tests/integration/signing-completion.test.ts',
   'tests/integration/signing-devices.test.ts',
+  'tests/integration/signing-artifacts.test.ts',
+  'tests/integration/signing-center.test.ts',
+  'tests/integration/signing-deliveries.test.ts',
 ], { stdio: 'inherit', env: { ...process.env, SIGNING_DATABASE_TESTS: '1' } })
 if (result.error) console.error(result.error.message)
 process.exit(result.status ?? 1)

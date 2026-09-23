@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { NextRequest } from 'next/server'
 import { enrollmentMessage, Heartbeat, observedHealth, publicIdentity, sessionMessage, verifyProof } from '../../lib/signing/deviceProtocol'
 vi.mock('server-only', () => ({}))
-import { createDeviceHandler, readDeviceBody, requireDeviceHttps } from '../../lib/signing/deviceHttp'
+import { createDeviceHandler, readDeviceBody, readDeviceBytes, requireDeviceHttps } from '../../lib/signing/deviceHttp'
 
 describe('device protocol boundaries', () => {
   const keys = generateKeyPairSync('rsa', { modulusLength: 3072 })
@@ -81,5 +81,18 @@ describe('device protocol boundaries', () => {
     const request = new NextRequest('https://example.test/api/signing/device/heartbeat', { method: 'POST', headers: { 'content-type': 'application/json', cookie: 'session=browser' }, body: JSON.stringify(report) })
     expect((await handler(request, 'heartbeat')).status).toBe(401)
     expect(service.heartbeat).not.toHaveBeenCalled()
+  })
+  it('bounds PDF streams and checks bearer/lease before reading their bytes', async () => {
+    const request = new NextRequest('https://example.test', { method: 'POST', headers: { 'content-type': 'application/pdf' }, body: 'x'.repeat(100) })
+    await expect(readDeviceBytes(request, 99)).rejects.toThrow('REQUEST_TOO_LARGE')
+    const service = { throttle: vi.fn(), limitAuthenticated: vi.fn(), authorizeUpload: vi.fn().mockRejectedValue(new Error('DENIED')), submitArtifact: vi.fn() }
+    const handler = createDeviceHandler(service as never)
+    const raw = new NextRequest('https://example.test/api/signing/device/result', { method: 'POST', headers: {
+      'content-type': 'application/pdf', authorization: `Bearer ${'a'.repeat(43)}`,
+      'x-signing-item': 'item', 'x-signing-lease': '00000000-0000-4000-8000-000000000001' }, body: '%PDF-test' })
+    await handler(raw, 'result')
+    expect(service.authorizeUpload).toHaveBeenCalledOnce()
+    expect(raw.bodyUsed).toBe(false)
+    expect(service.submitArtifact).not.toHaveBeenCalled()
   })
 })

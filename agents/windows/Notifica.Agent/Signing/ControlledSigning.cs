@@ -34,6 +34,10 @@ internal sealed class ControlledSigning : IAsyncDisposable
     private Task? running;
     private readonly Action<bool> setActive;
     private readonly Func<CancellationToken, Task> waitForProbeIdle;
+    private readonly DssEngineOptions engine;
+    private readonly string role;
+    internal Func<CancellationToken, Task>? BeforeSign { get; init; }
+    internal Func<IReadOnlyList<SignedPdf>, CancellationToken, Task>? AfterSign { get; init; }
     internal ControlledSigning(Configuration config, Action<bool> setActive, Func<CancellationToken, Task> waitForProbeIdle,
         TimeProvider? clock = null)
     {
@@ -41,6 +45,7 @@ internal sealed class ControlledSigning : IAsyncDisposable
         this.setActive = setActive;
         this.waitForProbeIdle = waitForProbeIdle;
         var options = config.ControlledSigning ?? throw new SigningFailure(SigningError.InvalidBatch);
+        engine = options.Engine; role = options.Role;
         options.Validate(config);
         // Freeze metadata once. Approval and worker use the same immutable batch.
         using var file = new FileStream(options.ManifestPath, FileMode.Open, FileAccess.Read, FileShare.Read);
@@ -50,6 +55,16 @@ internal sealed class ControlledSigning : IAsyncDisposable
         if (batch.OfficeId != options.OfficeId || batch.SignerFingerprint != config.CertificateFingerprint)
             throw new SigningFailure(SigningError.ApprovalMismatch);
         approval = new BatchApproval(batch, clock);
+    }
+    internal ControlledSigning(Configuration config, SigningBatch batch, DssEngineOptions engine, string role,
+        Action<bool> setActive, Func<CancellationToken, Task> waitForProbeIdle)
+    {
+        this.config = config; this.batch = batch; this.engine = engine; this.role = role;
+        this.setActive = setActive; this.waitForProbeIdle = waitForProbeIdle;
+        batch.Validate(); engine.Validate();
+        if (batch.SignerFingerprint != config.CertificateFingerprint || role is not ("SIGNER" or "SIGNER_RECEIVER"))
+            throw new SigningFailure(SigningError.ApprovalMismatch);
+        approval = new BatchApproval(batch);
     }
     internal ControlledBatchView View()
     {
@@ -72,7 +87,7 @@ internal sealed class ControlledSigning : IAsyncDisposable
             ExpireApproval();
             if (state == "EXPIRED") throw new SigningFailure(SigningError.ApprovalExpired);
             if (state != "AWAITING_APPROVAL") throw new SigningFailure(SigningError.ApprovalConsumed);
-            approval.Consume(batch, id, digest, config.ControlledSigning!.Role);
+            approval.Consume(batch, id, digest, role);
             state = "RECEIVING_PIN";
         }
     }
@@ -81,6 +96,7 @@ internal sealed class ControlledSigning : IAsyncDisposable
         lock (gate)
             if (state == "RECEIVING_PIN") { state = "FAILED"; error = SigningError.Cancelled.ToString(); }
     }
+    internal void MarkCommitted() { lock (gate) { state = "COMPLETED"; error = null; } }
     internal void Start(PinBuffer pin)
     {
         lock (gate)
@@ -94,7 +110,10 @@ internal sealed class ControlledSigning : IAsyncDisposable
                 try
                 {
                     await waitForProbeIdle(lifetime.Token);
-                    var answer = await SigningWorker.Execute(new(batch, config.Pkcs11Library, config.ControlledSigning!.Engine), pin, lifetime.Token);
+                    if (BeforeSign is not null) await BeforeSign(lifetime.Token);
+                    var answer = await SigningWorker.Execute(new(batch, config.Pkcs11Library, engine), pin, lifetime.Token);
+                    lock (gate) { results = answer.Documents; loginAttempts = answer.TokenLoginAttempts; signatureOperations = answer.TokenSignatureOperations; }
+                    if (answer.Ok && AfterSign is not null) await AfterSign(answer.Documents, lifetime.Token);
                     lock (gate) { results = answer.Documents; error = answer.Error; loginAttempts = answer.TokenLoginAttempts;
                         signatureOperations = answer.TokenSignatureOperations; state = answer.Ok ? "COMPLETED" : "FAILED"; }
                 }

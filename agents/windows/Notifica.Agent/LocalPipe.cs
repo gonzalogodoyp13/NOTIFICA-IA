@@ -54,7 +54,7 @@ internal static class LocalPipe
     }
     internal static async Task Serve(Configuration config, AgentWorker worker, CancellationToken ct)
     {
-        await using var signing = config.ControlledSigning is null ? null : new Signing.ControlledSigning(config, active => worker.SigningActive = active, worker.WaitForProbeIdle);
+        await using var controlled = config.ControlledSigning is null ? null : new Signing.ControlledSigning(config, active => worker.SigningActive = active, worker.WaitForProbeIdle);
         while (!ct.IsCancellationRequested)
         {
             await using var pipe = NamedPipeServerStreamAcl.Create(config.PipeName, PipeDirection.InOut, 1, PipeTransmissionMode.Byte,
@@ -72,6 +72,7 @@ internal static class LocalPipe
                 if (!authorized) continue;
                 using var document = JsonDocument.Parse(input);
                 string action = document.RootElement.GetProperty("action").GetString() ?? "";
+                var signing = controlled ?? worker.Remote?.Current;
                 object result;
                 if (action == "status" && document.RootElement.EnumerateObject().Count() == 1) result = new { ok = true, status = worker.Status };
                 else if (action == "controlled-batch" && signing is not null && document.RootElement.EnumerateObject().Count() == 1)
@@ -90,9 +91,10 @@ internal static class LocalPipe
                     }
                     catch { signing.Abandon(); throw; }
                 }
-                else if (action == "enroll" && document.RootElement.EnumerateObject().Count() == 3)
+                else if (action == "enroll" && document.RootElement.EnumerateObject().All(p => p.Name is "action" or "code" or "name" or "receiverDirectory"))
                 {
-                    await worker.Enroll(document.RootElement.GetProperty("code").GetString() ?? "", document.RootElement.GetProperty("name").GetString() ?? "", deadline.Token);
+                    await worker.Enroll(document.RootElement.GetProperty("code").GetString() ?? "", document.RootElement.GetProperty("name").GetString() ?? "", deadline.Token,
+                        document.RootElement.TryGetProperty("receiverDirectory", out var folder) ? folder.GetString() : null);
                     result = new { ok = true };
                 }
                 else result = new { ok = false, error = "UNSUPPORTED_LOCAL_ACTION" };

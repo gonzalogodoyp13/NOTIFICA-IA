@@ -25,11 +25,13 @@ internal static class SelfTest
             chain.ChainPolicy.RevocationMode = X509RevocationMode.NoCheck; // synthetic test CA has no revocation service
             return chain.Build(cert);
         };
-        using var cancellation = new CancellationTokenSource(TimeSpan.FromMinutes(5));
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromMinutes(15));
         using var worker = new AgentWorker(config, configPath, handler);
         Task run = worker.Run(cancellation.Token), pipe = LocalPipe.Serve(config, worker, cancellation.Token);
-        try { await Task.WhenAny(run, pipe); }
-        finally { cancellation.Cancel(); try { await Task.WhenAll(run, pipe); } catch (OperationCanceledException) { } }
+        Task remote = worker.Remote?.Run(cancellation.Token) ?? Task.Delay(Timeout.Infinite, cancellation.Token);
+        Task mirror = worker.Mirror.Run(cancellation.Token);
+        try { await Task.WhenAny(run, pipe, remote, mirror); }
+        finally { cancellation.Cancel(); try { await Task.WhenAll(run, pipe, remote, mirror); } catch (OperationCanceledException) { } }
         return 0;
     }
     private static void Require(bool condition, string name) { if (!condition) throw new InvalidOperationException(name); }

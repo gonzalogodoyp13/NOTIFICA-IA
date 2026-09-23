@@ -973,3 +973,555 @@ authorized local session. Phase 6 is complete within its documented scope.
 FreeTSA remains the controlled test TSA. Production artifact transfer, independent
 server validation and document version promotion are Phase 7; bulk web controls
 and distribution remain later phases.
+
+## Phase 7 — Secure artifact transfer, server validation and document versioning
+
+Implemented September 21, 2026 (the acceptance timestamps below are September 22
+UTC). This section supersedes the earlier `transferAvailable: false` and disabled
+result-endpoint descriptions for a configured Phase 7 deployment. The original
+office isolation, lease fences, source immutability, session-only PIN policy and
+configurable B/LT/LTA contracts remain in force. No production office was enabled.
+
+### Transfer and transaction contracts
+
+- Required Prisma status, deploy and generate ran in order. Forward migration
+  `20260922010000_signing_artifact_transfer` is deployed: **44 applied migrations**.
+  `SigningArtifact` records the server-generated output key, exact item/device/
+  office/lease, checksum, length, expiry and validation report. Composite foreign
+  keys enforce tenancy. RLS is enabled and grants are revoked from PUBLIC, anon,
+  authenticated and service_role. SQL triggers protect immutable locators,
+  committed reports and the allowed cleanup state transitions.
+- `lib/signing/artifacts.ts` provides metadata, authenticated PDF download,
+  binary result submission and cleanup. Each access checks the active device,
+  signer role, same-office item, fresh lease UUID, expiry and exact current source.
+  Download verifies private-bucket status, length and SHA-256, then rechecks access
+  after storage I/O. The agent receives no bucket key, storage URL or service key.
+- The Windows agent writes a unique `.part` file, verifies length and SHA-256,
+  flushes it and renames without replacing another file. Corrupt/truncated bytes
+  cannot reach approval/token execution. The engine additionally verifies the
+  immutable approved source before token use. Partial-file cleanup deletes only
+  a file created by that operation, preserving existing collision files.
+- The device API adds `download` and `start`. `result` accepts `application/pdf`
+  with `X-Signing-Item` and `X-Signing-Lease`, authorizes before reading the body,
+  and applies body/time bounds. Legacy JSON success assertions return
+  `PDF_BODY_REQUIRED`; client-supplied validation is never accepted.
+- The backend computes the signed SHA-256, independently validates the PDF and
+  binds the report to its source/output hashes and selected certificate. After
+  rechecking access it reserves a unique output key, uploads with `upsert: false`,
+  and rereads the stored bytes to check length/hash. The unsigned object is never
+  overwritten. Failed or uncertain uploads remain durably tracked.
+- Under the existing office transaction lock, `complete()` rechecks authorization,
+  the live lease and source eligibility; creates the next `DocumentoVersion`;
+  records `DocumentSignature` and the successful `SigningAttempt`; updates job,
+  item and canonical audit; promotes the current pointer only if it still refers
+  to the exact source; and marks the artifact `COMMITTED` with its validation
+  report. All database changes commit together. Validation or audit failure cannot
+  leave a promoted version or partial success evidence.
+- An identical committed replay returns the original result only for its original
+  successful device/lease and backend-computed output checksum. Changed bytes or
+  another lease are rejected. Concurrent callbacks cannot create duplicate signed
+  versions; unused reservations remain cleanup candidates.
+- Pending reservations expire after two hours. Signer claims sweep at most 20
+  expired/uncommitted uploads, mark them `CLEANING`, exclude any object referenced
+  by a document version, remove the exact key, then mark `DELETED`. Interrupted
+  cleanup resumes on a subsequent claim. `COMMITTED` rows cannot enter cleanup.
+  A maintenance runner can invoke the same internal cleanup operation when there
+  are no active signers; scheduling/alerts are Phase 10.
+
+### Independent validation and deployment configuration
+
+`scripts/signing/validate_pdf.py` pins **pyHanko 0.37.0** independently of the
+Windows DSS 6.5 engine. Every request runs in a separate constrained process with
+explicit trust roots, no network fetching and no inherited infrastructure secrets.
+The parent applies a 90-second deadline and bounded output; the child applies CPU
+and memory limits. Trust cannot be supplied by the signing device.
+
+Validation checks the expected certificate DER SHA-256, RSA/SHA-256 signature,
+key usage, certificate chain, mandatory revocation, PAdES signature attributes,
+coverage and requested profile. LT/LTA require embedded validation evidence and a
+valid SHA-256 signature timestamp. LTA additionally checks document timestamps
+and final whole-file coverage of the validation store. B requires current
+operator-provisioned revocation evidence, without fabricating a timestamp.
+
+Exact source-prefix equality is checked, followed by a PDF revision comparison.
+This rejects a cryptographically valid signature over an appended alteration to
+the original page. Only signing and permitted validation-maintenance changes are
+allowed. DSS's absent-to-direct-AcroForm behavior is normalized in the historical
+in-memory comparison; no source bytes are rewritten.
+
+The validation report proves the profile/current-time checks performed. It does
+not claim archival proof of existence after future certificate/evidence expiry.
+The timestamp message imprint is checked separately from the TSA's internal CMS
+digest: FreeTSA's internal SHA-512 does not invalidate its SHA-256 imprint.
+
+Two server-only runtime options are supported:
+
+1. `SIGNING_VALIDATOR_CONFIG`: absolute local Python/trust/evidence config for a
+   Node host with Python installed (tested Windows runtime: Python 3.12.14).
+2. `SIGNING_VALIDATOR_URL` and `SIGNING_VALIDATOR_TOKEN`: authenticated HTTPS to
+   `validator_service.py`, suitable for the web project's Vercel deployment. The
+   loopback Python listener belongs behind an HTTPS proxy; it authenticates before
+   reading bytes, accepts no client paths/URLs, and limits concurrent validators.
+   The Next.js adapter refuses HTTP, embedded URL credentials and redirects, and
+   bounds the returned report. The agent never receives this server credential.
+
+With no configured validator, metadata reports transfer unavailable and `start`
+fails closed. Production validator hosting/secret provisioning remains rollout
+work. `.env.example` and `scripts/signing/README.md` document configuration; the
+actual `.env` remains unchanged. The authenticated web transport limits each PDF
+to **4 MiB**, below Vercel's function payload limit; larger PDFs fail explicitly.
+The Windows engine retains its separate 32 MiB parser bound. See the linked
+official deployment limit and configuration details in the validator README.
+
+### Windows integration and recovery
+
+Agent version 0.7.0 uses an explicit `signingEngine` configuration for enrolled
+signers, separate from controlled-test mode. It claims one document per local
+approval, displays requester/office/certificate/profile/document metadata, and
+uses the existing secured local PIN channel. Receivers cannot use it. Lease
+renewal continues during approval/signing, and `start` establishes the backend
+irreversible-operation fence before the token operation.
+
+The protected `signing-work.json` journal records uncertainty before starting and
+records the exact signed file/hash before upload. A lost response or restart
+reuploads that same artifact without another token operation. Uncertain token
+outcomes remain for operator review; incorrect PINs never automatically retry.
+Files remain available for recovery. An operator-wait journal is retained without
+repeated failure submissions. Transfer deadlines also cover response-body reads.
+The control-center recovery workflow and multi-document web selection remain
+Phase 8; receiver delivery remains Phase 9.
+
+### Real estampo acceptance
+
+Authoritative evidence:
+`agents/windows/artifacts/phase7/live-defddef9-b27c-4eed-8395-baa175e23148/acceptance.json`.
+The run began **2026-09-22 00:49:36 UTC** and completed cleanup at **00:51:23 UTC**.
+
+- Generated a clearly marked synthetic estampo with the application's actual
+  `buildEstampoPdf`, stored it in the real private `documents` bucket, and queued
+  its exact immutable version in a disposable database schema.
+- The real compiled Windows agent enrolled/authenticated over loopback HTTPS,
+  downloaded and hash-checked that source, and used the user's local approval/PIN.
+  The worker reported **one token login and one signature operation**.
+- The independent server validator accepted **PADES_LT**, offline, with the
+  expected E-Cert identity, preserved source, trusted timestamp and revocation.
+  A new signed version became current with exactly **one signature and one
+  successful attempt**. The unchanged unsigned object was reread and checked.
+- A second real storage upload to an existing source key was rejected, proving
+  collision protection without replacing the original bytes.
+- The harness deliberately discarded the successful commit response, stopped
+  and restarted the agent, and observed committed replay of the retained output.
+  Recovery did not perform another signature or create another signed version.
+- `estampo-source.pdf` and `estampo-signed.pdf` are retained with public evidence.
+  Source SHA-256: `e7574c1305231a2904000328225dc0d49c0d4b5d76bf10f6b82dc9fa0bc4396e`.
+  Signed SHA-256: `6266cd0bb948e058cb84135e580c6fa4937c2da2bb632092698a17c67ac7c61e`.
+  The harness removed its cloud objects, disposable schema, CNG identity, TLS
+  private material and credential/journal files; `cleanupCompleted` is true.
+
+This exercised the real estampo generator, actual private storage, backend device
+handler/transactions, compiled Windows agent, USB token and independent Python
+validator. Database orchestration tests use fake storage/validation only for
+deterministic failure injection; they do not substitute for this acceptance run.
+
+### Verification and requirement audit
+
+| Phase 7 requirement | Evidence |
+| --- | --- |
+| Private download requires valid claim/lease/role/office | Actual HTTPS acceptance plus database tests for same-office access, receiver denial, stale leases, source checksum and post-I/O rechecks. |
+| Tampered input is rejected before signing | Native transfer checks reject wrong hash, truncated/oversized data and collisions; Phase 6 pre-login immutable-source checks remain enforced. |
+| Tampered/invalid output is rejected independently | Real pyHanko tests reject corrupted output, wrong certificate/hash, untrusted root, revoked signer, missing revocation/timestamp and a valid signature over altered source content. |
+| Upload cannot overwrite source/existing object | Production storage uses unique reservations and `upsert: false`; actual Supabase collision rejection and source reread passed. |
+| Failure leaves current version unchanged | Database validation, storage corruption, expired lease/revocation and late audit-failure tests assert no promotion or success evidence. |
+| One signed version/evidence/attempt on success | Real estampo acceptance and concurrent duplicate-callback database assertions. |
+| Committed retries are idempotent | Real lost-response/process-restart acceptance and wrong-hash/wrong-lease replay rejection tests. |
+| Unsigned source and authoritative output survive cleanup | Source hash checks, committed-upload immutability, and expired-reservation-only cleanup tests. |
+| No receiver distribution or control-center implementation | Success test asserts no `DocumentDelivery` rows; existing Firmados UI remains Phase 8. |
+
+Final verification:
+
+- **289 standard integration tests passed**. The 52 opt-in cases skipped by that
+  command comprise the separately exercised database, Windows and real-token tests.
+- **49 live PostgreSQL cases passed**: 39 existing foundation/device cases and
+  10 new artifact cases. Fixtures ran in disposable schemas or rollback-only
+  transactions. **Two real compiled-agent HTTPS regression cases passed** after
+  the final Windows changes, including selected-token heartbeat, persisted device
+  identity/restart and revocation. No PIN/login is used in those two cases.
+- **13 independent cryptographic checks passed**, including real-token LT and
+  software B/LT/LTA plus hostile inputs. Evidence:
+  `agents/windows/artifacts/phase7/validator-tests-8a985d0b7bda42e5aa34d693fff78760/results.json`.
+- **Four real private validation-worker HTTP checks passed**: absent/wrong bearer,
+  valid PDF and tampered PDF. Evidence: `phase7/validator-service-results.json`.
+  Three HTTPS-adapter protocol tests are included in the 289 standard tests.
+- Windows publish passed. The final binary passed **12 foundation, 22 session,
+  9 controlled-workflow and 8 transfer checks**. JSON results are in
+  `agents/windows/artifacts/phase7/`. The final deadline/operator-wait refinements
+  were made after real-token acceptance; the signing engine and cryptographic
+  implementation were unchanged and no further hardware signature was required.
+- Next.js production build, including TypeScript/lint, passed. Auth/audit static
+  verification passed for **349 files**; UTF-8 and diff whitespace checks passed.
+  Live infrastructure connectivity passed with **zero warnings**, preserving
+  transaction-pooler runtime and session-pooler migration configuration.
+- Initial restricted-process database/infrastructure checks could not reach
+  Supabase; the network-enabled runs above passed. Earlier validation iterations
+  corrected the timestamp-imprint/CMS-digest distinction and Windows child
+  `SystemRoot` propagation. Failed attempts are not counted as successful checks.
+- Final read-only cleanup audit at **2026-09-22 01:21:29 UTC** found **zero**
+  disposable signing schemas, synthetic signing offices or production signing
+  devices; **44 migrations** remain applied. Both retained PDF hashes match the
+  acceptance record and its private test material is absent. No temporary agent
+  process or installed test service remains. Evidence: `phase7/cleanup-results.json`.
+
+**Phase 7 exit criterion met:** one real NOTIFICA IA-generated test estampo traveled
+from its queued immutable source to an independently validated signed current
+version, with preserved source and idempotent restart recovery. The actual
+environment still has automatic enqueue and proxy trust disabled and no production
+validator configured. Production hosting/TLS/TSA agreements and activation remain
+rollout work; the control center and receiver distribution remain later phases.
+
+## Phase 8 — Firmados control center and manual recovery
+
+Implemented September 22, 2026. `/firmados` now contains the office's operational
+signing center instead of an empty shell. This phase adds browser controls and
+reviewed recovery over the existing Phase 1–7 pipeline. It does not change the
+local PIN policy, install an agent, enable automatic signing, or implement the
+receiver filesystem mirror. No schema migration was needed; the required Prisma
+status/deploy/generate sequence passed with **44 migrations applied**.
+
+### Interface and office authorization
+
+- `FirmadosCenter.tsx` shows office queue totals, eligible estampos, active work,
+  failures/operator waits, validated signatures, device/token health, certificate
+  expiry, last contact and existing delivery progress. Missing delivery rows are
+  displayed as no distribution scheduled, never as a successful delivery.
+- Administrators can select individual estampos, every eligible row on a page,
+  or all eligible results within the execution-date range. The all-results action
+  rejects more than 500 matches and asks for a narrower range; it never silently
+  truncates a batch. Selection stores exact version IDs and checksums. Changing
+  filters clears the selection; paging can retain it.
+- A native modal dialog presents the frozen document list, certificate and
+  B/LT/LTA profile and requires explicit confirmation. It explains that approval
+  and PIN entry happen on the Windows signer. No PIN input exists in the web UI.
+  The selected profile is preserved exactly, with no silent downgrade.
+- Automatic and manual requests share the same table and statuses. Rows show
+  origin, requester, profile, attempts, original version/checksum and job ID.
+  A role-workspace link opens the associated documents. Fixed Spanish business
+  messages explain failures; the separate diagnostic code is returned/displayed
+  only for office administrators. Raw stored exception text is never serialized.
+- Active office members can read the center. Only an active office administrator
+  can queue, retry or cancel. `GET/POST /api/signing/center` obtains office/user
+  identity from `withApiUser`; request-supplied office IDs are rejected. Service
+  methods recheck membership/permissions against the database. Mutation requests
+  require matching browser Origin/Host and bounded JSON input. The Host comparison
+  accounts for NextURL's loopback canonicalization and never trusts
+  `X-Forwarded-Host`. Responses are private/no-store.
+- The responsive table becomes stacked document rows on narrow screens. The
+  confirmation dialog uses native focus containment and Escape dismissal. Reads
+  refresh every 15 seconds when visible and no confirmation/mutation is active;
+  stale responses are fenced. The browser only observes and requests work; it
+  never processes the signing queue itself.
+
+### Execution-date contract
+
+`centerContracts.ts` defines the business-date precedence: notification
+`ejecucion.fecha`, notification `fechaEjecucion`, diligence `ejecucion.fecha`,
+diligence `fechaEjecucion`, then diligence `fecha`. For notification-only documents,
+the linked notification's diligence supplies the fallback. `Documento.createdAt`
+is never used as the execution date. Documents with no valid date remain visible
+without a date range and are excluded when a range is supplied.
+
+Date-only values remain calendar dates. Legacy midnight-UTC values follow the
+application's existing date-input convention and retain their date. Actual offset
+timestamps are converted through `America/Santiago`, including winter/summer and
+the September daylight-saving boundary. Invalid dates and reversed ranges fail
+validation. Both range ends are inclusive calendar dates.
+
+The query reads office-scoped metadata only, including legacy execution JSON,
+normalizes dates, then filters and paginates. It does not load legacy base64 PDFs
+or storage bytes. Responses are limited to 500 rows (25 in the normal table).
+Summary counts cover the entire office; the table reports its filtered count.
+For very large office histories, a future indexed execution-date projection can
+replace the metadata scan while preserving these tested semantics. Malformed
+cross-office notification links cannot expose their execution metadata.
+
+### Manual queue and safe recovery
+
+- `center.ts` creates manual jobs under the existing office advisory lock. It
+  requires a non-revoked same-office signer with the selected valid certificate;
+  a temporarily offline signer can receive pending work. The server locks and
+  rereads selected document pointers and verifies exact source hashes, current
+  versions, tenancy, notification links, non-voided state and PDF eligibility.
+- A deterministic `manual_` key hashes office, certificate, profile and sorted
+  version/checksum snapshots. Concurrent submissions and uncertain-response
+  replays return the original job. A different profile or key cannot bypass an
+  existing item's recovery/attempt limits. Existing signatures are excluded.
+  The job/items and canonical requester audit commit atomically.
+- Retry requires the administrator to confirm that previous work has stopped and
+  its result/local files have been inspected. The server binds the review to the
+  exact attempt number, enforces the existing attempt limit and source eligibility,
+  and rejects completed signatures. Expired signing leases first enter the existing
+  operator-review state. A repeated reviewed retry before another claim is harmless;
+  a review becomes stale when a new claim increments the attempt number.
+- Browser cancellation is allowed only before irreversible work. It rechecks the
+  attempt number and rejects any item with a canonical `signing.started` event,
+  including a currently failed/waiting item. Claim/start/cancel share the same
+  office lock. This prevents a race from cancelling an operation that already
+  crossed the start fence.
+- Reviewed retries record `reviewed: true` on the canonical `signing.retried`
+  event. Agent **0.8.0** uses the authenticated `recovery` endpoint with its
+  original device/attempt/lease identity. Started work remains retained unless
+  that exact attempt has an explicitly reviewed retry; a pre-signing terminated
+  assignment may be released safely. Revoked/foreign devices cannot resolve it.
+- Once resolved, the agent clears only its active journal, preserves source/output
+  files and requests a fresh lease and local approval. It never repeats a PIN or
+  starts a second token operation automatically. Committed output continues using
+  Phase 7's same-byte replay path instead of re-signing.
+
+### Verification and acceptance evidence
+
+Final results, including the production-browser acceptance pass:
+
+- **293 standard tests passed**, including four new business-date/input-contract
+  cases. TypeScript, UTF-8 and auth/audit verification passed (353 checked files).
+- **59 live PostgreSQL cases passed**, including **10 Phase 8 cases**: execution
+  filtering/pagination, member/admin isolation and diagnostic redaction, concurrent
+  manual idempotency, changed/voided sources and revoked signer rejection,
+  post-start cancellation denial, pre-start cancellation/stale attempt fences,
+  reviewed retry/agent resolution, completed-item protection, late audit rollback,
+  and malformed cross-office notification isolation. All mutable fixtures used
+  disposable schemas; existing production documents were not changed.
+- Windows publish passed. The new actual-coordinator/owned-worker recovery test
+  passed **five checks** with a synthetic PIN and deliberately missing provider:
+  retained failed journal, reviewed resolution, fresh lease/approval, no automatic
+  second operation and preserved original source. Evidence:
+  `agents/windows/artifacts/phase8/recovery-self-test.json`. No USB login was possible.
+- Final agent foundation/session/transfer regressions passed **12 / 22 / 8** checks;
+  outputs are retained in `agents/windows/artifacts/phase8/`. The token signing
+  engine is unchanged; no additional real-token signature was requested for Phase 8.
+- **Six Chromium cases passed against the final production build**: desktop
+  selection/select-all/consent/date filters; mobile layout and confirmation;
+  read-only controls/diagnostic hiding; actual authenticated endpoint
+  read/origin/invalid-input/anonymous checks; reviewed retry and pre-signing
+  cancellation; and identical replay after a lost response. Browser fixture
+  mutations are intercepted; the 59 database cases prove real transactions.
+  The last case exposed a refresh that cleared the mutation error. Reads now
+  pause while confirmation or a mutation is active, and connection failures show
+  a fixed Spanish recovery message. The passing regression advances beyond the
+  15-second polling interval, verifies the error remains, and submits exactly the
+  same reviewed payload. No new database or signing-engine change was needed.
+  Desktop and 390-pixel mobile screenshots were visually inspected:
+  `test-results/firmados-desktop.png`, `firmados-mobile.png`, and
+  `firmados-mobile-confirmation.png`. The modal screenshot uses the actual
+  viewport; its confirmation controls fit without horizontal overflow.
+- Live infrastructure connectivity passed with zero warnings. An initial browser
+  launch was sandbox-blocked; a permitted rerun succeeded. The application's
+  service worker initially bypassed route fixtures, so those fixture contexts now
+  block service workers. The accidental synthetic request was rejected (403) and
+  created no job. A real endpoint check proves the corrected Origin/Host boundary.
+
+- The final Next.js production build passed, including TypeScript and lint.
+  Auth/audit verification (353 files) and UTF-8 checks passed again after the
+  refresh correction. Prisma status/deploy/generate also passed again, with
+  44 migrations and none pending. The prior standard/database/native results
+  cover the unchanged backend and Windows code; the final browser run covers
+  the changed React behavior.
+- Read-only cleanup verification at **2026-09-22 14:43:19 UTC** found zero
+  disposable signing schemas, synthetic signing offices and production signing
+  devices. There are 44 applied migrations. Both retained Phase 7 PDF hashes
+  still match acceptance, and its private test material is absent. Evidence:
+  `agents/windows/artifacts/phase8/cleanup-results.json`. No temporary native
+  agent or test service remains. Automatic enqueue and proxy trust are disabled;
+  no production validator is configured. The local browser verification server
+  was stopped after acceptance. Playwright's cleanup of older tracked evidence
+  was reversed; the final run uses a separate artifact output directory.
+
+### Phase 8 requirement and exit-criterion audit
+
+| Requirement | Authoritative evidence |
+| --- | --- |
+| Implement the existing Firmados route | `app/(protected)/firmados/page.tsx` renders `FirmadosCenter`; production-build Chromium navigation and screenshots. |
+| Device/token health, expiry, queue totals, failures and delivery | Office-scoped `center.ts` metadata and health derivation; UI cards and row states inspected on desktop/mobile. Existing delivery statuses are summarized; absent rows never imply delivery. |
+| Legal/business execution date and Chile timezone | `centerContracts.ts` precedence and calendar normalization; four contract tests cover legacy dates, winter/summer/DST, invalid/reversed dates and bounds; live database case distinguishes execution date from document creation. |
+| Eligible selection and select-all | Exact source/version/hash snapshots, per-page selection, all eligible filtered results with a 500-item limit; desktop/mobile browser cases and strict input tests. |
+| Confirmed, idempotent manual bulk creation | Native modal requires consent; exact payload browser assertions; concurrent/lost-response database replay produces one job; changed/voided sources fail and late audit failure rolls back the batch. |
+| Consistent automatic/manual visibility | Shared row contract and table; live database assertions for both origins and statuses. |
+| Retry only eligible failures; never duplicate completion | Guarded service retry binds review to attempt number, preserves attempt limits and source checks; database cases reject stale reviews and completed signatures. |
+| Cancel only before irreversible signing | Canonical start-event and attempt guards share the office mutation lock; database cases reject post-start/waiting cancellation and old-lease start after cancellation; browser submits exact attempt snapshot. |
+| Sanitized business errors and admin-only diagnostics | Fixed message/code mapping, no raw stored errors in DTO; live member/admin isolation and browser read-only checks. Network uncertainty remains visible in Spanish through a polling interval. |
+| Polling without browser processing | Visible-page reads every 15 seconds, aborted/stale-response fencing, suspension during confirmation/mutation; lost-response browser regression proves retained confirmation and identical replay. |
+| Server-side office isolation | Active membership/admin rechecks, office-scoped queries and existing tenant constraints; live foreign-source/context and malformed-link tests, plus actual endpoint authentication/origin checks. |
+| Responsive end-to-end behavior | Passing desktop and 390-pixel mobile Chromium cases, viewport bounds and overflow assertions, inspected screenshots. |
+| Administrator recovery without server access | Firmados retry/cancel browser actions plus real database review/recovery and native coordinator/worker checks prove retained-journal resolution, new lease/local approval, no automatic second signature and preserved files. Operator instructions are in `agents/windows/README.md`. |
+| Preserve phase boundaries | No PIN-policy change, agent installation, production activation or receiver mirror; cleanup/environment audit and native test's zero hardware-login evidence. |
+
+Reproduce browser acceptance against a running production build with
+`NEXT_PUBLIC_BASE_URL` set to its origin:
+`npx playwright test e2e/firmados.spec.ts --project=chromium --workers=1 --output=agents/windows/artifacts/phase8/browser-run`.
+The output directory retains `.last-run.json` with `status: passed`. The test uses
+the existing authenticated QA storage state; mutations in UI fixtures remain
+intercepted, and the real endpoint checks use invalid inputs only.
+
+**Phase 8 exit criterion met:** office administrators can inspect the signing
+pipeline, request eligible historical work, and perform guarded manual recovery
+through Firmados, with local signer approval retained. Receiver delivery is
+Phase 9; broader failure monitoring and installer/pilot rollout remain Phases
+10–11. Production signing has not been activated.
+
+## Phase 9 — Receiver role and local signed-document mirror
+
+Implemented September 22, 2026. Agent 0.9.0 adds the outbound HTTPS receiver
+processor for `RECEIVER` and `SIGNER_RECEIVER`. It reuses the existing device
+identity, short-lived sessions, private storage, delivery table and office locks.
+Prisma status/deploy/generate passed in the required order: 44 applied migrations,
+none pending. No new schema migration or production activation was needed.
+
+### Delivery creation and server authorization
+
+`lib/signing/deliveries.ts` schedules one delivery per active, non-revoked receiver
+when `service.complete()` commits a server-validated artifact and promotes the
+signed version. Delivery insertion, signature evidence, current-pointer promotion
+and existing canonical audit share one transaction. A failure rolls all of them
+back. Internal fake-worker success without a committed artifact does not schedule
+delivery. The existing `(signatureId, deviceId)` uniqueness prevents duplicates.
+
+New receiver enrollment also schedules the office's existing committed signed
+artifacts. Enrollment and signing completion use the same office lock, preventing
+a signature from falling between historical enrollment and future scheduling.
+The existing default-deny Data API/RLS policy and office foreign keys remain.
+
+The device handler adds `deliveries`, `delivery-begin`, `delivery-download` and
+`delivery-fail`, alongside the existing `ack`. Each action uses stored device
+office/role, authenticated sessions, revocation checks, strict bounded input and
+database rate limits. Signer-only devices cannot receive; receiver-only devices
+cannot claim signing work or approve a token operation. HTTPS remains mandatory.
+Neither storage locators/URLs nor unrestricted credentials are sent to receivers.
+
+The list returns at most 20 pending metadata rows and an ID cursor. The Windows
+agent persists that cursor with its pending page and bound office/device/folder.
+When the scan is exhausted it wraps to null, so delayed failures or inserts before
+the cursor remain discoverable. Failed copies use bounded backoff up to one hour.
+The begin/download pair counts one attempt; acknowledgements clear resolved errors.
+
+Download verifies assignment, expected signed checksum, committed artifact/version,
+private bucket, length and SHA-256. It rechecks session/revocation after storage
+I/O before returning bytes. The 4 MiB authenticated transfer limit is preserved.
+Delivery failures store fixed business messages and emit canonical audit events.
+The center shows delivery totals/failures; an online receiver is labeled
+`Receptor conectado`, with no misleading missing-token or certificate-expiry prompt.
+
+Current Supabase changelog and storage documentation were checked. The relevant
+contract remains private authenticated access; no Data API grants were added.
+See [private downloads](https://supabase.com/docs/guides/storage/serving/downloads)
+and [storage access control](https://supabase.com/docs/guides/storage/security/access-control).
+
+### Windows mirror and local recovery
+
+The enrollment dialog includes a local destination folder picker. The secured
+pipe conveys it only to the service; the service checks local-path and write
+access before consuming the enrollment code and persists it in protected state.
+An installed service requires pre-provisioned folder permissions for its virtual
+service account and the intended user. Selecting a folder does not elevate access.
+Configuration can supply `receiverDirectory`; the documented fallback is a
+`Firmados` subfolder in agent state. The runbook explains its installed-user
+visibility limitation and how to choose an accessible folder during enrollment.
+
+`ReceiverMirror.cs` runs independently of the signer and heartbeat loops. It
+never calls the token or sends a PIN. Metadata identifiers and hashes are bounded;
+UNC, alternate-stream and reparse-point paths are rejected. Protected staging uses
+`.part` files and verifies expected length and SHA-256. Publication copies to a
+temporary file on the destination volume, flushes it and performs an atomic rename.
+Existing different PDFs are preserved: deterministic document/version names gain
+a checksum suffix and, if necessary, a bounded numeric collision suffix.
+
+Acknowledgement occurs after the final PDF exists and is verified while held open
+against local modification. A lost acknowledgement retains the journal and exact
+local file for replay; it cannot be converted into a failed-copy path that loses
+manifest creation. Restart validates an existing output before re-acknowledging it.
+The manifest records document ID, signed-version ID, checksum, filename and delivery
+time without PINs or private signing data. The cursor and pending page are durable.
+
+Interrupted protected staging restarts safely. An abrupt process crash during the
+destination copy can leave an unreferenced `.part`, but it is never published or
+acknowledged as a PDF. Local edits and deletions have no upload/delete-back path.
+This phase does not continuously reconcile already acknowledged local deletions;
+they remain local mirror issues recoverable from the authoritative document.
+The original archive and unsigned source remain untouched.
+
+### Acceptance and verification
+
+- **293 standard tests passed**, with 69 explicitly opt-in cases skipped in that
+  command. Auth/audit verification passed for 354 files and UTF-8 checks passed.
+- **65 live PostgreSQL tests passed** across seven files, including six Phase 9
+  cases. They cover atomic scheduling, two assigned receivers, idempotent ack,
+  foreign/unassigned/unauthenticated/revoked access, signer/receiver role separation,
+  corrupted storage, revocation during download, delayed cursor recovery,
+  historical enrollment and rollback on delivery insertion failure. The final
+  targeted six cases passed again after attempt/error-state refinements.
+- Windows publish passed. The final native regressions passed **12 foundation,
+  22 session, 8 transfer and 10 receiver checks**. The receiver checks exercise
+  actual files, interrupted staging, corruption rejection, collision preservation,
+  lost-acknowledgement restart, manifest persistence, role/path rejection and local
+  edits without propagation. Evidence: `agents/windows/artifacts/phase9/`.
+- **Real two-receiver HTTPS acceptance passed** using two separate compiled agent
+  processes, CNG identities, state directories and destination folders on this
+  Windows host. The backend/device handler and disposable PostgreSQL schema were
+  real, as were upload and download through the private `documents` bucket.
+  It reused the exact Phase 7 accepted synthetic estampo; no new signature or
+  token login was performed. The transport fixture injects its existing validation
+  report and does not claim a fresh cryptographic assessment. The signing engine
+  and independent validator remain the Phase 7 implementation.
+- Both received PDFs matched SHA-256
+  `6266cd0bb948e058cb84135e580c6fa4937c2da2bb632092698a17c67ac7c61e`.
+  The run deliberately truncated a response, discarded a successful acknowledgement,
+  preserved an existing different local PDF, stopped/restarted a receiver and
+  observed rejection after revocation. Public copies are retained as
+  `phase9/receiver-1-signed.pdf` and `receiver-2-signed.pdf`; machine-readable
+  results are in `phase9/receiver-https-results.json`.
+- The initial database fixture used an unsupported validator-provider literal;
+  it was corrected before passing. Restricted NuGet/CNG attempts failed on
+  environment access, and permitted runs passed. The native manifest audit found
+  and corrected lost-ack journal retention; its native regression passed and
+  the final HTTPS rerun additionally requires both manifests to persist.
+
+- The final HTTPS rerun passed with **both local manifests persisted**, in
+  addition to identical files and all interruption/revocation assertions.
+  The final native receiver self-test also passed all ten checks. The final
+  Next.js production build passed with TypeScript/lint, and **six Chromium
+  browser cases passed**, including the receiver-only connected label and all
+  existing selection, consent, recovery and authorization regressions. The final
+  desktop screenshot was inspected. Browser output is under
+  `agents/windows/artifacts/phase9/browser-run`.
+- Live infrastructure verification passed with zero warnings. Final cleanup at
+  **2026-09-22 15:35:05 UTC** found **zero** disposable signing schemas, synthetic
+  signing offices and production signing devices, with 44 migrations applied.
+  Both received-file hashes match acceptance and both manifests were confirmed.
+  No temporary native agent or installed test service remains. The test HTTPS
+  listener, cloud objects, CNG identities and credential directories were removed;
+  the local browser verification server was stopped. Evidence:
+  `phase9/cleanup-results.json` and `phase9/final-local-audit.json`.
+
+### Phase 9 requirement and exit-criterion audit
+
+| Requirement | Authoritative evidence |
+| --- | --- |
+| Receiver role has no signing/PIN access | Stored-role device authorization; six delivery DB cases and the 22 native session checks reject receiver signing; receiver-only loop invokes no token. |
+| Destination configured during enrollment | Tray picker, restricted pipe and pre-enrollment write/path validation; both live agents enrolled with their separately selected folders. |
+| Deliveries only for committed signed output | `scheduleSignatureDeliveries` in the artifact commit transaction; DB tests prove none before commit, uniqueness on replay, and complete rollback on delivery insertion failure. |
+| Durable cursor | Protected `MirrorState` binds device/office/folder and persists pending page/cursor before processing; DB delayed-failure/wrap test and native/live restart tests. |
+| HTTPS and short-lived authorization | Actual TLS transfer using five-minute device sessions; receiver/office/assignment/revocation checks, including recheck after storage I/O. No storage keys or URLs returned. |
+| Temporary writes, length/hash checks and atomic publication | Real `DeviceApi.Download` plus `ReceiverMirror.Materialize`; ten native cases and deliberately interrupted live HTTPS response; no corrupt final PDF. |
+| Deterministic collision handling | Native original and subsequent collision checks; live acceptance preserves a different existing PDF and writes the verified copy under its checksum suffix. |
+| Ack only after final verified file | File is held open through acknowledgement; live dropped-success response and native restart replay; final HTTPS test requires both manifests. |
+| Resume after interruption/restart | Durable pending assignment, owned staging restart, same-byte ack replay, offline receiver process restart; native and actual HTTPS evidence. |
+| Local manifest without private data | Per-delivery document/version/hash/filename/time record; final native and HTTPS assertions confirm persistence, with no PIN or private key in the record. |
+| Local edits/deletions cannot affect archive | Mirror has no upload/delete-back API path; native local-change/collision assertions and real private-storage source reread. Already acknowledged local deletion is a local recovery issue. |
+| Two enrolled receivers obtain identical PDF | Two compiled processes with separate CNG identities/directories download from real private storage; both retained PDFs match the accepted Phase 7 hash. |
+| Third unregistered device cannot download | Live DB rejects an unknown session before assignment/storage access; foreign/unassigned receiver and signer-only denial cases also pass. |
+| Revoked receiver cannot receive new files | Database tests reject pending/download/ack after revocation and revoke during I/O; real agent observes authentication rejection; scheduling excludes revoked devices. |
+| Evidence, checks and phase boundaries | 293 standard, 65 DB, six browser, 12/22/8 native regressions and ten receiver checks; real HTTPS acceptance, production build, infrastructure and cleanup passed. No new token signing, production activation or signed installer rollout. |
+
+**Phase 9 exit criterion met:** enrolled authorized receivers automatically obtain
+the committed signed estampo as identical verified local PDFs, with safe recovery
+and preserved authoritative storage. Acceptance used two isolated receiver
+instances on one Windows host; the multi-computer office pilot, signed installer,
+broader monitoring and production activation remain Phases 10–11. Automatic
+enqueue and proxy trust remain disabled and no production validator is configured.

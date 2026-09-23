@@ -87,7 +87,7 @@ describe.skipIf(process.env.SIGNING_DATABASE_TESTS !== '1')('device enrollment/a
     expect((await service.input(f.session.token, lease)).checksumSha256).toBe(version.source.checksumSha256)
     await expect(service.input(other.session.token, lease)).rejects.toThrow('STALE_LEASE')
     await expect(service.queue(other.session.token, 'renew', lease)).rejects.toThrow('STALE_LEASE')
-    await expect(service.result(f.session.token, lease)).rejects.toThrow('ARTIFACT_VALIDATION_NOT_AVAILABLE')
+    await expect(service.result(f.session.token, lease)).rejects.toThrow('PDF_BODY_REQUIRED')
     await expect(service.revoke(other.context, f.enrolled.deviceId)).rejects.toThrow('NOT_FOUND')
     await service.revoke(f.context, f.enrolled.deviceId)
     await expect(service.challenge({ deviceId: f.enrolled.deviceId })).rejects.toThrow('DEVICE_UNAUTHORIZED')

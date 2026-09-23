@@ -48,6 +48,7 @@ model User {
 
 model Office {
   signingDevices                SigningDevice[]
+  signingArtifacts              SigningArtifact[]
   deviceEnrollments             DeviceEnrollment[]
   signingJobs                   SigningJob[]
   signingItems                  SigningItem[]
@@ -1528,6 +1529,7 @@ model SigningDevice {
   deliveries            DocumentDelivery[]
   challenges            DeviceChallenge[]
   sessions              DeviceSession[]
+  artifacts             SigningArtifact[]
 
   @@unique([id, officeId])
   @@index([officeId, health, createdAt])
@@ -1642,6 +1644,7 @@ model SigningItem {
   device             SigningDevice? @relation(fields: [leaseOwner, officeId], references: [id, officeId], onDelete: Restrict, onUpdate: Restrict)
   attempts           SigningAttempt[]
   signature          DocumentSignature?
+  artifacts          SigningArtifact[]
 
   @@unique([id, officeId])
   @@unique([id, officeId, sourceVersionId, documentoId, signerFingerprint], map: "signing_items_signature_identity_key")
@@ -1650,6 +1653,31 @@ model SigningItem {
   @@index([leaseOwner, leaseExpiresAt])
   @@index([sourceVersionId, officeId, documentoId])
   @@map("signing_items")
+}
+
+// Durable reservation before upload; COMMITTED rows retain validator evidence.
+model SigningArtifact {
+  id             String @id
+  officeId       Int
+  itemId         String
+  deviceId       String
+  leaseToken     String
+  storageBucket  String
+  storageKey     String @unique
+  checksumSha256 String
+  sizeBytes      Int
+  state          String @default("PENDING")
+  validation     Json?
+  createdAt      DateTime @default(now())
+  expiresAt      DateTime
+  office         Office @relation(fields: [officeId], references: [id], onDelete: Restrict)
+  item           SigningItem @relation(fields: [itemId, officeId], references: [id, officeId], onDelete: Restrict, onUpdate: Restrict)
+  device         SigningDevice @relation(fields: [deviceId, officeId], references: [id, officeId], onDelete: Restrict, onUpdate: Restrict)
+
+  @@index([officeId, state, expiresAt])
+  @@index([itemId, officeId])
+  @@index([deviceId, officeId])
+  @@map("signing_artifacts")
 }
 
 model SigningAttempt {

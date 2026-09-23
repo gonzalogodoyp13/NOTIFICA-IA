@@ -36,8 +36,8 @@ internal sealed class Tray : ApplicationContext
         menu.Items.Add(state); menu.Items.Add(health); menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("Ver estado…", null, (_, _) => ShowStatus());
         menu.Items.Add("Inscribir este equipo…", null, (_, _) => Enroll());
-        if (config.ControlledSigning is not null)
-            menu.Items.Add("Revisar lote de prueba…", null, async (_, _) => await ShowSigning());
+        if (config.ControlledSigning is not null || config.SigningEngine is not null)
+            menu.Items.Add(config.ControlledSigning is not null ? "Revisar lote de prueba…" : "Revisar firma pendiente…", null, async (_, _) => await ShowSigning());
         menu.Items.Add("Salir de la bandeja", null, (_, _) => ExitThread());
         icon.ContextMenuStrip = menu;
         icon.DoubleClick += (_, _) => ShowStatus();
@@ -58,6 +58,7 @@ internal sealed class Tray : ApplicationContext
             health.Text = status.Role == "RECEIVER" ? "Equipo receptor" : status.Health switch {
                 "TOKEN_READY" => "Token disponible", "CERT_EXPIRING" => "Certificado próximo a vencer", "CERT_EXPIRED" => "Certificado vencido",
                 "AGENT_ONLINE_TOKEN_MISSING" => "Token desconectado", "DRIVER_ERROR" => "Revisar controlador o certificado", _ => "Firma no disponible" };
+            if (status.MirrorError is not null) health.Text += " · Revisar conexión, espacio y permisos de la carpeta receptora";
             icon.Text = "NOTIFICA IA · " + (status.Connectivity == "ONLINE" ? "Conectado" : "Sin conexión");
         }
         catch { state.Text = "Servicio de Windows sin conexión"; health.Text = "No se pudo consultar el agente"; icon.Text = "NOTIFICA IA · Servicio sin conexión"; }
@@ -73,7 +74,7 @@ internal sealed class Tray : ApplicationContext
             using var dialog = new Signing.SigningDialog(config, batch);
             dialog.ShowDialog();
         }
-        catch { MessageBox.Show("No se pudo consultar el lote de prueba. Revisa el servicio local.", "Firma digital", MessageBoxButtons.OK, MessageBoxIcon.Information); }
+        catch { MessageBox.Show("No hay una firma disponible para revisar. Comprueba el estado del servicio local.", "Firma digital", MessageBoxButtons.OK, MessageBoxIcon.Information); }
     }
     internal void QueueSigning()
     {
@@ -85,17 +86,22 @@ internal sealed class Tray : ApplicationContext
     }
     private void Enroll()
     {
-        using var dialog = new Form { Text = "Inscribir equipo · NOTIFICA IA", Width = 470, Height = 235, StartPosition = FormStartPosition.CenterScreen, FormBorderStyle = FormBorderStyle.FixedDialog, MaximizeBox = false, MinimizeBox = false };
+        using var dialog = new Form { Text = "Inscribir equipo · NOTIFICA IA", Width = 470, Height = 335, StartPosition = FormStartPosition.CenterScreen, FormBorderStyle = FormBorderStyle.FixedDialog, MaximizeBox = false, MinimizeBox = false };
         var label = new Label { Text = "Código temporal entregado por el administrador", Left = 20, Top = 18, Width = 410 };
         var code = new TextBox { Left = 20, Top = 45, Width = 410, UseSystemPasswordChar = true, MaxLength = 43 };
         var name = new TextBox { Left = 20, Top = 90, Width = 410, Text = Environment.MachineName, MaxLength = 100 };
-        var button = new Button { Text = "Autorizar inscripción", Left = 235, Top = 130, Width = 195 };
+        var folderLabel = new Label { Text = "Carpeta local para copias firmadas (equipos receptores)", Left = 20, Top = 128, Width = 410 };
+        var folder = new TextBox { Left = 20, Top = 154, Width = 310, Text = config.ReceiverDirectory ?? "", MaxLength = 220 };
+        var browse = new Button { Text = "Elegir…", Left = 340, Top = 152, Width = 90 };
+        browse.Click += (_, _) => { using var picker = new FolderBrowserDialog(); if (picker.ShowDialog(dialog) == DialogResult.OK) folder.Text = picker.SelectedPath; };
+        var note = new Label { Text = "El servicio debe poder escribir en esta carpeta. Los archivos existentes se conservan.", Left = 20, Top = 190, Width = 410, Height = 35 };
+        var button = new Button { Text = "Autorizar inscripción", Left = 235, Top = 240, Width = 195 };
         button.Click += async (_, _) => {
             button.Enabled = false;
             using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(25));
             try
             {
-                var response = await LocalPipe.Request(config, new { action = "enroll", code = code.Text, name = name.Text.Trim() }, timeout.Token);
+                var response = await LocalPipe.Request(config, new { action = "enroll", code = code.Text, name = name.Text.Trim(), receiverDirectory = string.IsNullOrWhiteSpace(folder.Text) ? null : folder.Text.Trim() }, timeout.Token);
                 code.Clear();
                 if (!response.GetProperty("ok").GetBoolean()) throw new InvalidOperationException();
                 dialog.DialogResult = DialogResult.OK;
@@ -104,7 +110,7 @@ internal sealed class Tray : ApplicationContext
             catch { code.Clear(); MessageBox.Show(dialog, "No se pudo inscribir el equipo. Revisa el servicio y solicita un código vigente.", "Inscripción", MessageBoxButtons.OK, MessageBoxIcon.Information); }
             finally { button.Enabled = true; }
         };
-        dialog.Controls.AddRange([label, code, name, button]);
+        dialog.Controls.AddRange([label, code, name, folderLabel, folder, browse, note, button]);
         dialog.ShowDialog();
     }
     protected override void Dispose(bool disposing)

@@ -76,7 +76,7 @@ internal sealed class SigningDialog : Form
     {
         this.config = config; this.view = view;
         approvalDeadline = Environment.TickCount64 + Math.Clamp(view.RemainingApprovalMilliseconds, 0, 300_000);
-        Text = "Autorizar lote de prueba · NOTIFICA IA";
+        Text = config.ControlledSigning is not null ? "Autorizar lote de prueba · NOTIFICA IA" : "Autorizar firma · NOTIFICA IA";
         Width = 740; Height = 640; MinimumSize = new Size(680, 560);
         StartPosition = FormStartPosition.CenterScreen;
         var layout = new TableLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(24), ColumnCount = 1, RowCount = 8 };
@@ -84,7 +84,7 @@ internal sealed class SigningDialog : Form
         layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         for (int i = 3; i < 8; i++) layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        layout.Controls.Add(new Label { Text = "LOTE CONTROLADO DE PRUEBA", AutoSize = true, Font = new Font("Segoe UI", 12, FontStyle.Bold) }, 0, 0);
+        layout.Controls.Add(new Label { Text = config.ControlledSigning is not null ? "LOTE CONTROLADO DE PRUEBA" : "DOCUMENTO PENDIENTE DE FIRMA", AutoSize = true, Font = new Font("Segoe UI", 12, FontStyle.Bold) }, 0, 0);
         layout.Controls.Add(new Label { AutoSize = true, MaximumSize = new Size(650, 0), Padding = new Padding(0, 12, 0, 12),
             Text = $"Solicitante: {view.Batch.Requester}\nOficina: {view.Batch.OfficeName} (ID {view.Batch.OfficeId})\nFirmante: {view.Batch.SignerName}\nCertificado SHA-256: {view.Batch.SignerFingerprint}\nPerfil: {view.Batch.Profile} · Documentos: {view.Batch.Documents.Length}" }, 0, 1);
         var documents = new ListBox { Dock = DockStyle.Fill, HorizontalScrollbar = true, IntegralHeight = false };
@@ -112,7 +112,7 @@ internal sealed class SigningDialog : Form
             "EXPIRED" => "La autorización ha vencido. Cierra esta ventana.",
             "RECEIVING_PIN" => "Recibiendo autorización local…",
             "SIGNING" => "Firmando y validando los documentos…",
-            "COMPLETED" => $"Firma y validación completas: {view.Results.Count} documentos.\nCarpeta: {config.ControlledSigning!.Engine.OutputDirectory}",
+            "COMPLETED" => config.ControlledSigning is not null ? $"Firma y validación completas: {view.Results.Count} documentos.\nCarpeta: {config.ControlledSigning.Engine.OutputDirectory}" : "Documento firmado, validado y guardado en NOTIFICA IA.",
             _ => $"El lote se detuvo: {SafeError(view.Error)}. No se repetirá el PIN automáticamente."
         };
     }
