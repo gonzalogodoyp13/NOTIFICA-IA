@@ -7,10 +7,12 @@ import { prisma } from '@/lib/prisma'
 import { recordSettingsEvent } from '@/lib/audit/businessEvents'
 import { ProcuradorUpdateSchema } from '@/lib/zodSchemas'
 import { mapProcuradorListItem } from '@/lib/procuradores'
+import { validateProcuradorBanks } from '@/lib/procuradorBanks'
 
 export const dynamic = 'force-dynamic'
 
 const procuradorInclude = {
+  bancos: { include: { banco: { select: { id: true, nombre: true } } } },
   abogados: {
     include: {
       abogado: {
@@ -146,6 +148,20 @@ export async function PATCH(
       }
     }
 
+    const currentLinks = await prisma.procurador.findUniqueOrThrow({ where: { id }, include: procuradorInclude })
+    const abogadoIds = normalizedAbogadoIds ?? currentLinks.abogados.map(link => link.abogadoId)
+    const availableBanks = await prisma.abogadoBanco.findMany({
+      where: { officeId: user.officeId, abogadoId: { in: abogadoIds } }, select: { bancoId: true },
+    })
+    const bancoIds = parsed.data.bancoIds !== undefined
+      ? Array.from(new Set(parsed.data.bancoIds))
+      : currentLinks.bancos.map(link => link.bancoId).filter(id => availableBanks.some(link => link.bancoId === id))
+    try {
+      await validateProcuradorBanks(prisma, user.officeId, abogadoIds, bancoIds)
+    } catch (error) {
+      return NextResponse.json({ ok: false, message: (error as Error).message }, { status: 400 })
+    }
+
     const procurador = await prisma.$transaction(async (tx) => {
       const updateData: {
         nombre?: string
@@ -186,13 +202,19 @@ export async function PATCH(
         }
       }
 
+      if (parsed.data.bancoIds !== undefined || normalizedAbogadoIds) {
+        await tx.procuradorBanco.deleteMany({ where: { officeId: user.officeId, procuradorId: id } })
+        if (bancoIds.length) await tx.procuradorBanco.createMany({
+          data: bancoIds.map(bancoId => ({ officeId: user.officeId, procuradorId: id, bancoId })),
+        })
+      }
       const updated = await tx.procurador.findUniqueOrThrow({
         where: { id },
         include: procuradorInclude,
       })
       await recordSettingsEvent(tx, user, {
         resource: 'Procurador', action: 'updated', recordId: id,
-        changedFields: [...Object.keys(updateData), ...(normalizedAbogadoIds ? ['abogadoIds'] : [])],
+        changedFields: [...Object.keys(updateData), ...(normalizedAbogadoIds ? ['abogadoIds'] : []), ...(parsed.data.bancoIds !== undefined ? ['bancoIds'] : [])],
       })
       return updated
     })

@@ -5,6 +5,7 @@ import { withApiUser } from '@/lib/api/server'
 import { NextRequest, NextResponse } from 'next/server'
 import { debugLog, toSafeErrorMessage } from '@/lib/debugLog'
 import { prisma } from '@/lib/prisma'
+import { resolveDemandaBank } from '@/lib/demandaBank'
 import { parseCuantiaForStorage } from '@/lib/utils/cuantia'
 import { recordCriticalEvent } from '@/lib/audit/activityEvent'
 
@@ -103,6 +104,12 @@ export async function PUT(
       }
     }
 
+    let bancoId: number | null
+    try {
+      const requestedBank = body.bancoId === undefined ? demanda.bancoId : body.bancoId
+      bancoId = await resolveDemandaBank(user.officeId, abogadoIdInt ?? demanda.abogadoId, caratula, requestedBank)
+    } catch (error) { throw new DemandaUpdateValidationError((error as Error).message) }
+
     const materiaIdInt =
       materiaId === null || materiaId === undefined || materiaId === ''
         ? null
@@ -145,6 +152,8 @@ export async function PUT(
         where: {
           id: procuradorIdInt,
           officeId: user.officeId,
+          abogados: { some: { abogadoId: abogadoIdInt ?? demanda.abogadoId, officeId: user.officeId } },
+          ...(bancoId ? { bancos: { some: { bancoId, officeId: user.officeId } } } : {}),
         },
       })
 
@@ -249,6 +258,7 @@ export async function PUT(
         data: {
           rol: normalizedRol,
           caratula,
+          bancoId,
           cuantia:
             cuantia !== undefined && cuantia !== null
               ? parseCuantiaForStorage(cuantia)
@@ -383,7 +393,7 @@ export async function PUT(
           demandId: updatedDemanda.id,
           rolId: rolCausa.id,
           changedFields: [
-            'rol', 'tribunalId', 'caratula', 'cuantia', 'abogadoId', 'materiaId', 'procuradorId',
+            'rol', 'tribunalId', 'caratula', 'bancoId', 'cuantia', 'abogadoId', 'materiaId', 'procuradorId',
             ...(normalizedEjecutados !== undefined ? ['ejecutados'] : []),
           ],
           executedPartyCount: normalizedEjecutados?.length,

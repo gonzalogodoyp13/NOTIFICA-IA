@@ -43,7 +43,33 @@ describe.skipIf(process.env.SIGNING_DATABASE_TESTS !== '1')('Phase 8 office cont
     const view = await f.center.list(f.context, {})
     expect(view.canManage).toBe(false); expect(view.rows[0].diagnosticCode).toBeUndefined()
     expect(view.rows[0].canRetry).toBe(false)
+    expect(view.canRequest).toBe(true)
+    await expect(f.center.mutate(f.context, f.input)).resolves.toMatchObject({ accepted: true, replay: true })
+    await expect(f.center.mutate(f.context, { action: 'retry', itemId: item.id, attemptCount: item.attemptCount, reviewed: true })).rejects.toThrow('FORBIDDEN')
+  }, 60000)
+  it('allows an active ordinary account member to authorize signatures and audits its remote session', async () => {
+    const f = await setup()
+    await sandbox.db.user.update({ where: { id: f.user.id }, data: { isOfficeAdmin: false } })
+    await expect(f.center.mutate(f.context, f.input)).resolves.toMatchObject({ accepted: true, replay: false })
+    const item = (await f.queue.claim(f.office.id, f.device.id))!
+    const lease = { officeId: f.office.id, deviceId: f.device.id, itemId: item.id, leaseToken: item.leaseToken! }
+    const sessionId = randomUUID()
+    await f.queue.start(lease, false, randomUUID(), sessionId)
+    const event = await sandbox.db.activityEvent.findFirstOrThrow({ where: { officeId: f.office.id, eventType: 'signing.remote_authorized' } })
+    expect(event.metadata).toMatchObject({ remoteSessionId: sessionId, sourceVersionId: f.source.id, sourceChecksum: hashA })
+    expect(event).toMatchObject({ userId: f.user.id, actorType: 'USER' })
+    expect(await sandbox.db.activityEvent.count({ where: { officeId: f.office.id, eventType: 'signing.local_approved' } })).toBe(0)
+  }, 60000)
+  it('blocks inactive or foreign accounts and rechecks the requester before the signing operation', async () => {
+    const f = await setup(), other = await setup()
+    await sandbox.db.user.update({ where: { id: f.user.id }, data: { isOfficeAdmin: false } })
+    await expect(f.center.mutate({ ...f.context, officeId: other.office.id }, f.input)).rejects.toThrow('FORBIDDEN')
+    await f.center.mutate(f.context, f.input)
+    const item = (await f.queue.claim(f.office.id, f.device.id))!
+    await sandbox.db.user.update({ where: { id: f.user.id }, data: { isActive: false } })
     await expect(f.center.mutate(f.context, f.input)).rejects.toThrow('FORBIDDEN')
+    await expect(f.queue.start({ officeId: f.office.id, deviceId: f.device.id, itemId: item.id, leaseToken: item.leaseToken! }, false, randomUUID(), randomUUID())).rejects.toThrow('FORBIDDEN')
+    expect((await sandbox.db.signingItem.findUniqueOrThrow({ where: { id: item.id } })).status).toBe('CLAIMED')
   }, 60000)
   it('creates one manual batch under concurrent and lost-response replays', async () => {
     const f = await setup()

@@ -36,8 +36,21 @@ internal sealed class Tray : ApplicationContext
         menu.Items.Add(state); menu.Items.Add(health); menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("Ver estado…", null, (_, _) => ShowStatus());
         menu.Items.Add("Inscribir este equipo…", null, (_, _) => Enroll());
-        if (config.ControlledSigning is not null || config.SigningEngine is not null)
-            menu.Items.Add(config.ControlledSigning is not null ? "Revisar lote de prueba…" : "Revisar firma pendiente…", null, async (_, _) => await ShowSigning());
+        menu.Items.Add("Abrir firmados de la oficina", null, async (_, _) => {
+            try {
+                using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+                var response = await LocalPipe.Request(config, new { action = "status" }, timeout.Token);
+                var status = response.GetProperty("status").Deserialize<AgentStatus>(Configuration.Json)!;
+                if (status.OfficeFolderPath is null) throw new IOException();
+                var start = new System.Diagnostics.ProcessStartInfo("explorer.exe") { UseShellExecute = true };
+                start.ArgumentList.Add(status.OfficeFolderPath);
+                System.Diagnostics.Process.Start(start);
+            } catch { MessageBox.Show("La carpeta aún no está disponible. Revisa la inscripción y la conexión del agente.", "Firmados de la oficina"); }
+        });
+        if (config.ControlledSigning is not null)
+            menu.Items.Add("Revisar lote de prueba…", null, async (_, _) => await ShowSigning());
+        if (config.SigningEngine is not null)
+            menu.Items.Add("Sesión de firma remota…", null, (_, _) => { using var dialog = new Signing.RemoteSessionDialog(config); dialog.ShowDialog(); });
         menu.Items.Add("Salir de la bandeja", null, (_, _) => ExitThread());
         icon.ContextMenuStrip = menu;
         icon.DoubleClick += (_, _) => ShowStatus();
@@ -58,7 +71,8 @@ internal sealed class Tray : ApplicationContext
             health.Text = status.Role == "RECEIVER" ? "Equipo receptor" : status.Health switch {
                 "TOKEN_READY" => "Token disponible", "CERT_EXPIRING" => "Certificado próximo a vencer", "CERT_EXPIRED" => "Certificado vencido",
                 "AGENT_ONLINE_TOKEN_MISSING" => "Token desconectado", "DRIVER_ERROR" => "Revisar controlador o certificado", _ => "Firma no disponible" };
-            if (status.MirrorError is not null) health.Text += " · Revisar conexión, espacio y permisos de la carpeta receptora";
+            if (status.MirrorError is not null) health.Text += " · Revisar la carpeta compartida de la oficina";
+            if (status.RemoteSession is { } remote) health.Text += remote.Enabled ? " · Firma remota habilitada" : " · Firma remota deshabilitada";
             icon.Text = "NOTIFICA IA · " + (status.Connectivity == "ONLINE" ? "Conectado" : "Sin conexión");
         }
         catch { state.Text = "Servicio de Windows sin conexión"; health.Text = "No se pudo consultar el agente"; icon.Text = "NOTIFICA IA · Servicio sin conexión"; }
@@ -66,6 +80,7 @@ internal sealed class Tray : ApplicationContext
     }
     internal async Task ShowSigning()
     {
+        if (config.SigningEngine is not null) { using var remote = new Signing.RemoteSessionDialog(config); remote.ShowDialog(); return; }
         try
         {
             using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
@@ -90,11 +105,11 @@ internal sealed class Tray : ApplicationContext
         var label = new Label { Text = "Código temporal entregado por el administrador", Left = 20, Top = 18, Width = 410 };
         var code = new TextBox { Left = 20, Top = 45, Width = 410, UseSystemPasswordChar = true, MaxLength = 43 };
         var name = new TextBox { Left = 20, Top = 90, Width = 410, Text = Environment.MachineName, MaxLength = 100 };
-        var folderLabel = new Label { Text = "Carpeta local para copias firmadas (equipos receptores)", Left = 20, Top = 128, Width = 410 };
+        var folderLabel = new Label { Text = "Ubicación de la carpeta compartida (todos los equipos)", Left = 20, Top = 128, Width = 410 };
         var folder = new TextBox { Left = 20, Top = 154, Width = 310, Text = config.ReceiverDirectory ?? "", MaxLength = 220 };
         var browse = new Button { Text = "Elegir…", Left = 340, Top = 152, Width = 90 };
         browse.Click += (_, _) => { using var picker = new FolderBrowserDialog(); if (picker.ShowDialog(dialog) == DialogResult.OK) folder.Text = picker.SelectedPath; };
-        var note = new Label { Text = "El servicio debe poder escribir en esta carpeta. Los archivos existentes se conservan.", Left = 20, Top = 190, Width = 410, Height = 35 };
+        var note = new Label { Text = "Últimos 50 días · Los PDF se descargan al abrirlos. El historial completo sigue disponible en Firmados.", Left = 20, Top = 190, Width = 410, Height = 35 };
         var button = new Button { Text = "Autorizar inscripción", Left = 235, Top = 240, Width = 195 };
         button.Click += async (_, _) => {
             button.Enabled = false;

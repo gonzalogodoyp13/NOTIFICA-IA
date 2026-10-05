@@ -10,7 +10,7 @@ const row: CenterRow = { id: 'document-1', documentId: 'document-1', name: 'Noti
   itemId: null, jobId: null, origin: null, profile: null, requestedBy: null, attemptCount: 0, maxAttempts: 0,
   canRetry: false, canCancel: false, errorMessage: null, delivery: 'Sin firma validada', signedAt: null, started: false }
 function fixture(admin = true): CenterData {
-  return { canManage: admin, rows: [row, { ...row, id: 'item-2', documentId: 'document-2', name: 'Requerimiento de pago',
+  return { canManage: admin, canRequest: true, rows: [row, { ...row, id: 'item-2', documentId: 'document-2', name: 'Requerimiento de pago',
     status: 'WAITING_FOR_OPERATOR', itemId: 'item-2', jobId: 'job-2', origin: 'AUTOMATIC', profile: 'PADES_LT',
     attemptCount: 1, maxAttempts: 4, canRetry: admin, started: true, errorMessage: 'Revisa el resultado anterior en el equipo firmante.',
     ...(admin ? { diagnosticCode: 'OUTCOME_UNKNOWN' } : {}) }], total: 2, page: 1, pageSize: 25,
@@ -19,6 +19,35 @@ function fixture(admin = true): CenterData {
       certificateSubject: 'Certificado de prueba', fingerprint: 'b'.repeat(64), expiresAt: '2027-09-14T18:00:00Z', lastHeartbeatAt: '2026-09-22T13:00:00Z', revoked: false }] }
 }
 
+test.beforeEach(async ({ page }) => {
+  await page.route('**/api/signing/archive?*', route => route.fulfill({ json: { ok: true, data: { documents: [], total: 0, page: 1, pageSize: 25 } } }))
+})
+
+test('office archive searches older signed versions and explains the shared 50-day folder on mobile', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  const data = fixture()
+  data.rows[1] = { ...data.rows[1], status: 'COMPLETED', canRetry: false, errorMessage: null, diagnosticCode: undefined,
+    delivery: 'Disponible en el archivo de la aplicación',
+    evidence: { signatureId: 'sig', signedVersionId: 'signed-version', signedChecksum: 'c'.repeat(64), signerFingerprint: 'b'.repeat(64), validatedAt: data.updatedAt, deviceId: 'device-1' } }
+  await page.route('**/api/signing/center*', route => route.fulfill({ json: { ok: true, data } }))
+  const queries: URL[] = []
+  await page.route('**/api/signing/archive?*', route => {
+    queries.push(new URL(route.request().url()))
+    return route.fulfill({ json: { ok: true, data: { documents: [{ signatureId: 'older-signature', documentId: 'document-older', signedVersionId: 'old-version',
+      name: 'Notificación histórica', rol: 'C-1240-2026', signedAt: '2025-01-02T12:00:00Z', checksumSha256: 'd'.repeat(64) }], total: 1, page: 1, pageSize: 25 } } })
+  })
+  await page.goto('/firmados')
+  await expect(page.getByText('50 días en Windows')).toBeVisible()
+  await page.getByLabel('Buscar firmas por nombre, ROL o identificador').fill('C-1240')
+  await page.getByRole('button', { name: 'Buscar en el archivo' }).click()
+  await expect.poll(() => queries.at(-1)?.searchParams.get('q')).toBe('C-1240')
+  const archive = page.getByRole('region', { name: 'Archivo de firmas de la oficina' })
+  await expect(archive.getByText('Notificación histórica')).toBeVisible()
+  await expect(archive.getByRole('link', { name: 'Descargar firmado' })).toHaveAttribute('href', `/api/signing/archive/older-signature?checksum=${'d'.repeat(64)}`)
+  await expect(page.getByRole('button', { name: 'Reintentar entrega' })).toHaveCount(0)
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+  await page.screenshot({ path: 'test-results/office-archive-mobile.png', fullPage: true })
+})
 test('desktop selection, confirmation, retry consent and date filtering', async ({ page }) => {
   const writes: unknown[] = [], queries: URL[] = [], data = fixture()
   data.devices.push({ id: 'receiver-1', name: 'Equipo receptor', role: 'RECEIVER', health: 'AGENT_ONLINE_TOKEN_MISSING', certificateSubject: null,
@@ -80,11 +109,24 @@ test('mobile layout and accessible confirmation stay inside the viewport', async
   await page.screenshot({ path: 'test-results/firmados-mobile.png', fullPage: true })
 })
 
-test('read-only users see status without mutation controls or admin diagnostics', async ({ page }) => {
-  await page.route('**/api/signing/center*', route => route.fulfill({ json: { ok: true, data: fixture(false) } }))
+test('ordinary office members authorize remote signatures without admin recovery or a web PIN', async ({ page }) => {
+  const writes: unknown[] = []
+  await page.route('**/api/signing/center*', async route => {
+    if (route.request().method() === 'POST') { writes.push(route.request().postDataJSON()); await route.fulfill({ json: { ok: true, data: { accepted: true } } }); return }
+    await route.fulfill({ json: { ok: true, data: fixture(false) } })
+  })
   await page.goto('/firmados')
-  await expect(page.getByText('Vista de consulta.', { exact: false })).toBeVisible()
-  await expect(page.getByRole('button', { name: 'Revisar solicitud' })).toHaveCount(0)
+  await expect(page.getByText('Puedes autorizar firmas desde tu cuenta.', { exact: false })).toBeVisible()
+  await page.getByRole('checkbox', { name: 'Seleccionar Notificación personal' }).check()
+  await page.getByLabel('Certificado firmante').selectOption('b'.repeat(64))
+  await page.getByRole('button', { name: 'Revisar solicitud' }).click()
+  const modal = page.getByRole('dialog')
+  await expect(modal).toContainText('sin otra aprobación local')
+  await expect(modal.locator('input[type="password"]')).toHaveCount(0)
+  await modal.getByRole('checkbox').check()
+  await modal.getByRole('button', { name: 'Confirmar solicitud', exact: true }).click()
+  await expect(modal).not.toBeVisible()
+  expect(writes).toEqual([{ action: 'queue', signerFingerprint: 'b'.repeat(64), requestedLevel: 'PADES_LT', sources: [{ versionId: 'version-1', checksum: 'a'.repeat(64) }] }])
   await expect(page.getByRole('button', { name: 'Reintentar', exact: true })).toHaveCount(0)
   await expect(page.getByText('Diagnóstico del administrador')).toHaveCount(0)
 })

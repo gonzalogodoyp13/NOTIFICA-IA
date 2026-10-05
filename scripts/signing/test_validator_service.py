@@ -8,7 +8,8 @@ import subprocess
 import sys
 from pathlib import Path
 
-config, request_file, results_file = sys.argv[1:]
+config, request_file, results_file = sys.argv[1:4]
+expected_error = sys.argv[4] if len(sys.argv) > 4 else None
 token = secrets.token_urlsafe(32)
 process = subprocess.Popen([sys.executable, '-I', str(Path(__file__).with_name('validator_service.py')), config, '0'],
                            env={**os.environ, 'SIGNING_VALIDATOR_TOKEN': token}, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
@@ -28,13 +29,15 @@ try:
             passed = result.status == status
             if status == 200 and passed:
                 passed &= data['evidence']['signedChecksum'] == hashlib.sha256(signed).hexdigest()
+            if name == 'independent-validation-over-http' and expected_error:
+                passed &= data.get('error') == expected_error
             checks.append({'check': name, 'passed': passed})
             assert passed, name
         finally:
             connection.close()
     call('server-bearer-required', '', source + signed, 401)
     call('wrong-server-bearer-rejected', 'a' * 43, source + signed, 401)
-    call('independent-validation-over-http', token, source + signed, 200)
+    call('independent-validation-over-http', token, source + signed, 422 if expected_error else 200)
     call('tampered-pdf-rejected-over-http', token, source + signed[:50] + b'X' + signed[51:], 422)
 finally:
     process.terminate(); process.wait(timeout=10)

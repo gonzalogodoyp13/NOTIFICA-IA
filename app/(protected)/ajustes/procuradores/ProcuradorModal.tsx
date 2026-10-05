@@ -57,6 +57,7 @@ export function ProcuradorModal({
 }: ProcuradorModalProps) {
   const [formData, setFormData] = useState(emptyFormData)
   const [selectedAbogadoIds, setSelectedAbogadoIds] = useState<number[]>([])
+  const [selectedBancoIds, setSelectedBancoIds] = useState<number[]>([])
   const [abogadoSearchTerm, setAbogadoSearchTerm] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [loadingDetails, setLoadingDetails] = useState(false)
@@ -70,10 +71,12 @@ export function ProcuradorModal({
         telefono: procurador.telefono || '',
         notas: procurador.notas || '',
       })
+      setSelectedBancoIds(procurador.bancos?.map(link => link.bancoId) || [])
       setSelectedAbogadoIds(procurador.abogadoIds || procurador.abogados?.map((abogado) => abogado.id) || [])
     } else {
       setFormData(emptyFormData)
       setSelectedAbogadoIds([])
+      setSelectedBancoIds([])
     }
     setAbogadoSearchTerm('')
     setError(null)
@@ -105,6 +108,7 @@ export function ProcuradorModal({
           notas: data.data.notas || '',
         })
         setSelectedAbogadoIds(data.data.abogadoIds || [])
+        setSelectedBancoIds((data.data.bancos || []).map((link: { bancoId: number }) => link.bancoId))
       } catch (err) {
         if ((err as Error).name === 'AbortError') return
         setError(err instanceof Error ? err.message : 'Error al cargar el procurador')
@@ -140,6 +144,10 @@ export function ProcuradorModal({
     return Array.from(bancoMap.values()).sort((a, b) => a.nombre.localeCompare(b.nombre))
   }, [abogados, selectedAbogadoIds])
 
+  useEffect(() => {
+    setSelectedBancoIds(ids => ids.filter(id => derivedBancos.some(bank => bank.id === id)))
+  }, [derivedBancos])
+
   if (!isOpen) return null
 
   const toggleAbogado = (targetAbogadoId: number, checked: boolean) => {
@@ -170,6 +178,7 @@ export function ProcuradorModal({
         telefono: formData.telefono.trim() || null,
         notas: formData.notas.trim() || null,
         abogadoIds: selectedAbogadoIds,
+        bancoIds: selectedBancoIds.filter(id => derivedBancos.some(bank => bank.id === id)),
       }
 
       if (procurador) {
@@ -333,19 +342,19 @@ export function ProcuradorModal({
           <div className="rounded-lg border border-blue-100 bg-blue-50 p-4">
             <p className="text-sm font-medium text-blue-900">Bancos derivados</p>
             <p className="mt-1 text-xs text-blue-700">
-              El acceso a bancos se calcula automaticamente desde los abogados seleccionados.
+              Selecciona los bancos de los abogados asignados que correspondan a este procurador.
             </p>
             <div className="mt-3 flex flex-wrap gap-2">
               {derivedBancos.length === 0 ? (
                 <span className="text-sm text-blue-700">Sin bancos derivados</span>
               ) : (
                 derivedBancos.map((banco) => (
-                  <span
-                    key={banco.id}
-                    className="inline-flex items-center rounded-full bg-white px-2.5 py-1 text-xs font-medium text-blue-700"
-                  >
+                  <label key={banco.id} className="inline-flex cursor-pointer items-center gap-2 rounded-lg bg-white px-3 py-2 text-sm text-blue-700">
+                    <input type="checkbox" checked={selectedBancoIds.includes(banco.id)}
+                      onChange={event => setSelectedBancoIds(ids => event.target.checked ? [...ids, banco.id] : ids.filter(id => id !== banco.id))}
+                      className="rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
                     {banco.nombre}
-                  </span>
+                  </label>
                 ))
               )}
             </div>

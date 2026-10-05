@@ -15,6 +15,9 @@ from pathlib import Path
 
 logging.disable(logging.CRITICAL)
 
+class RevokedSigner(Exception):
+    pass
+
 
 def limit_resources():
     # Uploaded PDFs are untrusted parser input. Limit memory as well as the
@@ -125,6 +128,8 @@ def main():
         check(bool(dss.crls or dss.ocsps))
         context = dss.as_validation_context(settings)
     status = validate_pdf_signature(signature, signer_validation_context=context, ts_validation_context=context)
+    if status.revoked:
+        raise RevokedSigner()
     check(status.bottom_line and status.intact and status.valid and status.trusted and status.docmdp_ok)
     check(status.coverage in (SignatureCoverageLevel.ENTIRE_FILE, SignatureCoverageLevel.ENTIRE_REVISION))
     attrs = {a['type'].native for a in signature.signer_info['signed_attrs']}
@@ -164,6 +169,9 @@ def main():
 
 try:
     print(json.dumps({'ok': True, 'evidence': main()}))
+except RevokedSigner:
+    print(json.dumps({'ok': False, 'error': 'CERT_REVOKED'}))
+    sys.exit(1)
 except Exception:
     # No raw parser errors, local paths, certificate contents or document data.
     print(json.dumps({'ok': False, 'error': 'VALIDATION_FAILED'}))

@@ -19,7 +19,7 @@ export async function middleware(request: NextRequest) {
 
   // Device credentials are independent of browser/Supabase sessions. Their
   // route enforces HTTPS, challenge/session authentication and office scope.
-  if (request.nextUrl.pathname.startsWith('/api/signing/device/')) {
+  if (request.nextUrl.pathname.startsWith('/api/signing/device/') || request.nextUrl.pathname === '/api/internal/signing/maintenance') {
     response.headers.set('x-request-id', requestId)
     response.headers.set('Cache-Control', 'private, no-store')
     return response

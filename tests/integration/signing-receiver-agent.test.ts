@@ -2,8 +2,9 @@ import { execFileSync, spawn, type ChildProcess } from 'node:child_process'
 import { createServer, type Server } from 'node:https'
 import { connect } from 'node:net'
 import { randomBytes, randomUUID } from 'node:crypto'
-import { readFileSync, writeFileSync, mkdirSync, rmSync, copyFileSync, readdirSync, existsSync } from 'node:fs'
+import { readFileSync, writeFileSync, mkdirSync, copyFileSync, existsSync } from 'node:fs'
 import path from 'node:path'
+import { readFile } from 'node:fs/promises'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { NextRequest } from 'next/server'
 import { createSigningTestDatabase } from './signing-test-database'
@@ -15,14 +16,14 @@ import { createSigningService } from '../../lib/signing/service'
 import { sha256 } from '../../lib/signing/deviceProtocol'
 import { signingStorage } from '../../lib/signing/artifacts'
 
-describe.skipIf(process.env.SIGNING_RECEIVER_AGENT_TESTS !== '1')('Phase 9 real receiver agents / HTTPS / private storage', () => {
+describe.skipIf(process.env.SIGNING_RECEIVER_AGENT_TESTS !== '1')('Office folder: real signer/receiver agents, HTTPS and private storage', () => {
   const root = path.resolve('agents/windows/artifacts/phase9'), directory = path.join(root, 'live-' + randomUUID())
   const agents = [0, 1].map(i => ({ key: randomUUID(), directory: path.join(directory, 'receiver-' + i), process: undefined as ChildProcess | undefined }))
-  const executable = path.resolve('agents/windows/artifacts/win-x64/Notifica.Agent.exe')
+  const executable = path.resolve(process.env.SIGNING_FOLDER_AGENT ?? 'output/office-folder-agent-0.13.0/Notifica.Agent.exe')
   const cloudKeys: string[] = [], observed: Record<string, unknown> = {}
   let sandbox: Awaited<ReturnType<typeof createSigningTestDatabase>>, server: Server, origin: string
   let service: ReturnType<typeof createDeviceService>, fixture: Awaited<ReturnType<typeof signingFixture>>
-  let dropAck = true, cutDownload = true, allowDownload = false
+  let cutDownload = true, allowDownload = false, downloadRequests = 0
   const accepted = path.resolve('agents/windows/artifacts/phase7/live-defddef9-b27c-4eed-8395-baa175e23148')
   const source = readFileSync(path.join(accepted, 'estampo-source.pdf')), signed = readFileSync(path.join(accepted, 'estampo-signed.pdf'))
   function ipc(i: number, value: unknown): Promise<any> {
@@ -66,11 +67,11 @@ describe.skipIf(process.env.SIGNING_RECEIVER_AGENT_TESTS !== '1')('Phase 9 real 
       try {
         const chunks: Buffer[] = []; for await (const chunk of req) chunks.push(chunk)
         const action = req.url!.split('/').at(-1)!
-        if (action === 'delivery-download' && !allowDownload) { res.writeHead(503); res.end('{}'); return }
+        if (action === 'office-folder-download') downloadRequests++
+        if (action === 'office-folder-download' && !allowDownload) { res.writeHead(503); res.end('{}'); return }
         const response = await handler(new NextRequest(origin + req.url, { method: 'POST', headers: req.headers as Record<string, string>, body: Buffer.concat(chunks) }), action)
         const bytes = Buffer.from(await response.arrayBuffer())
-        if (action === 'ack' && response.status === 200 && dropAck) { dropAck = false; observed.lostAcknowledgement = true; res.destroy(); return }
-        if (action === 'delivery-download' && response.status === 200 && cutDownload) {
+        if (action === 'office-folder-download' && response.status === 200 && cutDownload) {
           cutDownload = false; observed.interruptedDownload = true
           res.writeHead(200, Object.fromEntries(response.headers)); res.write(bytes.subarray(0, 100)); res.destroy(); return
         }
@@ -87,7 +88,7 @@ describe.skipIf(process.env.SIGNING_RECEIVER_AGENT_TESTS !== '1')('Phase 9 real 
     }
     for (let i = 0; i < agents.length; i++) {
       start(i); await until(async () => (await ipc(i, { action: 'status' })).ok, 15000)
-      const code = await service.createEnrollment(fixture.context, { role: 'RECEIVER' })
+      const code = await service.createEnrollment(fixture.context, { role: i === 0 ? 'SIGNER' : 'RECEIVER' })
       expect(await ipc(i, { action: 'enroll', code: code.code, name: 'Receiver acceptance ' + i,
         receiverDirectory: path.join(agents[i].directory, 'mirror') })).toMatchObject({ ok: true })
     }
@@ -106,9 +107,24 @@ describe.skipIf(process.env.SIGNING_RECEIVER_AGENT_TESTS !== '1')('Phase 9 real 
     observed.cleanupCompleted = true; observed.checkedAt = new Date().toISOString()
     writeFileSync(path.join(root, 'receiver-https-results.json'), JSON.stringify(observed, null, 2))
     if (path.dirname(directory) !== root) throw new Error('UNSAFE_TEST_DIRECTORY')
-    rmSync(directory, { recursive: true, force: true })
+    // Unregister only these generated test sync roots before removing their cache.
+    execFileSync('pwsh.exe', ['-NoProfile', '-Command', `
+      Add-Type -TypeDefinition 'using System.Runtime.InteropServices; public static class NotificaTestCloud { [DllImport("cldapi.dll", CharSet=CharSet.Unicode)] public static extern int CfUnregisterSyncRoot(string path); }';
+      $testRoot = [IO.Path]::GetFullPath($env:NOTIFICA_FOLDER_TEST_ROOT);
+      if ([IO.Path]::GetFileName($testRoot) -notmatch '^live-[a-f0-9-]{36}$') { throw 'UNSAFE_TEST_DIRECTORY' }
+      foreach ($agentName in @('receiver-0','receiver-1')) {
+        $mirrorPath = Join-Path (Join-Path $testRoot $agentName) 'mirror';
+        if (Test-Path -LiteralPath $mirrorPath) {
+          Get-ChildItem -LiteralPath $mirrorPath -Directory | Where-Object { $_.Name -match '^Oficina-[0-9]+$' } | ForEach-Object {
+            [NotificaTestCloud]::CfUnregisterSyncRoot($_.FullName) | Out-Null
+          }
+        }
+      }
+      Get-ChildItem -LiteralPath $testRoot -File -Recurse | ForEach-Object { $_.IsReadOnly = $false };
+      Remove-Item -LiteralPath $testRoot -Recurse -Force
+    `], { windowsHide: true, env: { ...process.env, NOTIFICA_FOLDER_TEST_ROOT: directory } })
   }, 60000)
-  it('mirrors identical committed bytes to two receivers with interruption, collision, restart and revocation', async () => {
+  it('lists identical placeholders on signer and receiver, hydrates on open, retries interruption, and revokes access', async () => {
     await stop(1)
     const v = await fixture.document(), sourceKey = `phase9-tests/${randomUUID()}/source.pdf`
     cloudKeys.push(sourceKey); await signingStorage.assertPrivate('documents'); await signingStorage.upload('documents', sourceKey, source)
@@ -120,29 +136,37 @@ describe.skipIf(process.env.SIGNING_RECEIVER_AGENT_TESTS !== '1')('Phase 9 real 
     const item = (await queue.claim(fixture.office.id, fixture.device.id, 300000))!, lease = { itemId: item.id, leaseToken: item.leaseToken! }
     await service.queue(token, 'start', lease)
     const committed = await service.submitArtifact(token, lease, signed)
-    const filename = `${v.doc.id}-${committed.signedVersionId}-firmado.pdf`
-    writeFileSync(path.join(agents[0].directory, 'mirror', filename), 'Local file to preserve')
-    allowDownload = true; start(1)
+    const filename = (await service.officeFolder(token, {})).documents.find(d => d.signedVersionId === committed.signedVersionId)!.fileName
+    const localCopy = path.join(agents[0].directory, 'mirror', 'legacy-copy.pdf')
+    writeFileSync(localCopy, 'Local file to preserve')
+    start(1)
     const ids = agents.map(a => JSON.parse(readFileSync(path.join(a.directory, 'identity.json'), 'utf8')).deviceId as string)
-    await until(async () => await sandbox.db.documentDelivery.count({ where: { deviceId: { in: ids }, status: 'DELIVERED' } }) === 2, 180000)
-    await until(async () => agents.every(a => existsSync(path.join(a.directory, 'receiver-manifest')) && readdirSync(path.join(a.directory, 'receiver-manifest')).length === 1), 45000)
-    const checksums = agents.map(a => readdirSync(path.join(a.directory, 'mirror')).filter(n => n.endsWith('.pdf')).map(n => sha256(readFileSync(path.join(a.directory, 'mirror', n)))))
-    expect(checksums.every(hashes => hashes.includes(sha256(signed)))).toBe(true)
-    expect(readFileSync(path.join(agents[0].directory, 'mirror', filename), 'utf8')).toBe('Local file to preserve')
-    expect(observed.interruptedDownload).toBe(true); expect(observed.lostAcknowledgement).toBe(true)
+    const files = agents.map(a => path.join(a.directory, 'mirror', `Oficina-${fixture.office.id}`, filename))
+    await until(async () => files.every(file => existsSync(file)), 180000)
+    expect(downloadRequests).toBe(0)
+    expect(await sandbox.db.documentDelivery.count({ where: { officeId: fixture.office.id } })).toBe(0)
+    allowDownload = true
+    // Async reads are essential: Cloud Files calls the HTTPS server in this process.
+    const copies: Buffer[] = []
+    for (const file of files) {
+      await until(async () => {
+        const bytes = await readFile(file)
+        expect(sha256(bytes)).toBe(sha256(signed)); copies.push(bytes); return true
+      }, 90000)
+    }
+    expect(observed.interruptedDownload).toBe(true)
+    expect(readFileSync(localCopy, 'utf8')).toBe('Local file to preserve')
+    for (let i = 0; i < copies.length; i++) writeFileSync(path.join(root, `office-device-${i + 1}-signed.pdf`), copies[i])
     await stop(0); start(0)
     await until(async () => (await ipc(0, { action: 'status' })).status.deviceId === ids[0], 15000)
+    expect(sha256(await readFile(files[0]))).toBe(sha256(signed))
     await service.revoke(fixture.context, ids[0])
-    await until(async () => (await ipc(0, { action: 'status' })).status.errorCode === 'DEVICE_UNAUTHORIZED', 65000)
+    await until(async () => !existsSync(files[0]), 90000)
+    expect(readFileSync(localCopy, 'utf8')).toBe('Local file to preserve')
+    expect(sha256(await readFile(files[1]))).toBe(sha256(signed))
     expect(sha256(await signingStorage.download('documents', sourceKey))).toBe(sha256(source))
-    observed.twoReceiversSameHash = sha256(signed); observed.collisionPreserved = true; observed.offlineReceiverRestart = true
-    observed.revocationObserved = true; observed.sourceUnchanged = true; observed.tokenLoginAttempts = 0; observed.passed = true
-    observed.bothManifestsPersisted = true
-    // Save public copies outside the disposable credential directory for inspection.
-    for (let i = 0; i < agents.length; i++) {
-      const matching = readdirSync(path.join(agents[i].directory, 'mirror')).find(n => n.endsWith('.pdf') && sha256(readFileSync(path.join(agents[i].directory, 'mirror', n))) === sha256(signed))!
-      copyFileSync(path.join(agents[i].directory, 'mirror', matching), path.join(root, `receiver-${i + 1}-signed.pdf`))
-      expect(existsSync(path.join(agents[i].directory, 'receiver-state.json'))).toBe(true)
-    }
+    Object.assign(observed, { sameOfficeHash: sha256(signed), noAutomaticDownloads: true, signerAndReceiver: true,
+      legacyCopyPreserved: true, offlineReceiverRestart: true, revocationObserved: true, sourceUnchanged: true,
+      tokenLoginAttempts: 0, passed: true, downloadRequests })
   }, 300000)
 })

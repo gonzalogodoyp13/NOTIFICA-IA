@@ -16,6 +16,7 @@ export const Heartbeat = z.object({
   lastSuccessfulContactAt: z.string().datetime().nullable(),
   token: z.enum(['MISSING', 'READY', 'DRIVER_MISSING', 'DRIVER_ERROR', 'CERT_MISSING', 'CERT_INVALID', 'CERT_AMBIGUOUS', 'NOT_APPLICABLE']),
   certificate: Certificate.nullable(),
+  operationalError: z.enum(['PIN_REQUIRED', 'AGENT_UPDATE_REQUIRED', 'NETWORK', 'STORAGE', 'DISK', 'CHECKSUM_MISMATCH', 'LOCAL_CONFLICT', 'UNKNOWN', 'OUTCOME_UNKNOWN', 'PIN_INCORRECT', 'PIN_LOCKED', 'PIN_EXPIRED', 'TSA_UNAVAILABLE', 'REVOCATION_UNAVAILABLE', 'VALIDATION_FAILED', 'DRIVER_ERROR', 'TOKEN_MISSING', 'CERT_REVOKED']).nullable().optional(),
 }).strict().superRefine((value, ctx) => {
   if ((value.token === 'READY') !== (value.certificate !== null)) ctx.addIssue({ code: 'custom', message: 'Certificate state mismatch' })
   if ((value.role === 'RECEIVER') !== (value.token === 'NOT_APPLICABLE')) ctx.addIssue({ code: 'custom', message: 'Role state mismatch' })

@@ -74,8 +74,15 @@ internal sealed class ReceiverMirror(Configuration config, DeviceApi api, Func<I
                 ErrorCode = null;
             } catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
             catch (DeliveryAcknowledgementUncertain) { throw; } // Keep the local file and journal for an idempotent ack replay.
+            catch (ApiFailure e) when (e.Code == "AGENT_UPDATE_REQUIRED") { throw; } // Keep pending state; this is not a failed transfer.
+            catch (ApiFailure e) when (e.Code is "DELIVERY_NOT_READY" or "DELIVERY_OPERATOR_REQUIRED") {
+                // Drop only the pending-page entry, not the file. Server state controls
+                // backoff/manual recovery; do not turn a deferred attempt into a new failure.
+                ErrorCode = e.Code == "DELIVERY_OPERATOR_REQUIRED" ? "UNKNOWN" : ErrorCode;
+            }
             catch (Exception e) {
-                ErrorCode = e is UnauthorizedAccessException || e is IOException ? "DISK" : e.Message == "CHECKSUM_MISMATCH" ? "CHECKSUM_MISMATCH" : e is HttpRequestException || e is ApiFailure || e is OperationCanceledException ? "NETWORK" : "UNKNOWN";
+                ErrorCode = FailurePolicy.TransferCode(e);
+                FailurePolicy.Log(config, ErrorCode, Guid.NewGuid());
                 await api.Post("delivery-fail", new { deliveryId = delivery.DeliveryId, checksumSha256 = delivery.ChecksumSha256, errorCode = ErrorCode }, ct, true);
             }
             // After an uncertain ack/failure reply this write is not reached; restart replays safely.
@@ -132,11 +139,12 @@ internal sealed class ReceiverMirror(Configuration config, DeviceApi api, Func<I
     }
     internal async Task Run(CancellationToken ct)
     {
+        int failures = 0;
         while (!ct.IsCancellationRequested) {
-            try { await Tick(ct); }
+            try { await Tick(ct); failures = 0; }
             catch (OperationCanceledException) when (ct.IsCancellationRequested) { break; }
-            catch { ErrorCode ??= "CONNECTION_OR_LOCAL_ERROR"; }
-            await Task.Delay(TimeSpan.FromSeconds(15), ct);
+            catch (Exception error) { ErrorCode = FailurePolicy.TransferCode(error); failures++; FailurePolicy.Log(config, ErrorCode, Guid.NewGuid()); }
+            await Task.Delay(FailurePolicy.Delay(failures), ct);
         }
     }
 }

@@ -194,6 +194,55 @@ internal static class SigningSelfTest
         }
         checks.Add("Closing the owning Windows job terminates a real blocked child process");
 
+        var single = batch with { Documents = [batch.Documents[0]] };
+        using (var pin = new PinBuffer("synthetic"u8)) {
+            var token = new FakeToken(certificate);
+            using var session = new OfficeTokenSession(1, fingerprint, pin, () => token);
+            await session.Sign(single, new FakeAdapter(), CancellationToken.None);
+            await session.Sign(single with { Id = Guid.NewGuid(), Documents = [batch.Documents[1]] }, new FakeAdapter(), CancellationToken.None);
+            Require(token.LoginAttempts == 1 && token.Signatures == 2 && pin.IsCleared && !token.Disposed, "REMOTE_REUSES_LOGIN");
+            session.Dispose();
+            await RejectAsync(() => session.Sign(single, new FakeAdapter(), CancellationToken.None), SigningError.SessionExpired);
+            Require(token.Signatures == 2 && token.Disposed, "REMOTE_CLOSED");
+            checks.Add("Remote office session signs two separate requests with one login; explicit close prevents another signature");
+        }
+        foreach (var invalid in new[] { single with { OfficeId = 2 }, single with { SignerFingerprint = new string('f', 64) }, batch }) {
+            using var pin = new PinBuffer("synthetic"u8);
+            var token = new FakeToken(certificate);
+            using var session = new OfficeTokenSession(1, fingerprint, pin, () => token);
+            await RejectAsync(() => session.Sign(invalid, new FakeAdapter(), CancellationToken.None), SigningError.ApprovalMismatch);
+            Require(token.Signatures == 0 && token.Disposed, "REMOTE_BOUNDARY");
+        }
+        checks.Add("Remote session rejects a foreign office, a changed certificate and multiple documents per claim");
+        using (var pin = new PinBuffer("synthetic"u8)) {
+            var token = new FakeToken(certificate); var elapsed = new TestClock();
+            using var session = new OfficeTokenSession(1, fingerprint, pin, () => token, elapsed);
+            elapsed.Advance(TimeSpan.FromHours(8));
+            await RejectAsync(() => session.Sign(single, new FakeAdapter(), CancellationToken.None), SigningError.SessionExpired);
+            Require(token.Signatures == 0 && token.Disposed, "REMOTE_EXPIRY");
+            checks.Add("Eight-hour remote session expiry prevents a native operation and closes the token");
+        }
+        foreach (var failure in new[] { SigningError.PinIncorrect, SigningError.PinLocked, SigningError.PinExpired }) {
+            using var pin = new PinBuffer("synthetic"u8); var token = new FakeToken(certificate) { LoginFailure = failure };
+            Reject(() => { using var session = new OfficeTokenSession(1, fingerprint, pin, () => token); }, failure);
+            Require(pin.IsCleared && token.LoginAttempts == 1 && token.Disposed, "REMOTE_PIN_FAILURE");
+        }
+        checks.Add("Remote activation never retries an incorrect, locked or expired PIN and clears the buffer");
+        using (var pin = new PinBuffer("synthetic"u8)) {
+            var token = new FakeToken(certificate) { SignFailure = SigningError.TokenRemoved };
+            using var session = new OfficeTokenSession(1, fingerprint, pin, () => token);
+            await RejectAsync(() => session.Sign(single, new FakeAdapter(), CancellationToken.None), SigningError.TokenRemoved);
+            await RejectAsync(() => session.Sign(single, new FakeAdapter(), CancellationToken.None), SigningError.SessionExpired);
+            Require(token.Signatures == 1 && token.LoginAttempts == 1 && token.Disposed, "REMOTE_REMOVAL");
+            checks.Add("Token failure closes remote session without relogin or automatic duplicate signature");
+        }
+        using (var pin = new PinBuffer("synthetic"u8)) {
+            var token = new FakeToken(certificate);
+            using var session = new OfficeTokenSession(1, fingerprint, pin, () => token);
+            await RejectAsync(() => session.Sign(single, new FakeAdapter { OutputProfile = SigningProfile.PADES_B }, CancellationToken.None), SigningError.ValidationFailed);
+            Require(token.Disposed && token.Signatures == 1, "REMOTE_DOWNGRADE");
+            checks.Add("Remote signatures preserve requested profile and fail closed on a downgrade");
+        }
         Console.WriteLine(JsonSerializer.Serialize(new { passed = checks.Count, realTokenLoginAttempts = 0, checks }, Configuration.Json));
         return 0;
     }

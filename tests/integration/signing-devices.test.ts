@@ -56,6 +56,29 @@ describe.skipIf(process.env.SIGNING_DATABASE_TESTS !== '1')('device enrollment/a
     await sandbox.db.user.update({ where: { id: f.user.id }, data: { isOfficeAdmin: false } })
     await expect(service.createEnrollment(f.context, { role: 'SIGNER' })).rejects.toThrow('FORBIDDEN')
   }, 60_000)
+  it('retires only the proven device, invalidates sessions and safely replays retirement', async () => {
+    const f = await setup(), other = await setup()
+    const message = `NOTIFICA-DEVICE-RETIRE-V1\n${f.enrolled.deviceId}`
+    const input = { deviceId: f.enrolled.deviceId, signature: f.proof(message) }
+    await expect(service.retire({ ...input, signature: other.proof(message) })).rejects.toThrow('DEVICE_UNAUTHORIZED')
+    await expect(service.retire({ ...input, deviceId: other.enrolled.deviceId })).rejects.toThrow('DEVICE_UNAUTHORIZED')
+    expect(await service.retire(input)).toEqual({ deviceId: f.enrolled.deviceId, revoked: true })
+    expect(await service.retire(input)).toEqual({ deviceId: f.enrolled.deviceId, revoked: true })
+    await expect(service.heartbeat(f.session.token, f.report)).rejects.toThrow('DEVICE_UNAUTHORIZED')
+    expect(await sandbox.db.deviceSession.count({ where: { deviceId: f.enrolled.deviceId } })).toBe(0)
+    expect(await sandbox.db.deviceChallenge.count({ where: { deviceId: f.enrolled.deviceId } })).toBe(0)
+    expect(await sandbox.db.activityEvent.count({ where: { recordId: f.enrolled.deviceId, eventType: 'device.revoked' } })).toBe(1)
+    expect((await sandbox.db.signingDevice.findUniqueOrThrow({ where: { id: other.enrolled.deviceId } })).revokedAt).toBeNull()
+  }, 60000)
+  it('blocks new claims below the release floor while allowing heartbeat and supported upgrades', async () => {
+    const f = await setup()
+    vi.stubEnv('SIGNING_MIN_AGENT_VERSION', '0.11.0')
+    try {
+      await expect(service.queue(f.session.token, 'claim', {})).rejects.toThrow('AGENT_UPDATE_REQUIRED')
+      await service.heartbeat(f.session.token, { ...f.report, agentVersion: '0.11.0' })
+      expect(await service.queue(f.session.token, 'claim', {})).toBeNull()
+    } finally { vi.unstubAllEnvs() }
+  }, 60000)
   it('fences challenge replay, expires sessions, rejects wrong key and renews only with new proof', async () => {
     const f = await setup()
     await expect(service.session(f.session.request)).rejects.toThrow('DEVICE_UNAUTHORIZED')
@@ -87,6 +110,15 @@ describe.skipIf(process.env.SIGNING_DATABASE_TESTS !== '1')('device enrollment/a
     expect((await service.input(f.session.token, lease)).checksumSha256).toBe(version.source.checksumSha256)
     await expect(service.input(other.session.token, lease)).rejects.toThrow('STALE_LEASE')
     await expect(service.queue(other.session.token, 'renew', lease)).rejects.toThrow('STALE_LEASE')
+    const remoteSessionId = randomUUID(), batchId = randomUUID()
+    // This contract test never uploads a PDF; a validator dependency establishes
+    // configured readiness without trusting or contacting any external service.
+    const remoteService = createDeviceService(sandbox.db, { validator: async () => { throw new Error('UNEXPECTED_VALIDATOR_CALL') } })
+    await expect(service.queue(f.session.token, 'start', { ...lease, remoteSessionId, batchId, locallyApproved: true })).rejects.toThrow()
+    await expect(service.queue(f.session.token, 'start', { ...lease, remoteSessionId, batchId, pin: 'forbidden' })).rejects.toThrow()
+    expect(await remoteService.queue(f.session.token, 'start', { ...lease, remoteSessionId, batchId })).toEqual({ accepted: true })
+    expect((await sandbox.db.activityEvent.findFirstOrThrow({ where: { recordId: claimed.itemId, eventType: 'signing.remote_authorized' } })).metadata)
+      .toMatchObject({ remoteSessionId, batchId, deviceId: f.enrolled.deviceId, sourceVersionId: version.source.id })
     await expect(service.result(f.session.token, lease)).rejects.toThrow('PDF_BODY_REQUIRED')
     await expect(service.revoke(other.context, f.enrolled.deviceId)).rejects.toThrow('NOT_FOUND')
     await service.revoke(f.context, f.enrolled.deviceId)

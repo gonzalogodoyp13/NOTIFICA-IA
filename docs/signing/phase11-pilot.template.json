@@ -1,0 +1,48 @@
+{
+  "format": 1,
+  "officeId": 0,
+  "operator": { "name": "", "accepted": false, "acceptedAt": null },
+  "signature": {
+    "profile": "PADES_LT", "sha256": "", "hardwareToken": false, "independentlyValidated": false,
+    "sourceVersionId": "", "signedVersionId": "", "signerFingerprint": "",
+    "authoritativePdf": { "path": "", "sha256": "" },
+    "validationReport": { "path": "", "sha256": "" }
+  },
+  "receivers": [
+    { "computerId": "", "deviceId": "", "sha256": "", "automaticallyDelivered": false, "manifest": { "path": "", "sha256": "" }, "receivedPdf": { "path": "", "sha256": "" } },
+    { "computerId": "", "deviceId": "", "sha256": "", "automaticallyDelivered": false, "manifest": { "path": "", "sha256": "" }, "receivedPdf": { "path": "", "sha256": "" } }
+  ],
+  "scenarios": [
+    { "id": "automatic-workflow", "status": "pending", "evidence": null },
+    { "id": "manual-date-range", "status": "pending", "evidence": null },
+    { "id": "token-before-claim", "status": "pending", "evidence": null },
+    { "id": "token-during-processing", "status": "pending", "evidence": null },
+    { "id": "incorrect-pin", "status": "pending", "evidence": null },
+    { "id": "certificate-expired", "status": "pending", "evidence": null },
+    { "id": "certificate-revoked", "status": "pending", "evidence": null },
+    { "id": "tsa-unavailable", "status": "pending", "evidence": null },
+    { "id": "ocsp-unknown", "status": "pending", "evidence": null },
+    { "id": "download-interrupted", "status": "pending", "evidence": null },
+    { "id": "upload-interrupted", "status": "pending", "evidence": null },
+    { "id": "duplicate-completion", "status": "pending", "evidence": null },
+    { "id": "restart-active-lease", "status": "pending", "evidence": null },
+    { "id": "partial-batch", "status": "pending", "evidence": null },
+    { "id": "receiver-reconnect", "status": "pending", "evidence": null },
+    { "id": "receiver-disk-full", "status": "pending", "evidence": null },
+    { "id": "local-modified", "status": "pending", "evidence": null },
+    { "id": "local-deleted", "status": "pending", "evidence": null },
+    { "id": "device-revoked", "status": "pending", "evidence": null },
+    { "id": "certificate-renewed", "status": "pending", "evidence": null }
+  ],
+  "gates": {
+    "installer": { "status": "pending", "evidence": null },
+    "upgrade": { "status": "pending", "evidence": null },
+    "rollback": { "status": "pending", "evidence": null },
+    "uninstall": { "status": "pending", "evidence": null },
+    "securityReview": { "status": "pending", "evidence": null },
+    "build": { "status": "pending", "evidence": null },
+    "lint": { "status": "pending", "evidence": null },
+    "integration": { "status": "pending", "evidence": null },
+    "endToEnd": { "status": "pending", "evidence": null }
+  }
+}

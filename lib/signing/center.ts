@@ -5,6 +5,8 @@ import { prisma } from '../prisma'
 import { assertEligibleVersion, SigningError, type SigningContext } from './core'
 import { createSigningJobInTransaction, createSigningService } from './service'
 import { lockSigningOffice } from './transaction'
+import { signingAlerts } from './monitoring'
+import { folderCutoff } from './officeFolder'
 import { CenterAction, CenterFilter, signingBusinessDate, signingMessages, type CenterData, type CenterRow } from './centerContracts'
 
 const documentSelect = {
@@ -52,9 +54,10 @@ export function createSigningCenter(db: PrismaClient = prisma) {
         const docs = await tx.documento.findMany({ where: { officeId: context.officeId, tipo: 'Estampo', rol: { officeId: context.officeId } }, select: documentSelect })
         const items = await tx.signingItem.findMany({ where: { officeId: context.officeId }, orderBy: [{ createdAt: 'desc' }, { id: 'asc' }],
           select: { id: true, documentoId: true, sourceVersionId: true, sourceChecksum: true, status: true, errorCode: true,
-            attemptCount: true, maxAttempts: true, leaseExpiresAt: true, jobId: true,
+            attemptCount: true, maxAttempts: true, leaseExpiresAt: true, jobId: true, availableAt: true,
             job: { select: { idempotencyKey: true, requestedLevel: true, requestedBy: { select: { email: true } } } },
-            signature: { select: { createdAt: true, deliveries: { select: { status: true } } } } } })
+            signature: { select: { id: true, signedVersionId: true, signedChecksum: true, signerFingerprint: true, validatedAt: true, deviceId: true,
+              createdAt: true } } } })
         const starts = await tx.activityEvent.findMany({ where: { officeId: context.officeId, eventType: 'signing.started', recordType: 'SigningItem' }, select: { recordId: true } })
         const started = new Set(starts.map(s => s.recordId))
         const devices = await tx.signingDevice.findMany({ where: { officeId: context.officeId }, orderBy: { name: 'asc' },
@@ -89,16 +92,20 @@ export function createSigningCenter(db: PrismaClient = prisma) {
             const canRetry = user.isOfficeAdmin && !reason && !superseded && !activeOther && !item.signature && item.attemptCount < item.maxAttempts &&
               (['FAILED', 'WAITING_FOR_OPERATOR'].includes(item.status) || (expired && item.status === 'SIGNING'))
             const canCancel = user.isOfficeAdmin && !hasStarted && ['QUEUED', 'CLAIMED', 'RETRY_PENDING', 'WAITING_FOR_OPERATOR'].includes(item.status)
-            const deliveries = item.signature?.deliveries ?? []
-            const delivered = deliveries.filter(d => d.status === 'DELIVERED').length
             rows.push({ ...common, id: item.id, versionId: item.sourceVersionId, checksum: item.sourceChecksum, status,
               exclusion: item.signature ? null : superseded ? 'Existe una versión más reciente' : reason,
               itemId: item.id, jobId: item.jobId, origin: item.job.idempotencyKey.startsWith('manual_') ? 'MANUAL' : 'AUTOMATIC',
               profile: item.job.requestedLevel, requestedBy: item.job.requestedBy.email, attemptCount: item.attemptCount,
               maxAttempts: item.maxAttempts, canRetry, canCancel, started: hasStarted,
+              nextRetryAt: item.status === 'RETRY_PENDING' ? item.availableAt.toISOString() : null,
+              evidence: item.signature ? { signatureId: item.signature.id, signedVersionId: item.signature.signedVersionId,
+                signedChecksum: item.signature.signedChecksum, signerFingerprint: item.signature.signerFingerprint,
+                validatedAt: item.signature.validatedAt.toISOString(), deviceId: item.signature.deviceId } : null,
+              deliveries: [], // Legacy delivery history is retained, but no longer drives this view.
               errorMessage: item.errorCode ? signingMessages[item.errorCode] ?? signingMessages.UNKNOWN : expired ? signingMessages.LEASE_EXPIRED : null,
               ...(user.isOfficeAdmin && item.errorCode ? { diagnosticCode: Object.hasOwn(signingMessages, item.errorCode) ? item.errorCode : 'UNKNOWN' } : {}),
-              delivery: !item.signature ? 'Sin firma validada' : !deliveries.length ? 'Sin distribución programada' : `${delivered}/${deliveries.length} entregados${deliveries.some(d => d.status === 'FAILED') ? ' · Revisar entrega' : ''}`,
+              delivery: !item.signature ? 'Sin firma validada' : item.signature.createdAt >= folderCutoff(now)
+                ? 'Disponible en la carpeta de la oficina' : 'Disponible en el archivo de la aplicación',
               signedAt: item.signature?.createdAt.toISOString() ?? null })
           }
         }
@@ -106,12 +113,13 @@ export function createSigningCenter(db: PrismaClient = prisma) {
         const attention = (r: CenterRow) => ['FAILED', 'WAITING_FOR_OPERATOR', 'EXPIRED'].includes(r.status)
         const counts = { eligible: rows.filter(r => r.status === 'ELIGIBLE').length, active: rows.filter(active).length,
           attention: rows.filter(attention).length, completed: rows.filter(r => r.status === 'COMPLETED').length,
-          deliveryPending: items.flatMap(i => i.signature?.deliveries ?? []).filter(d => d.status !== 'DELIVERED').length }
+          deliveryPending: 0 }
         const filtered = rows.filter(r => (!filter.from || !!r.businessDate && r.businessDate >= filter.from) && (!filter.to || !!r.businessDate && r.businessDate <= filter.to) &&
           (filter.status === 'ALL' || filter.status === 'ACTIVE' && active(r) || filter.status === 'ATTENTION' && attention(r) || r.status === filter.status))
           .sort((a, b) => (b.businessDate ?? '').localeCompare(a.businessDate ?? '') || a.id.localeCompare(b.id))
-        return { canManage: user.isOfficeAdmin, rows: filtered.slice((filter.page - 1) * filter.pageSize, filter.page * filter.pageSize),
+        return { canManage: user.isOfficeAdmin, canRequest: true, rows: filtered.slice((filter.page - 1) * filter.pageSize, filter.page * filter.pageSize),
           total: filtered.length, page: filter.page, pageSize: filter.pageSize, counts, updatedAt: now.toISOString(),
+          alerts: await signingAlerts(tx, context.officeId, now, user.isOfficeAdmin),
           validatorConfigured: Boolean(process.env.SIGNING_VALIDATOR_CONFIG || process.env.SIGNING_VALIDATOR_URL && process.env.SIGNING_VALIDATOR_TOKEN),
           devices: devices.map(d => ({ id: d.id, name: d.name, role: d.role, certificateSubject: d.certificateSubject,
             fingerprint: d.certificateThumbprint, expiresAt: d.certificateExpiresAt?.toISOString() ?? null,
@@ -122,6 +130,9 @@ export function createSigningCenter(db: PrismaClient = prisma) {
     },
     async mutate(context: SigningContext, raw: unknown) {
       const input = CenterAction.parse(raw)
+      if (input.action === 'retry-delivery') {
+        throw new SigningError('DELIVERY_RETIRED')
+      }
       if (input.action !== 'queue') {
         // Queue methods check the administrator and safety guard under their own office lock.
         const queue = createSigningService(db)
@@ -134,7 +145,9 @@ export function createSigningCenter(db: PrismaClient = prisma) {
       if (new Set(input.sources.map(s => s.versionId)).size !== input.sources.length) throw new SigningError('DUPLICATE_SOURCE')
       return db.$transaction(async tx => {
         const now = await lockSigningOffice(tx, context.officeId)
-        await actor(tx, context, true)
+        // Every active account member may authorize new signatures for its own office.
+        // Recovery, cancellation, device administration and diagnostics remain administrative.
+        await actor(tx, context)
         const key = manualSigningKey(context.officeId, input)
         const prior = await tx.signingJob.findUnique({ where: { officeId_idempotencyKey: { officeId: context.officeId, idempotencyKey: key } } })
         if (prior) return { accepted: true, jobId: prior.id, replay: true }

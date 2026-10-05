@@ -7,11 +7,13 @@ import { recordCriticalEvent } from '../audit/activityEvent'
 import { lockSigningOffice } from './transaction'
 import { createSigningService } from './service'
 import { createArtifactService, signingStorage, type ArtifactDependencies } from './artifacts'
-import { createDeliveryService, seedReceiverDeliveries } from './deliveries'
-import { type SigningContext, SigningError } from './core'
+import { createDeliveryService } from './deliveries'
+import { createOfficeFolderService } from './officeFolder'
+import { type SigningContext, SigningError, SigningFailureCode } from './core'
 import { Certificate, DeviceError, DeviceId, DeviceLease, Enroll, Heartbeat, Role, Secret, SessionProof,
   enrollmentMessage, observedHealth, publicIdentity, sessionMessage, sha256, verifyProof } from './deviceProtocol'
 
+import { requireSupportedAgent } from './agentRelease'
 type Tx = Prisma.TransactionClient
 const secret = () => randomBytes(32).toString('base64url')
 const signerRoles = ['SIGNER', 'SIGNER_RECEIVER']
@@ -65,7 +67,10 @@ export function createDeviceService(db: PrismaClient = prisma, artifactDependenc
   }
   const artifacts = createArtifactService(db, authenticated, artifactDependencies)
   const deliveries = createDeliveryService(db, authenticated, artifactDependencies.storage ?? signingStorage)
+  const folder = createOfficeFolderService(db, authenticated, artifactDependencies.storage)
   return {
+    officeFolder: folder.list,
+    officeFolderDownload: folder.download,
     pendingDeliveries: deliveries.pending,
     beginDelivery: deliveries.begin,
     downloadDelivery: deliveries.download,
@@ -77,10 +82,30 @@ export function createDeviceService(db: PrismaClient = prisma, artifactDependenc
     // DB-backed fixed windows work across processes. Counts commit even when the
     // subsequent authentication/operation fails. Keys contain hashes, never secrets.
     throttle,
+    async retire(raw: unknown) {
+      const input = z.object({ deviceId: DeviceId, signature: z.string().max(1024) }).strict().parse(raw)
+      const device = await db.signingDevice.findUnique({ where: { id: input.deviceId } })
+      const message = `NOTIFICA-DEVICE-RETIRE-V1\n${input.deviceId}`
+      if (!device?.publicKey || !verifyProof(device.publicKey, message, input.signature)) throw new DeviceError('DEVICE_UNAUTHORIZED', 401)
+      return transaction(device.officeId, async (tx, now) => {
+        const current = await tx.signingDevice.findUniqueOrThrow({ where: { id: device.id } })
+        if (!current.publicKey || !verifyProof(current.publicKey, message, input.signature)) throw new DeviceError('DEVICE_UNAUTHORIZED', 401)
+        if (!current.revokedAt) {
+          await tx.signingDevice.update({ where: { id: device.id }, data: { revokedAt: now, health: 'OFFLINE' } })
+          await tx.deviceSession.deleteMany({ where: { deviceId: device.id } })
+          await tx.deviceChallenge.deleteMany({ where: { deviceId: device.id } })
+          await audit(tx, device.officeId, 'device.revoked', device.id)
+        }
+        // Purpose-bound proof can replay retirement, never enrollment or signing.
+        return { deviceId: device.id, revoked: true }
+      })
+    },
     async limitAuthenticated(token: string, action: string) {
       const id = await withDevice(token, undefined, async (_tx, device) => device.id)
       // A new session does not reset the device's health/claim allowance.
-      await throttle(`device:${action}`, id, action === 'heartbeat' ? 6 : 60)
+      // Catalog pages carry metadata only. A busy office can have many pages;
+      // it must not be permanently unable to finish a 50-day snapshot.
+      await throttle(`device:${action}`, id, action === 'heartbeat' ? 6 : action === 'office-folder' ? 600 : 60)
     },
     async createEnrollment(context: SigningContext, raw: unknown) {
       const input = z.object({ role: Role }).strict().parse(raw)
@@ -120,7 +145,7 @@ export function createDeviceService(db: PrismaClient = prisma, artifactDependenc
         const consumed = await tx.deviceEnrollment.updateMany({ where: { id: enrollment.id, consumedAt: null, revokedAt: null, expiresAt: { gt: now } }, data: { consumedAt: now, deviceId: device.id } })
         if (consumed.count !== 1) throw new DeviceError('ENROLLMENT_INVALID', 401)
         await audit(tx, device.officeId, 'device.enrolled', device.id)
-        await seedReceiverDeliveries(tx, device)
+        // Enrollment reads the office catalog; no per-device PDF fan-out/backfill.
         return { deviceId: device.id, officeId: device.officeId, role: device.role }
       })
     },
@@ -184,15 +209,16 @@ export function createDeviceService(db: PrismaClient = prisma, artifactDependenc
         if (report.role !== device.role) throw new DeviceError('DEVICE_ROLE_FORBIDDEN')
         if (report.lastSuccessfulContactAt && new Date(report.lastSuccessfulContactAt).getTime() > now.getTime() + 60_000) throw new DeviceError('INVALID_CONTACT_TIME', 400)
         const health = observedHealth(report, now)
+        const healthErrorCode = report.operationalError ?? (report.token === 'READY' ? health === 'CERT_EXPIRED' ? 'CERT_EXPIRED' : health === 'DRIVER_ERROR' ? 'CERT_INVALID' : null : report.token === 'NOT_APPLICABLE' ? null : report.token)
         await tx.signingDevice.update({ where: { id: device.id }, data: {
           health, agentVersion: report.agentVersion, lastHeartbeatAt: now, diskFreeBytes: BigInt(report.diskFreeBytes),
           lastSuccessfulContactAt: report.lastSuccessfulContactAt ? new Date(report.lastSuccessfulContactAt) : null,
-          healthErrorCode: report.token === 'READY' ? health === 'CERT_EXPIRED' ? 'CERT_EXPIRED' : health === 'DRIVER_ERROR' ? 'CERT_INVALID' : null : report.token === 'NOT_APPLICABLE' ? null : report.token,
+          healthErrorCode,
           certificateThumbprint: report.certificate?.fingerprint ?? null, certificateSubject: report.certificate?.subject ?? null,
           certificateIssuer: report.certificate?.issuer ?? null, certificateExpiresAt: report.certificate ? new Date(report.certificate.expiresAt) : null,
           providerType: report.certificate ? 'PKCS11' : null,
         } })
-        if (device.health !== health) await audit(tx, device.officeId, 'device.health_changed', device.id)
+        if (device.health !== health || healthErrorCode !== device.healthErrorCode) await audit(tx, device.officeId, 'device.health_changed', device.id)
         return { health, serverTime: now, heartbeatAfterSeconds: 30 }
       })
     },
@@ -202,6 +228,7 @@ export function createDeviceService(db: PrismaClient = prisma, artifactDependenc
       // Recheck session and revocation inside the queue's existing office lock.
       const queue = createSigningService(db, async (tx, targetOffice, targetDevice, now) => {
         const d = await authenticated(tx, token, now, 'signer')
+        if (action === 'claim' || action === 'start') requireSupportedAgent(d.agentVersion)
         if (d.id !== targetDevice || d.officeId !== targetOffice) throw new DeviceError('DEVICE_UNAUTHORIZED', 401)
         if (action === 'claim' && (!d.lastHeartbeatAt || now.getTime() - d.lastHeartbeatAt.getTime() > staleMs)) throw new DeviceError('DEVICE_OFFLINE', 409)
       })
@@ -212,12 +239,16 @@ export function createDeviceService(db: PrismaClient = prisma, artifactDependenc
         if (!item) return null
         return { itemId: item.id, leaseToken: item.leaseToken, leaseExpiresAt: item.leaseExpiresAt, sourceVersionId: item.sourceVersionId, sourceChecksum: item.sourceChecksum }
       }
-      const input = (action === 'fail' ? DeviceLease.extend({ errorCode: z.enum(['NETWORK', 'STORAGE', 'TSA_UNAVAILABLE', 'REVOCATION_UNAVAILABLE', 'PIN_REQUIRED', 'PIN_INCORRECT', 'TOKEN_MISSING', 'DRIVER_MISSING', 'CERT_EXPIRED', 'CHECKSUM_MISMATCH', 'VALIDATION_FAILED', 'OUTCOME_UNKNOWN', 'UNKNOWN']) }).strict() : DeviceLease).parse(raw)
+      const input = (action === 'fail' ? DeviceLease.extend({ errorCode: SigningFailureCode }).strict() :
+        action === 'start' ? DeviceLease.extend({ locallyApproved: z.literal(true).optional(), remoteSessionId: z.string().uuid().optional(), batchId: z.string().uuid().optional() })
+          .strict().refine(v => !(v.locallyApproved && v.remoteSessionId), 'Conflicting authorization modes') : DeviceLease).parse(raw)
       const lease = { officeId, deviceId: identity.id, itemId: input.itemId, leaseToken: input.leaseToken }
       if (action === 'renew') return { leaseExpiresAt: (await queue.renew(lease)).leaseExpiresAt }
       if (action === 'start') {
         if (!artifacts.ready()) throw new DeviceError('VALIDATOR_NOT_CONFIGURED', 503)
-        await queue.start(lease); return { accepted: true }
+        await queue.start(lease, 'locallyApproved' in input && input.locallyApproved === true,
+          'batchId' in input && typeof input.batchId === 'string' ? input.batchId : undefined,
+          'remoteSessionId' in input && typeof input.remoteSessionId === 'string' ? input.remoteSessionId : undefined); return { accepted: true }
       }
       if (action === 'release') await queue.release(lease)
       else await queue.fail(lease, 'errorCode' in input ? input.errorCode : 'UNKNOWN')
@@ -229,6 +260,7 @@ export function createDeviceService(db: PrismaClient = prisma, artifactDependenc
         const attempt = await tx.signingAttempt.findFirst({ where: { officeId: device.officeId, deviceId: device.id,
           itemId: lease.itemId, leaseToken: lease.leaseToken }, include: { item: { include: { signature: true } } } })
         if (!attempt) throw new DeviceError('STALE_LEASE', 409)
+        if (attempt.item.signature && attempt.result === 'SUCCEEDED') return { released: false, committed: true, checksumSha256: attempt.item.signature.signedChecksum }
         if (attempt.result === 'RUNNING' || attempt.item.signature) return { released: false }
         const started = await tx.activityEvent.count({ where: { officeId: device.officeId,
           eventType: 'signing.started', recordType: 'SigningItem', recordId: lease.itemId,
@@ -237,7 +269,8 @@ export function createDeviceService(db: PrismaClient = prisma, artifactDependenc
           eventType: 'signing.retried', recordType: 'SigningItem', recordId: lease.itemId,
           AND: [{ metadata: { path: ['attemptNumber'], equals: attempt.attemptNumber } }, { metadata: { path: ['reviewed'], equals: true } }],
         } })
-        return { released: !started || reviewed > 0 }
+        const knownRetry = attempt.result === 'RETRYABLE_FAILURE' && ['TSA_UNAVAILABLE', 'REVOCATION_UNAVAILABLE'].includes(attempt.errorCode ?? '')
+        return { released: !started || reviewed > 0 || knownRetry }
       })
     },
     async input(token: string, raw: unknown) {

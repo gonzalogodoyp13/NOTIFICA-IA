@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { chileDateString, parseChileReportDate } from '../reports/chileTime'
 import { asJsonObject } from '../utils/json'
+import type { DeliveryView, SigningAlert } from './operationsPolicy'
 
 const identifier = z.string().min(1).max(120).regex(/^[a-zA-Z0-9_-]+$/)
 const checksum = z.string().regex(/^[a-f0-9]{64}$/)
@@ -20,6 +21,7 @@ export const CenterAction = z.discriminatedUnion('action', [
   z.object({ action: z.literal('retry'), itemId: identifier, attemptCount: z.number().int().min(0),
     reviewed: z.literal(true) }).strict(),
   z.object({ action: z.literal('cancel'), itemId: identifier, attemptCount: z.number().int().min(0) }).strict(),
+  z.object({ action: z.literal('retry-delivery'), deliveryId: identifier, attemptCount: z.number().int().min(0), reviewed: z.literal(true) }).strict(),
 ])
 export type CenterActionInput = z.infer<typeof CenterAction>
 
@@ -46,6 +48,12 @@ export function signingBusinessDate(notificationMeta: unknown, diligenceMeta: un
   return null
 }
 export const signingMessages: Record<string, string> = {
+  VALIDATOR_UNAVAILABLE: 'El validador no está disponible. Se conserva el archivo firmado para reintentar su transferencia.',
+  VALIDATOR_BUSY: 'El validador está ocupado. Se conserva el archivo firmado.',
+  DISK: 'Revisa el espacio y los permisos del equipo firmante.', DRIVER_ERROR: 'Revisa el controlador del token.',
+  PIN_LOCKED: 'El PIN está bloqueado. Contacta al proveedor.', PIN_EXPIRED: 'El PIN venció. Revísalo en el equipo firmante.',
+  CERT_REVOKED: 'El certificado fue revocado. Contacta al proveedor.',
+  AGENT_UPDATE_REQUIRED: 'Actualiza el agente antes de iniciar un nuevo trabajo.',
   NETWORK: 'Sin conexión. El sistema volverá a intentar la transferencia.', STORAGE: 'El archivo no pudo transferirse. Revisa la conexión del equipo.',
   TSA_UNAVAILABLE: 'El servicio de fechado no está disponible.', REVOCATION_UNAVAILABLE: 'No se pudo comprobar la vigencia del certificado.',
   PIN_REQUIRED: 'Desbloquea el token en el equipo firmante.', PIN_INCORRECT: 'Revisa el PIN en el equipo firmante. No se volverá a intentar automáticamente.',
@@ -61,9 +69,11 @@ export type CenterRow = {
   profile: string | null; requestedBy: string | null; attemptCount: number; maxAttempts: number;
   canRetry: boolean; canCancel: boolean; errorMessage: string | null; diagnosticCode?: string;
   delivery: string; signedAt: string | null; started: boolean;
+  nextRetryAt?: string | null; deliveries?: DeliveryView[];
+  evidence?: { signatureId: string; signedVersionId: string; signedChecksum: string; signerFingerprint: string; validatedAt: string; deviceId: string } | null;
 }
 export type CenterDevice = { id: string; name: string; role: string; health: string; certificateSubject: string | null;
   fingerprint: string | null; expiresAt: string | null; lastHeartbeatAt: string | null; revoked: boolean }
-export type CenterData = { canManage: boolean; rows: CenterRow[]; total: number; page: number; pageSize: number;
+export type CenterData = { canManage: boolean; canRequest: boolean; rows: CenterRow[]; total: number; page: number; pageSize: number;
   counts: { eligible: number; active: number; attention: number; completed: number; deliveryPending: number };
-  devices: CenterDevice[]; validatorConfigured: boolean; updatedAt: string }
+  devices: CenterDevice[]; validatorConfigured: boolean; updatedAt: string; alerts?: SigningAlert[] }

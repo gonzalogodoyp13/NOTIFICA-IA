@@ -6,25 +6,15 @@ import { DeviceError, DeviceId, Hash, Secret, sha256 } from './deviceProtocol'
 import { lockSigningOffice } from './transaction'
 import type { SigningStorage } from './artifacts'
 import { MAX_SIGNING_PDF } from './pdfValidator'
+import { deliveryCanRetry, deliveryDelayMs, DELIVERY_ATTEMPT_LIMIT } from './operationsPolicy'
+import { requireSupportedAgent } from './agentRelease'
 
-const receiverRoles = ['RECEIVER', 'SIGNER_RECEIVER'] as const
-export async function scheduleSignatureDeliveries(tx: Prisma.TransactionClient, officeId: number, signatureId: string) {
-  const devices = await tx.signingDevice.findMany({ where: { officeId, revokedAt: null, role: { in: [...receiverRoles] } }, select: { id: true } })
-  if (devices.length) await tx.documentDelivery.createMany({ data: devices.map(d => ({ officeId, signatureId, deviceId: d.id })), skipDuplicates: true })
-}
-export async function seedReceiverDeliveries(tx: Prisma.TransactionClient, device: SigningDevice) {
-  if (!receiverRoles.includes(device.role as typeof receiverRoles[number])) return
-  // Only server-validated, committed artifacts qualify. A queue success assertion alone does not.
-  const signatures = await tx.documentSignature.findMany({ where: { officeId: device.officeId,
-    item: { artifacts: { some: { state: 'COMMITTED' } } } }, select: { id: true } })
-  for (let offset = 0; offset < signatures.length; offset += 500) {
-    await tx.documentDelivery.createMany({ data: signatures.slice(offset, offset + 500).map(s => ({
-      officeId: device.officeId, signatureId: s.id, deviceId: device.id })), skipDuplicates: true })
-  }
-}
+// Compatibility for pre-upgrade transfers only. New signatures and enrollments
+// are represented by the office catalog and never create delivery rows.
 const DeliveryRequest = z.object({ deliveryId: DeviceId, checksumSha256: Hash }).strict()
-const errors = {
+export const deliveryErrors = {
   NETWORK: 'Transferencia interrumpida. Se volverá a intentar.',
+  STORAGE: 'El almacenamiento no está disponible. Se volverá a intentar.',
   DISK: 'Revisa el espacio y los permisos de la carpeta receptora.',
   CHECKSUM_MISMATCH: 'El archivo recibido no coincide con la firma validada.',
   LOCAL_CONFLICT: 'Hay un archivo local diferente; se conservará.',
@@ -54,16 +44,23 @@ export function createDeliveryService(db: PrismaClient, authenticate: Authentica
   }
   async function audit(tx: Prisma.TransactionClient, officeId: number, eventType: string, deliveryId: string) {
     await recordCriticalEvent(tx, { officeId, actorType: 'SYSTEM', source: 'INTERNAL' }, {
-      eventType, module: 'security', recordType: 'DocumentDelivery', recordId: deliveryId, metadata: { entityId: deliveryId } })
+      eventType, module: 'security', recordType: 'DocumentDelivery', recordId: deliveryId, metadata: { entityId: deliveryId },
+      result: eventType === 'device.delivery_failed' ? 'failure' : 'success' })
   }
   return {
     async begin(token: string, raw: unknown) {
       const input = DeliveryRequest.parse(raw)
       return transaction(token, async (tx, device, now) => {
         const row = await access(tx, device, input)
+        if (!['DOWNLOADING', 'DELIVERED'].includes(row.status)) throw new DeviceError('DELIVERY_RETIRED', 410)
         if (row.status !== 'DELIVERED') {
+          if (row.status !== 'DOWNLOADING') requireSupportedAgent(device.agentVersion)
+          if (row.status !== 'DOWNLOADING' && !deliveryCanRetry(row.errorCode, row.attemptCount)) throw new DeviceError('DELIVERY_OPERATOR_REQUIRED', 409)
           if (row.availableAt > now) throw new DeviceError('DELIVERY_NOT_READY', 409)
-          await tx.documentDelivery.update({ where: { id: row.id }, data: { status: 'DOWNLOADING', attemptCount: { increment: 1 } } })
+          if (row.status !== 'DOWNLOADING') {
+            await tx.documentDelivery.update({ where: { id: row.id }, data: { status: 'DOWNLOADING', attemptCount: { increment: 1 } } })
+            await audit(tx, device.officeId, 'device.delivery_started', row.id)
+          }
         }
         return { authorized: true }
       })
@@ -72,7 +69,10 @@ export function createDeliveryService(db: PrismaClient, authenticate: Authentica
       const input = z.object({ cursor: DeviceId.nullable().optional() }).strict().parse(raw)
       return transaction(token, async (tx, device, now) => {
         const rows = await tx.documentDelivery.findMany({ where: { officeId: device.officeId, deviceId: device.id,
-          status: { in: ['PENDING', 'DOWNLOADING', 'FAILED'] }, availableAt: { lte: now }, ...(input.cursor ? { id: { gt: input.cursor } } : {}) },
+          // Drain only transfers already started before the shared-folder upgrade.
+          status: 'DOWNLOADING', availableAt: { lte: now },
+          OR: [{ status: 'DOWNLOADING' }, { attemptCount: { lt: DELIVERY_ATTEMPT_LIMIT }, OR: [{ errorCode: null }, { errorCode: { in: ['NETWORK', 'STORAGE'] } }] }],
+          ...(input.cursor ? { id: { gt: input.cursor } } : {}) },
           orderBy: { id: 'asc' }, take: 20, include: { signature: { include: { signedVersion: true } } } })
         // An exhausted scan wraps. Concurrent inserts or delayed failures below the cursor cannot be lost.
         return { nextCursor: rows.at(-1)?.id ?? null, deliveries: rows.map(row => ({ deliveryId: row.id,
@@ -84,7 +84,9 @@ export function createDeliveryService(db: PrismaClient, authenticate: Authentica
       const input = DeliveryRequest.parse(raw)
       const row = await transaction(token, async (tx, device, now) => {
         const row = await access(tx, device, input)
+        if (!['DOWNLOADING', 'DELIVERED'].includes(row.status)) throw new DeviceError('DELIVERY_RETIRED', 410)
         if (row.status !== 'DELIVERED') {
+          if (row.status !== 'DOWNLOADING' && !deliveryCanRetry(row.errorCode, row.attemptCount)) throw new DeviceError('DELIVERY_OPERATOR_REQUIRED', 409)
           if (row.availableAt > now) throw new DeviceError('DELIVERY_NOT_READY', 409)
           if (row.status !== 'DOWNLOADING') await tx.documentDelivery.update({ where: { id: row.id }, data: { status: 'DOWNLOADING', attemptCount: { increment: 1 } } })
         }
@@ -98,13 +100,16 @@ export function createDeliveryService(db: PrismaClient, authenticate: Authentica
       return bytes
     },
     async fail(token: string, raw: unknown) {
-      const input = DeliveryRequest.extend({ errorCode: z.enum(['NETWORK', 'DISK', 'CHECKSUM_MISMATCH', 'LOCAL_CONFLICT', 'UNKNOWN']) }).strict().parse(raw)
+      const input = DeliveryRequest.extend({ errorCode: z.enum(['NETWORK', 'STORAGE', 'DISK', 'CHECKSUM_MISMATCH', 'LOCAL_CONFLICT', 'UNKNOWN']) }).strict().parse(raw)
       return transaction(token, async (tx, device, now) => {
         const row = await access(tx, device, input)
         if (row.status === 'DELIVERED') return { accepted: true }
+        if (row.status === 'FAILED') return { accepted: true } // Lost-response replay must not extend backoff.
         await tx.documentDelivery.update({ where: { id: row.id }, data: { status: 'FAILED', errorCode: input.errorCode,
-          safeError: errors[input.errorCode], availableAt: new Date(now.getTime() + Math.min(3600000, 30000 * 2 ** Math.min(row.attemptCount, 7))) } })
-        await audit(tx, device.officeId, 'device.delivery_failed', row.id)
+          safeError: deliveryErrors[input.errorCode], availableAt: new Date(now.getTime() + deliveryDelayMs(row.attemptCount)) } })
+        await recordCriticalEvent(tx, { officeId: device.officeId, actorType: 'SYSTEM', source: 'INTERNAL' }, {
+          eventType: 'device.delivery_failed', module: 'security', recordType: 'DocumentDelivery', recordId: row.id, result: 'failure',
+          metadata: { entityId: row.id, deviceId: device.id, attemptNumber: row.attemptCount, errorCode: input.errorCode } })
         return { accepted: true }
       })
     },

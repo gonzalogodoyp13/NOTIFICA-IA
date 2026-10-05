@@ -44,4 +44,5 @@ internal sealed record Identity(string DeviceId, int OfficeId, string Role);
 internal sealed record PublicCertificate(string Fingerprint, string Subject, string Issuer, DateTimeOffset NotBefore, DateTimeOffset ExpiresAt, bool DigitalSignature);
 internal sealed record TokenHealth(string Token, PublicCertificate? Certificate);
 internal sealed record AgentStatus(string Connectivity, string Health, string? ErrorCode, string? DeviceId,
-    string? Role, DateTimeOffset? LastSuccessfulContactAt, PublicCertificate? Certificate, string? DeviceKeyFingerprint = null, string? MirrorError = null);
+    string? Role, DateTimeOffset? LastSuccessfulContactAt, PublicCertificate? Certificate, string? DeviceKeyFingerprint = null, string? MirrorError = null,
+    Signing.RemoteSessionView? RemoteSession = null, string? OfficeFolderPath = null);

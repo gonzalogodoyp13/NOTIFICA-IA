@@ -3,7 +3,8 @@ import { z } from 'zod'
 import { withApiUser } from '@/lib/api/server'
 import { createSigningCenter } from '@/lib/signing/center'
 import { SigningError } from '@/lib/signing/core'
-import { readDeviceBytes } from '@/lib/signing/deviceHttp'
+import { readDeviceBytes, requireSigningBrowserOrigin } from '@/lib/signing/deviceHttp'
+import { DeviceError } from '@/lib/signing/deviceProtocol'
 
 export const dynamic = 'force-dynamic'
 const service = createSigningCenter()
@@ -17,12 +18,15 @@ const messages: Record<string, string> = {
   SIGNING_ALREADY_STARTED: 'La firma ya comenzó o cambió la asignación. No se puede cancelar.',
   RECOVERY_REVIEW_REQUIRED: 'Revisa el último intento antes de autorizar una nueva firma.',
   INVALID_TRANSITION: 'El estado cambió. Actualiza el listado antes de continuar.',
+  DELIVERY_RETIRED: 'Las entregas por equipo fueron reemplazadas por la carpeta compartida de la oficina. Actualiza el agente.',
 }
 function reply(data: unknown, status = 200) {
   return NextResponse.json(status < 400 ? { ok: true, data } : { ok: false, error: { message: data } },
     { status, headers: { 'Cache-Control': 'private, no-store' } })
 }
 function failure(error: unknown) {
+  if (error instanceof DeviceError && error.code === 'ORIGIN_REQUIRED') return reply('La solicitud debe provenir de esta aplicación.', 403)
+  if (error instanceof DeviceError && error.code === 'HTTPS_REQUIRED') return reply('La solicitud debe usar una conexión HTTPS.', 400)
   if (error instanceof z.ZodError || error instanceof SyntaxError) return reply('Revisa las fechas y los datos de la solicitud.', 400)
   if (error instanceof SigningError) return reply(messages[error.code] ?? 'La solicitud no se puede procesar en su estado actual.', error.code === 'FORBIDDEN' ? 403 : error.code === 'NOT_FOUND' ? 404 : 409)
   return reply('No se pudo actualizar el centro de firmado. Intenta nuevamente.', 503)
@@ -35,13 +39,13 @@ export async function GET(req: NextRequest) {
 }
 export async function POST(req: NextRequest) {
   return withApiUser(req, 'post.signing.center', async user => {
-    // NextURL canonicalizes loopback hosts to localhost. Compare the browser's
-    // actual Host (never X-Forwarded-Host) so 127.0.0.1 remains the same origin.
-    const expected = new URL(req.url)
-    expected.host = req.headers.get('host') ?? expected.host
-    if (req.headers.get('origin') !== expected.origin) return reply('La solicitud debe provenir de esta aplicación.', 403)
-    if (req.headers.get('content-type')?.split(';')[0] !== 'application/json') return reply('Formato de solicitud inválido.', 415)
     try {
+      // Preserve direct local testing's Host comparison. A configured TLS proxy
+      // instead uses the same pinned public origin as device enrollment.
+      const expected = new URL(req.url)
+      expected.host = req.headers.get('host') ?? expected.host
+      requireSigningBrowserOrigin(req, expected.origin)
+      if (req.headers.get('content-type')?.split(';')[0] !== 'application/json') return reply('Formato de solicitud inválido.', 415)
       const raw = JSON.parse((await readDeviceBytes(req, 128 * 1024)).toString('utf8'))
       return reply(await service.mutate({ officeId: user.officeId, userId: user.id }, raw))
     } catch (error) { return failure(error) }

@@ -43,6 +43,13 @@ internal static class SelfTest
         config.Validate();
         try
         {
+            foreach (bool resume in new[] { false, true })
+            {
+                bool provisioningDenied = false;
+                try { DeviceKey.ProvisionService(config, resume); }
+                catch (InvalidOperationException error) when (error.Message == "ADMINISTRATOR_PROVISIONING_REQUIRED") { provisioningDenied = true; }
+                Require(provisioningDenied && !CngKey.Exists(config.KeyName), "SERVICE_PROVISIONING_REQUIRES_MACHINE_CONFIGURATION");
+            }
             string publicKey;
             using (var key = new DeviceKey(config))
             {
@@ -82,7 +89,7 @@ internal static class SelfTest
             Require(!deniedRequest.GetProperty("ok").GetBoolean(), "NO_PIN_OR_SIGNING_IPC");
             cancellation.Cancel();
             try { await server; } catch (OperationCanceledException) { }
-            Console.WriteLine(JsonSerializer.Serialize(new { passed = 12, cngExportDenied = true, restartKeyPreserved = true, pipeVerified = true, tokenLoginAttempts = 0 }));
+            Console.WriteLine(JsonSerializer.Serialize(new { passed = 14, cngExportDenied = true, restartKeyPreserved = true, pipeVerified = true, serviceProvisioningGuarded = true, tokenLoginAttempts = 0 }));
             return 0;
         }
         finally

@@ -12,15 +12,26 @@ internal sealed class AgentWorker : IDisposable
     private readonly SemaphoreSlim operations = new(1);
     private Identity? identity;
     private DateTimeOffset? lastContact;
+    private PublicCertificate? lastCertificate;
     internal volatile bool SigningActive;
     internal Signing.RemoteSigning? Remote { get; }
-    internal ReceiverMirror Mirror { get; }
+    internal OfficeFolder Mirror { get; }
     private volatile AgentStatus status = new("WAITING_ENROLLMENT", "OFFLINE", null, null, null, null, null);
-    internal AgentStatus Status => status with { DeviceKeyFingerprint = DeviceKey.Hash(key.PublicKey), MirrorError = Mirror.ErrorCode };
+    internal AgentStatus Status => status with { DeviceKeyFingerprint = DeviceKey.Hash(key.PublicKey), MirrorError = Mirror.ErrorCode, RemoteSession = Remote?.Session, OfficeFolderPath = Mirror.DirectoryPath };
     internal async Task WaitForProbeIdle(CancellationToken ct)
     {
         await operations.WaitAsync(ct);
         operations.Release();
+    }
+    private async Task PrepareRemoteSession(CancellationToken ct)
+    {
+        await operations.WaitAsync(ct);
+        try {
+            var observed = await Probe(ct);
+            if (observed.Token != "READY" || observed.Certificate?.Fingerprint != config.CertificateFingerprint)
+                throw new Signing.SigningFailure(Signing.SigningError.CertificateMissing);
+            lastCertificate = observed.Certificate;
+        } finally { operations.Release(); }
     }
     internal AgentWorker(Configuration config, string configPath, HttpMessageHandler? testHandler = null)
     {
@@ -32,7 +43,7 @@ internal sealed class AgentWorker : IDisposable
         string path = Path.Combine(config.DataDirectory, "identity.json");
         if (File.Exists(path)) identity = JsonSerializer.Deserialize<Identity>(File.ReadAllText(path), Configuration.Json);
         if (config.ControlledSigning is not null && identity is not null) throw new InvalidOperationException("CONTROLLED_MODE_REQUIRES_UNENROLLED_DEVICE");
-        if (config.SigningEngine is not null) Remote = new(config, api, () => identity, active => SigningActive = active, WaitForProbeIdle);
+        if (config.SigningEngine is not null) Remote = new(config, api, () => identity, active => SigningActive = active, PrepareRemoteSession);
     }
     internal async Task Enroll(string code, string name, CancellationToken ct, string? receiverDirectory = null)
     {
@@ -65,24 +76,33 @@ internal sealed class AgentWorker : IDisposable
         {
             // Keep the health probe from opening another provider session while
             // a controlled batch owns an authenticated token session.
-            if (SigningActive) { await Task.Delay(TimeSpan.FromSeconds(1), ct); continue; }
             await operations.WaitAsync(ct);
             try
             {
-                if (SigningActive) continue;
                 if (identity is null)
                 {
                     var token = await Probe(ct);
+                    lastCertificate = token.Certificate;
                     status = new("WAITING_ENROLLMENT", TokenProbe.Health(token, DateTimeOffset.UtcNow),
                         token.Token == "READY" ? null : token.Token, null, null, null, token.Certificate);
                 }
                 else
                 {
-                    var token = identity.Role == "RECEIVER" ? new TokenHealth("NOT_APPLICABLE", null) : await Probe(ct);
+                    // During a PIN session keep heartbeating using the last public
+                    // observation. Never open a competing PKCS#11 probe/session.
+                    var token = identity.Role == "RECEIVER" ? new TokenHealth("NOT_APPLICABLE", null)
+                        : SigningActive ? new TokenHealth(lastCertificate is null ? "MISSING" : "READY", lastCertificate) : await Probe(ct);
+                    if (!SigningActive) lastCertificate = token.Certificate;
                     await api.Authenticate(identity, ct);
-                    var disk = new DriveInfo(Path.GetPathRoot(config.DataDirectory)!);
+                    long diskFree = 0;
+                    string? diskError = null;
+                    try {
+                        var disk = new DriveInfo(Path.GetPathRoot(OfficeFolder.Folder(config, identity.OfficeId))!);
+                        diskFree = disk.AvailableFreeSpace;
+                    } catch { diskError = "DISK"; }
                     var response = await api.Post("heartbeat", new {
-                        agentVersion = "0.9.0", role = identity.Role, diskFreeBytes = disk.AvailableFreeSpace,
+                        agentVersion = typeof(AgentWorker).Assembly.GetName().Version!.ToString(3), role = identity.Role, diskFreeBytes = diskFree,
+                        operationalError = diskError ?? Mirror.ErrorCode ?? Remote?.ErrorCode,
                         lastSuccessfulContactAt = lastContact?.UtcDateTime.ToString("O"), token = token.Token,
                         certificate = token.Certificate is null ? null : new {
                             fingerprint = token.Certificate.Fingerprint, subject = token.Certificate.Subject, issuer = token.Certificate.Issuer,
@@ -132,5 +152,5 @@ internal sealed class AgentWorker : IDisposable
             return new("DRIVER_ERROR", null);
         }
     }
-    public void Dispose() { api.Dispose(); key.Dispose(); operations.Dispose(); }
+    public void Dispose() { Mirror.Dispose(); api.Dispose(); key.Dispose(); operations.Dispose(); }
 }

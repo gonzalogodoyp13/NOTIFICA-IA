@@ -25,6 +25,12 @@ internal static class ReceiverSelfTest
             Directory.CreateDirectory(config.ReceiverDirectory!);
             string existing = Path.Combine(config.ReceiverDirectory!, "document-version-firmado.pdf");
             await File.WriteAllTextAsync(existing, "existing local bytes", ct);
+            handler.UpdateRequired = true;
+            bool gated = false;
+            try { await Mirror().Tick(ct); } catch (ApiFailure error) { gated = error.Code == "AGENT_UPDATE_REQUIRED"; }
+            using (var pending = JsonDocument.Parse(await File.ReadAllTextAsync(Path.Combine(directory, "receiver-state.json"), ct)))
+                Require(gated && handler.Failures == 0 && handler.Downloads == 0 && pending.RootElement.GetProperty("pending").GetArrayLength() == 1, "UPDATE_GATE_PRESERVES_PENDING_WITHOUT_FAILED_TRANSFER");
+            handler.UpdateRequired = false;
             handler.Corrupt = true;
             await Mirror().Tick(ct);
             Require(handler.Acks == 0 && Directory.GetFiles(config.ReceiverDirectory!, "*.pdf").Length == 1, "CORRUPTION_REJECTED");
@@ -57,7 +63,7 @@ internal static class ReceiverSelfTest
             bool invalid = false;
             try { new Delivery("delivery", "../escape", "v", new string('a', 64), 10).Validate(); } catch { invalid = true; }
             Require(invalid, "PATH_TRAVERSAL_REJECTED");
-            Console.WriteLine(JsonSerializer.Serialize(new { passed = 10, tokenLoginAttempts = 0, corruptionRejected = true,
+            Console.WriteLine(JsonSerializer.Serialize(new { passed = 11, tokenLoginAttempts = 0, updateGatePreservesPending = true, corruptionRejected = true,
                 partialRestart = true, collisionsPreserved = true, lostAckRestart = true, manifestPersisted = true, localChangesNeverUploaded = true }));
             return 0;
         } finally {
@@ -67,8 +73,8 @@ internal static class ReceiverSelfTest
     }
     private sealed class MirrorHandler : HttpMessageHandler
     {
-        internal bool Corrupt, LoseAck, Done;
-        internal int Downloads, Acks, Requests;
+        internal bool Corrupt, LoseAck, Done, UpdateRequired;
+        internal int Downloads, Acks, Requests, Failures;
         private readonly byte[] bytes = "%PDF-1.7\nReceiver self test\n%%EOF"u8.ToArray();
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
         {
@@ -82,13 +88,15 @@ internal static class ReceiverSelfTest
                     bool exhausted = body.RootElement.GetProperty("cursor").ValueKind == JsonValueKind.String;
                     var deliveries = Done || exhausted ? Array.Empty<Delivery>() : [new Delivery("delivery", "document", "version", Convert.ToHexStringLower(SHA256.HashData(bytes)), bytes.Length)];
                     value = new { deliveries, nextCursor = deliveries.Length == 0 ? null : "delivery" }; break;
-                case "delivery-begin": value = new { authorized = true }; break;
+                case "delivery-begin":
+                    if (UpdateRequired) return new((HttpStatusCode)426) { Content = new StringContent("{\"ok\":false,\"error\":{\"code\":\"AGENT_UPDATE_REQUIRED\"}}") };
+                    value = new { authorized = true }; break;
                 case "delivery-download":
                     Downloads++;
                     var pdf = new ByteArrayContent(Corrupt ? "wrong"u8.ToArray() : bytes); pdf.Headers.ContentType = new("application/pdf");
                     return new(HttpStatusCode.OK) { Content = pdf };
                 case "ack": Acks++; Done = true; if (LoseAck) throw new HttpRequestException("LOST_ACK"); value = new { delivered = true }; break;
-                case "delivery-fail": if (LoseAck) throw new HttpRequestException("OFFLINE"); value = new { accepted = true }; break;
+                case "delivery-fail": Failures++; if (LoseAck) throw new HttpRequestException("OFFLINE"); value = new { accepted = true }; break;
                 default: throw new InvalidOperationException("UNEXPECTED_RECEIVER_ACTION");
             }
             return new(HttpStatusCode.OK) { Content = new StringContent(JsonSerializer.Serialize(new { ok = true, data = value }, Configuration.Json)) };

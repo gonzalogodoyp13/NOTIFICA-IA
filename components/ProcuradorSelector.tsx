@@ -34,10 +34,13 @@ export function ProcuradorSelector({
   className,
 }: ProcuradorSelectorProps) {
   const [procuradores, setProcuradores] = useState<Procurador[]>([])
+  const scope = `${abogadoId ?? ''}:${bancoId ?? ''}`
+  const [loadedScope, setLoadedScope] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
+    const controller = new AbortController()
     const fetchProcuradores = async () => {
       setLoading(true)
       setError(null)
@@ -47,21 +50,26 @@ export function ProcuradorSelector({
         if (abogadoId) params.set('abogadoId', String(abogadoId))
         const queryString = params.toString()
         const url = `/api/procuradores${queryString ? `?${queryString}` : ''}`
-        const res = await fetch(url, { credentials: 'include' })
+        const res = await fetch(url, { credentials: 'include', signal: controller.signal })
         const data = await res.json()
         if (!data.ok) {
           throw new Error(data.message || data.error || 'Error al cargar procuradores')
         }
+        if (controller.signal.aborted) return
         setProcuradores(data.data || [])
+        setLoadedScope(scope)
       } catch (err) {
+        if (controller.signal.aborted) return
+        setProcuradores([])
         setError(err instanceof Error ? err.message : 'Error al cargar procuradores')
       } finally {
-        setLoading(false)
+        if (!controller.signal.aborted) setLoading(false)
       }
     }
 
     fetchProcuradores()
-  }, [abogadoId, bancoId])
+    return () => controller.abort()
+  }, [abogadoId, bancoId, scope])
 
   // Filter out inactive procuradores unless includeInactive is true
   const filteredProcuradores = includeInactive
@@ -78,11 +86,11 @@ export function ProcuradorSelector({
       <select
         value={value?.toString() || ''}
         onChange={(e) => onChange(e.target.value ? parseInt(e.target.value) : null)}
-        disabled={disabled || loading}
+        disabled={disabled || loading || loadedScope !== scope}
         className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed"
       >
         <option value="">{loading ? 'Cargando procuradores...' : placeholder}</option>
-        {!loading && filteredProcuradores.map((procurador) => (
+        {!loading && loadedScope === scope && filteredProcuradores.map((procurador) => (
           <option key={procurador.id} value={procurador.id}>
             {procurador.nombre}
           </option>

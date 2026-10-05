@@ -75,6 +75,7 @@ model Office {
   procuradores                  Procurador[]
   abogadoBancos                 AbogadoBanco[]
   procuradorAbogados            ProcuradorAbogado[]
+  procuradorBancos              ProcuradorBanco[]
   aranceles                     Arancel[]
   comunas                       Comuna[]
   materias                      Materia[]
@@ -692,6 +693,8 @@ model Banco {
   id             Int            @id @default(autoincrement())
   officeId       Int
   nombre         String
+  procuradores   ProcuradorBanco[]
+  demandas       Demanda[]
   cuenta         String?
   createdAt      DateTime       @default(now())
   abogadoBancos  AbogadoBanco[] @relation("BancoAbogados")
@@ -708,6 +711,7 @@ model Procurador {
   id        Int                 @id @default(autoincrement())
   officeId  Int
   nombre    String
+  bancos    ProcuradorBanco[]
   email     String?
   telefono  String?
   notas     String?
@@ -721,6 +725,21 @@ model Procurador {
   @@index([officeId])
   @@index([officeId, activo])
   @@map("procuradores")
+}
+
+model ProcuradorBanco {
+  id           Int        @id @default(autoincrement())
+  officeId     Int
+  procuradorId Int
+  bancoId      Int
+  procurador   Procurador @relation(fields: [procuradorId], references: [id], onDelete: Cascade)
+  banco        Banco      @relation(fields: [bancoId], references: [id], onDelete: Cascade)
+  office       Office     @relation(fields: [officeId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  @@unique([officeId, procuradorId, bancoId])
+  @@index([procuradorId])
+  @@index([bancoId])
+  @@map("procurador_bancos")
 }
 
 model AbogadoBanco {
@@ -814,6 +833,8 @@ model Demanda {
   id           String      @id @default(cuid())
   rol          String
   caratula     String
+  bancoId      Int?
+  banco        Banco?      @relation(fields: [bancoId], references: [id], onDelete: SetNull)
   cuantia      Float
   abogadoId    Int
   officeId     Int

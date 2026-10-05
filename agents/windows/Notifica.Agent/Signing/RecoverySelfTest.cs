@@ -5,8 +5,8 @@ using System.Text.Json;
 
 namespace Notifica.Agent.Signing;
 
-// Exercises the actual coordinator, durable journal and owned worker. The
-// provider deliberately does not exist: no USB key or real PIN can be used.
+// Exercises the actual coordinator and durable journal with an injected token
+// session. No USB key or real PIN can be used by this recovery test.
 internal static class RecoverySelfTest
 {
     internal static async Task<int> Run(string enginePath)
@@ -19,34 +19,39 @@ internal static class RecoverySelfTest
         using var key = new DeviceKey(config);
         using var handler = new RecoveryHandler();
         using var api = new DeviceApi(config, key, handler);
-        var coordinator = new RemoteSigning(config, api, () => new Identity("device", 1, "SIGNER"), _ => { }, _ => Task.CompletedTask);
-        using var stop = new CancellationTokenSource(TimeSpan.FromSeconds(100));
+        using var session = new FailedSession();
+        var coordinator = new RemoteSigning(config, api, () => new Identity("device", 1, "SIGNER"), _ => { }, _ => Task.CompletedTask, session);
+        using var stop = new CancellationTokenSource(TimeSpan.FromSeconds(130));
         Task running = coordinator.Run(stop.Token);
         async Task Until(Func<bool> condition) {
             while (!condition()) { stop.Token.ThrowIfCancellationRequested(); await Task.Delay(100, stop.Token); }
         }
         try {
-            await Until(() => coordinator.Current?.View().State == "AWAITING_APPROVAL");
-            var first = coordinator.Current!;
-            var approval = first.View();
-            first.Reserve(approval.ApprovalId, approval.Digest);
+            await Task.Delay(1000, stop.Token);
+            if (handler.Claims != 0) throw new InvalidOperationException("CLAIMED_WHILE_LOCKED");
             var pin = new PinBuffer("synthetic-only"u8);
-            first.Start(pin);
-            await Until(() => first.View().State == "FAILED" && handler.Failures == 1);
+            await coordinator.Enable(pin, stop.Token);
+            await Until(() => coordinator.Current?.View().State == "FAILED" && handler.Failures == 1);
+            var first = coordinator.Current!;
+            await Task.Delay(200, stop.Token);
             if (!pin.IsCleared || handler.Starts != 1 || handler.Claims != 1) throw new InvalidOperationException("RECOVERY_INITIAL_FAILURE");
             var saved = JsonSerializer.Deserialize<RemoteJournal>(File.ReadAllText(Path.Combine(directory, "signing-work.json")), Configuration.Json)!;
             if (saved.State != "WAITING_FOR_OPERATOR") throw new InvalidOperationException("RECOVERY_JOURNAL_NOT_RETAINED");
             string sourcePath = saved.Batch.Documents[0].SourcePath;
+            using var secondPin = new PinBuffer("synthetic-only"u8);
+            await coordinator.Enable(secondPin, stop.Token);
+            await Task.Delay(TimeSpan.FromSeconds(17), stop.Token);
+            if (session.Signatures != 1 || handler.Claims != 1) throw new InvalidOperationException("UNREVIEWED_RETRY");
             handler.Reviewed = true;
-            await Until(() => coordinator.Current is not null && coordinator.Current != first && coordinator.Current.View().State == "AWAITING_APPROVAL");
-            var second = coordinator.Current!.View();
-            if (second.ApprovalId == approval.ApprovalId || handler.Starts != 1 || handler.Claims != 2 || !File.Exists(sourcePath))
+            await Until(() => handler.Starts == 2 && coordinator.Current != first && coordinator.Current?.View().State == "FAILED");
+            if (session.Signatures != 2 || handler.Claims != 2 || !File.Exists(sourcePath))
                 throw new InvalidOperationException("RECOVERY_REUSED_APPROVAL_OR_REMOVED_SOURCE");
             var next = JsonSerializer.Deserialize<RemoteJournal>(File.ReadAllText(Path.Combine(directory, "signing-work.json")), Configuration.Json)!;
-            if (next.LeaseToken == saved.LeaseToken || next.State != "CLAIMED") throw new InvalidOperationException("RECOVERY_REUSED_LEASE");
-            Console.WriteLine(JsonSerializer.Serialize(new { passed = 5, realTokenLoginAttempts = 0,
-                failedJournalRetained = true, reviewedRecoveryConsumed = true, freshLeaseAndApproval = true,
-                noAutomaticSecondSignature = true, originalSourceRetained = true }));
+            if (next.LeaseToken == saved.LeaseToken || next.Batch.Id == saved.Batch.Id) throw new InvalidOperationException("RECOVERY_REUSED_LEASE");
+            Console.WriteLine(JsonSerializer.Serialize(new { passed = 7, realTokenLoginAttempts = 0,
+                lockedSessionDoesNotClaim = true, enabledSessionNeedsNoPerDocumentApproval = true,
+                failedJournalRetained = true, reviewedRecoveryConsumed = true, freshLeaseAndBatch = true,
+                noUnreviewedSecondSignature = true, originalSourceRetained = true }));
             return 0;
         } finally {
             stop.Cancel();
@@ -54,6 +59,20 @@ internal static class RecoverySelfTest
             if (CngKey.Exists(config.KeyName)) { using var stored = CngKey.Open(config.KeyName); stored.Delete(); }
             Directory.Delete(directory, true);
         }
+    }
+    private sealed class FailedSession : IRemoteTokenSession
+    {
+        private Guid? id;
+        internal int Signatures;
+        public RemoteSessionView View => new(id is not null, id, id is null ? null : DateTimeOffset.UtcNow.AddHours(8), null);
+        public Task Enable(int officeId, PinBuffer pin, CancellationToken ct) { pin.Dispose(); id = Guid.NewGuid(); return Task.CompletedTask; }
+        public Task Check(CancellationToken ct) => Task.CompletedTask;
+        public Task<IReadOnlyList<SignedPdf>> Sign(SigningBatch batch, Guid sessionId, CancellationToken ct) {
+            if (id != sessionId) throw new SigningFailure(SigningError.SessionExpired);
+            Signatures++; Disable(); throw new SigningFailure(SigningError.DriverFailure);
+        }
+        public void Disable() => id = null;
+        public void Dispose() => Disable();
     }
     private sealed class RecoveryHandler : HttpMessageHandler
     {
@@ -75,7 +94,12 @@ internal static class RecoverySelfTest
                     var pdf = new ByteArrayContent(bytes); pdf.Headers.ContentType = new("application/pdf");
                     return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = pdf });
                 case "recovery": value = new { released = Reviewed && Claims == 1 }; break;
-                case "start": Starts++; value = new { accepted = true }; break;
+                case "start":
+                    using (var body = JsonDocument.Parse(request.Content!.ReadAsStringAsync(cancellationToken).GetAwaiter().GetResult())) {
+                        if (!body.RootElement.TryGetProperty("remoteSessionId", out var id) || !Guid.TryParse(id.GetString(), out _)
+                            || body.RootElement.TryGetProperty("locallyApproved", out _)) throw new InvalidOperationException("REMOTE_AUTHORIZATION_MISSING");
+                    }
+                    Starts++; value = new { accepted = true }; break;
                 case "fail": Failures++; value = new { accepted = true }; break;
                 case "renew": value = new { leaseExpiresAt = DateTimeOffset.UtcNow.AddMinutes(1) }; break;
                 default: throw new InvalidOperationException("UNEXPECTED_RECOVERY_ACTION");

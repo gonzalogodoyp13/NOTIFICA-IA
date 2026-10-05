@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server'
 
 import { ApiError, apiSuccess, parseApiInput, withApiUser } from '@/lib/api/server'
 import { prisma } from '@/lib/prisma'
+import { resolveDemandaBank } from '@/lib/demandaBank'
 import { parseCuantiaForStorage } from '@/lib/utils/cuantia'
 import { DemandaCreateSchema } from '@/lib/validations/demanda'
 import { recordCriticalEvent } from '@/lib/audit/activityEvent'
@@ -17,7 +18,7 @@ export async function POST(req: NextRequest) {
       prisma.tribunal.findFirst({ where: { id: data.tribunalId, officeId: user.officeId } }),
       prisma.abogado.findFirst({ where: { id: data.abogadoId, officeId: user.officeId } }),
       data.materiaId ? prisma.materia.findFirst({ where: { id: data.materiaId, officeId: user.officeId } }) : null,
-      data.procuradorId ? prisma.procurador.findFirst({ where: { id: data.procuradorId, officeId: user.officeId } }) : null,
+      data.procuradorId ? prisma.procurador.findFirst({ where: { id: data.procuradorId, officeId: user.officeId, abogados: { some: { abogadoId: data.abogadoId, officeId: user.officeId } }, ...(data.bancoId ? { bancos: { some: { bancoId: data.bancoId, officeId: user.officeId } } } : {}) } }) : null,
       prisma.demanda.findFirst({ where: { officeId: user.officeId, rol: data.rol }, select: { id: true } }),
     ])
 
@@ -27,11 +28,16 @@ export async function POST(req: NextRequest) {
     if (data.procuradorId && !procurador) throw new ApiError('NOT_FOUND', 'Procurador no encontrado o fuera de tu oficina', 404)
     if (duplicate) throw new ApiError('CONFLICT', `Ya existe una causa con el ROL ${data.rol}`, 409)
 
+    let bancoId: number | null
+    try { bancoId = await resolveDemandaBank(user.officeId, data.abogadoId, data.caratula, data.bancoId) }
+    catch (error) { throw new ApiError('VALIDATION_ERROR', (error as Error).message, 400) }
+
     const result = await prisma.$transaction(async tx => {
       const demanda = await tx.demanda.create({
         data: {
           rol: data.rol,
           caratula: data.caratula,
+          bancoId,
           cuantia: parseCuantiaForStorage(data.cuantia),
           abogadoId: data.abogadoId,
           materiaId: data.materiaId ?? null,

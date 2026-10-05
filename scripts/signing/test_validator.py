@@ -10,7 +10,8 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-config_path, real_request_path, profiles_path, output_parent = map(Path, sys.argv[1:])
+fresh_only = '--fresh-only' in sys.argv
+config_path, real_request_path, profiles_path, output_parent = map(Path, [a for a in sys.argv[1:] if a != '--fresh-only'])
 config = json.loads(config_path.read_text(encoding='utf-8-sig'))
 sys.path.insert(0, config['dependencies'])
 from asn1crypto import x509 as ax509, keys
@@ -33,34 +34,38 @@ checks = []
 def run(name, value, settings, expected):
     cfg = directory / (name + '.json')
     cfg.write_text(json.dumps(settings), encoding='utf-8')
+    (directory / (name + '-request.json')).write_text(json.dumps(value), encoding='utf-8')
     result = subprocess.run([sys.executable, '-I', str(Path(__file__).with_name('validate_pdf.py')), str(cfg)],
                             input=json.dumps(value), text=True, capture_output=True, timeout=95)
     passed = result.returncode == 0 and json.loads(result.stdout).get('ok') is True
+    if name == 'revoked-signer' and json.loads(result.stdout).get('error') != 'CERT_REVOKED':
+        raise AssertionError('Revoked certificate must have a distinct safe diagnostic')
     checks.append(dict(check=name, passed=passed == expected, accepted=passed))
     if passed != expected:
         raise AssertionError(name + ': ' + result.stdout + result.stderr)
 
 
 try:
-    run('real-token-lt', request, config, True)
-    run('wrong-certificate', {**request, 'signerFingerprint': 'a' * 64}, config, False)
-    run('wrong-source-checksum', {**request, 'sourceChecksum': 'b' * 64}, config, False)
-    run('untrusted-root', request, {**config, 'roots': [str(Path(profiles['output']['outputPath']).parent / 'synthetic-trust.cer')]}, False)
-    raw = bytearray(Path(request['signedPath']).read_bytes())
-    raw[50] ^= 1
-    changed = directory / 'tampered.pdf'
-    changed.write_bytes(raw)
-    run('tampered-output', {**request, 'signedPath': str(changed)}, config, False)
-    for profile, field in [('PADES_B', 'output'), ('PADES_LT', 'longTerm'), ('PADES_LTA', 'archival')]:
-        result = profiles[field]
-        parent = Path(result['outputPath']).parent
-        cert_path = parent / 'synthetic-trust.cer'
-        value = dict(sourcePath=str(parent / 'controlled-input.pdf'), signedPath=result['outputPath'],
-                     sourceChecksum=hashlib.sha256((parent / 'controlled-input.pdf').read_bytes()).hexdigest(),
-                     signerFingerprint=hashlib.sha256(cert_path.read_bytes()).hexdigest(), requestedLevel=profile)
-        run('valid-' + profile, value, {**config, 'roots': [str(cert_path), *config['roots']]}, True)
-        if profile == 'PADES_B':
-            run('no-timestamp-for-lt', {**value, 'requestedLevel': 'PADES_LT'}, {**config, 'roots': [str(cert_path)]}, False)
+    if not fresh_only:
+        run('real-token-lt', request, config, True)
+        run('wrong-certificate', {**request, 'signerFingerprint': 'a' * 64}, config, False)
+        run('wrong-source-checksum', {**request, 'sourceChecksum': 'b' * 64}, config, False)
+        run('untrusted-root', request, {**config, 'roots': [str(Path(profiles['output']['outputPath']).parent / 'synthetic-trust.cer')]}, False)
+        raw = bytearray(Path(request['signedPath']).read_bytes())
+        raw[50] ^= 1
+        changed = directory / 'tampered.pdf'
+        changed.write_bytes(raw)
+        run('tampered-output', {**request, 'signedPath': str(changed)}, config, False)
+        for profile, field in [('PADES_B', 'output'), ('PADES_LT', 'longTerm'), ('PADES_LTA', 'archival')]:
+            result = profiles[field]
+            parent = Path(result['outputPath']).parent
+            cert_path = parent / 'synthetic-trust.cer'
+            value = dict(sourcePath=str(parent / 'controlled-input.pdf'), signedPath=result['outputPath'],
+                         sourceChecksum=hashlib.sha256((parent / 'controlled-input.pdf').read_bytes()).hexdigest(),
+                         signerFingerprint=hashlib.sha256(cert_path.read_bytes()).hexdigest(), requestedLevel=profile)
+            run('valid-' + profile, value, {**config, 'roots': [str(cert_path), *config['roots']]}, True)
+            if profile == 'PADES_B':
+                run('no-timestamp-for-lt', {**value, 'requestedLevel': 'PADES_LT'}, {**config, 'roots': [str(cert_path)]}, False)
 
     # A genuine signature over altered page contents must not be accepted merely
     # because the file starts with the exact unsigned source bytes.

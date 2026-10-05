@@ -12,6 +12,10 @@ internal sealed class ApiFailure(string code, HttpStatusCode status) : Exception
 }
 internal sealed class DeviceApi : IDisposable
 {
+    private static readonly HashSet<string> SafeCodes = ["AGENT_UPDATE_REQUIRED", "DELIVERY_NOT_READY", "DELIVERY_OPERATOR_REQUIRED", "VALIDATION_FAILED", "CERT_REVOKED", "CHECKSUM_MISMATCH", "VALIDATOR_UNAVAILABLE", "VALIDATOR_BUSY", "STORAGE", "STALE_LEASE", "DEVICE_NOT_READY"];
+    private static string ResponseCode(JsonElement root, string fallback) => root.TryGetProperty("error", out var error)
+        && error.ValueKind == JsonValueKind.Object && error.TryGetProperty("code", out var code)
+        && code.ValueKind == JsonValueKind.String && SafeCodes.Contains(code.GetString()!) ? code.GetString()! : fallback;
     private readonly HttpClient client;
     private readonly DeviceKey key;
     private string? session;
@@ -37,7 +41,7 @@ internal sealed class DeviceApi : IDisposable
         int count;
         while ((count = await stream.ReadAsync(buffer, ct)) > 0)
         {
-            if (output.Length + count > 65536) throw new InvalidOperationException("RESPONSE_TOO_LARGE");
+            if (output.Length + count > (action == "office-folder" ? 512 * 1024 : 65536)) throw new InvalidOperationException("RESPONSE_TOO_LARGE");
             output.Write(buffer, 0, count);
         }
         using var parsed = JsonDocument.Parse(output.ToArray());
@@ -48,7 +52,7 @@ internal sealed class DeviceApi : IDisposable
                 HttpStatusCode.Unauthorized => "DEVICE_UNAUTHORIZED", HttpStatusCode.TooManyRequests => "RATE_LIMITED",
                 HttpStatusCode.Forbidden => "DEVICE_FORBIDDEN", _ => "SERVER_UNAVAILABLE" };
             if (response.StatusCode == HttpStatusCode.Unauthorized) session = null;
-            throw new ApiFailure(code, response.StatusCode);
+            throw new ApiFailure(ResponseCode(parsed.RootElement, code), response.StatusCode);
         }
         return parsed.RootElement.GetProperty("data").Clone();
     }
@@ -103,6 +107,30 @@ internal sealed class DeviceApi : IDisposable
             File.Move(part, destination, false);
         } finally { if (created && File.Exists(part)) File.Delete(part); }
     }
+    internal async Task<byte[]> DownloadOfficeFile(OfficeFile file, CancellationToken ct)
+    {
+        file.Validate();
+        using var request = new HttpRequestMessage(HttpMethod.Post, "api/signing/device/office-folder-download") {
+            Content = new StringContent(JsonSerializer.Serialize(file.Request, Configuration.Json), Encoding.UTF8, "application/json") };
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", session ?? throw new InvalidOperationException("SESSION_REQUIRED"));
+        using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
+        if (!response.IsSuccessStatusCode) {
+            if (response.StatusCode == HttpStatusCode.Unauthorized) session = null;
+            throw new ApiFailure("FOLDER_DOWNLOAD_REJECTED", response.StatusCode);
+        }
+        if (response.Content.Headers.ContentType?.MediaType != "application/pdf") throw new IOException("INVALID_PDF");
+        await using var stream = await response.Content.ReadAsStreamAsync(ct);
+        using var output = new MemoryStream();
+        byte[] buffer = new byte[65536]; int count;
+        while ((count = await stream.ReadAsync(buffer, ct)) > 0) {
+            if (output.Length + count > file.SizeBytes) throw new IOException("CHECKSUM_MISMATCH");
+            output.Write(buffer, 0, count);
+        }
+        byte[] bytes = output.ToArray();
+        if (bytes.LongLength != file.SizeBytes || Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(bytes)) != file.ChecksumSha256 ||
+            !bytes.AsSpan(0, 5).SequenceEqual("%PDF-"u8)) throw new IOException("CHECKSUM_MISMATCH");
+        return bytes;
+    }
     internal async Task<JsonElement> Upload(string itemId, string leaseToken, Signing.SignedPdf pdf, CancellationToken ct)
     {
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct);
@@ -117,7 +145,6 @@ internal sealed class DeviceApi : IDisposable
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", session ?? throw new InvalidOperationException("SESSION_REQUIRED"));
         request.Headers.Add("X-Signing-Item", itemId); request.Headers.Add("X-Signing-Lease", leaseToken);
         using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
-        if (!response.IsSuccessStatusCode) throw new ApiFailure("RESULT_REJECTED", response.StatusCode);
         await using var body = await response.Content.ReadAsStreamAsync(ct);
         using var memory = new MemoryStream();
         byte[] buffer = new byte[4096]; int read;
@@ -126,6 +153,7 @@ internal sealed class DeviceApi : IDisposable
             memory.Write(buffer, 0, read);
         }
         using var result = JsonDocument.Parse(memory.ToArray());
+        if (!response.IsSuccessStatusCode) throw new ApiFailure(ResponseCode(result.RootElement, "RESULT_REJECTED"), response.StatusCode);
         var data = result.RootElement.GetProperty("data");
         if (!data.GetProperty("committed").GetBoolean() || data.GetProperty("checksumSha256").GetString() != pdf.Sha256)
             throw new InvalidOperationException("RESULT_MISMATCH");

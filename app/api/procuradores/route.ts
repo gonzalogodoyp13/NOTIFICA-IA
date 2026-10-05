@@ -7,10 +7,12 @@ import { prisma } from '@/lib/prisma'
 import { recordSettingsEvent } from '@/lib/audit/businessEvents'
 import { ProcuradorSchema } from '@/lib/zodSchemas'
 import { mapProcuradorListItem } from '@/lib/procuradores'
+import { validateProcuradorBanks } from '@/lib/procuradorBanks'
 
 export const dynamic = 'force-dynamic'
 
 const procuradorInclude = {
+  bancos: { include: { banco: { select: { id: true, nombre: true } } } },
   abogados: {
     include: {
       abogado: {
@@ -109,21 +111,7 @@ export async function GET(req: NextRequest) {
             }
           : {}),
         ...(bancoId
-          ? {
-              abogados: {
-                some: {
-                  officeId: user.officeId,
-                  abogado: {
-                    bancos: {
-                      some: {
-                        bancoId,
-                        officeId: user.officeId,
-                      },
-                    },
-                  },
-                },
-              },
-            }
+          ? { bancos: { some: { bancoId, officeId: user.officeId } } }
           : {}),
       },
       include: procuradorInclude,
@@ -164,9 +152,11 @@ export async function POST(req: NextRequest) {
     const telefono = parsed.data.telefono?.trim() || null
     const notas = parsed.data.notas?.trim() || null
     const abogadoIds = normalizeAbogadoIds(parsed.data.abogadoIds)
+    const bancoIds = Array.from(new Set(parsed.data.bancoIds ?? []))
 
     try {
       await validateAbogadoIds(user.officeId, abogadoIds)
+      await validateProcuradorBanks(prisma, user.officeId, abogadoIds, bancoIds)
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Abogados invalidos'
       return NextResponse.json(
@@ -227,13 +217,20 @@ export async function POST(req: NextRequest) {
         })
       }
 
+      if (bancoIds.length > 0) {
+        await tx.procuradorBanco.createMany({
+          data: bancoIds.map(bancoId => ({ officeId: user.officeId, procuradorId: procurador.id, bancoId })),
+          skipDuplicates: true,
+        })
+      }
+
       const procuradorWithRelations = await tx.procurador.findUniqueOrThrow({
         where: { id: procurador.id },
         include: procuradorInclude,
       })
       await recordSettingsEvent(tx, user, {
         resource: 'Procurador', action: existingProcurador ? 'updated' : 'created',
-        recordId: procurador.id, changedFields: existingProcurador ? ['abogadoIds'] : undefined,
+        recordId: procurador.id, changedFields: existingProcurador ? ['abogadoIds', 'bancoIds'] : undefined,
       })
 
       return {

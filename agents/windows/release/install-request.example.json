@@ -1,0 +1,13 @@
+{
+  "action": "install",
+  "releaseDirectory": "C:\\Releases\\notifica-0.12.0-pilot",
+  "serverUrl": "https://YOUR-PILOT-HOST/",
+  "allowedUserSid": "S-1-5-21-REPLACE-WITH-OPERATOR-SID",
+  "receiverDirectory": "C:\\NotificaFirmados",
+  "pkcs11Library": "C:\\Windows\\System32\\eTPKCS11.dll",
+  "certificateFingerprint": null,
+  "enableSigning": false,
+  "timestampUrl": null,
+  "timestampPolicyOid": null,
+  "trustedCertificateFiles": []
+}

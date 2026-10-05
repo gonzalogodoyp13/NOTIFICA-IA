@@ -271,7 +271,7 @@ export default function ProcuradoresPage() {
                 Gestionar Procuradores
               </h1>
               <p className="text-gray-600">
-                Administra los procuradores por abogado. Los bancos se derivan automaticamente desde esos abogados.
+                Administra los procuradores por abogado y selecciona sus bancos asociados.
               </p>
             </div>
 
@@ -288,7 +288,7 @@ export default function ProcuradoresPage() {
 
           <div className="mb-6 max-w-md space-y-2">
             <label className="mb-2 block text-sm font-medium text-gray-700">
-              Filtrar por banco derivado
+              Filtrar por banco asociado
             </label>
             <div ref={bancoFilterRef} className="relative">
               <input
@@ -365,7 +365,7 @@ export default function ProcuradoresPage() {
               ))}
             </select>
             <p className="text-xs text-gray-500">
-              El banco sigue siendo derivado. Este filtro usa la relacion principal procurador-abogado.
+              Los filtros muestran los procuradores asociados al abogado y al banco seleccionados.
             </p>
           </div>
 
@@ -424,7 +424,7 @@ export default function ProcuradoresPage() {
               <div className="py-12 text-center">
                 <p className="text-lg text-gray-600">
                   {selectedBancoId
-                    ? 'No hay procuradores disponibles para este banco derivado.'
+                    ? 'No hay procuradores disponibles para este banco asociado.'
                     : 'No hay procuradores registrados aun.'}
                 </p>
                 <p className="mt-2 text-sm text-gray-500">
@@ -451,7 +451,7 @@ export default function ProcuradoresPage() {
                     <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Nombre</th>
                     <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Contacto</th>
                     <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Abogados</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Bancos derivados</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Bancos asociados</th>
                     <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Estado</th>
                     <th className="px-6 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Acciones</th>
                   </tr>
@@ -490,7 +490,7 @@ export default function ProcuradoresPage() {
                         <td className="px-6 py-4 text-sm text-gray-600">
                           {procurador.bancos.length === 0 ? (
                             <span className="inline-flex items-center rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-700">
-                              Sin banco derivado
+                              Sin banco asociado
                             </span>
                           ) : (
                             <div className="flex flex-wrap gap-2">
@@ -505,7 +505,7 @@ export default function ProcuradoresPage() {
                               {extraBancosCount > 0 && (
                                 <span
                                   className="inline-flex items-center rounded-full bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-700"
-                                  title={`${procurador.bancos.length} bancos derivados`}
+                                  title={`${procurador.bancos.length} bancos asociados`}
                                 >
                                   (+{extraBancosCount})
                                 </span>

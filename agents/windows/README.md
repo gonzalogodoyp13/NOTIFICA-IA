@@ -1,16 +1,86 @@
-# Windows agent (Phases 4–9)
+# Windows signing agent
+
+## Shared office folder — 0.13.0
+
+All authorized devices, including signer-only laptops, now use a read-only native
+Windows Cloud Files folder showing the last 50 days of validated signatures. PDFs
+download when opened. Older signatures remain searchable in Firmados. New
+signatures/enrollments no longer create automatic per-PC delivery queues.
+Use the tray action **Abrir firmados de la oficina**. Existing flat receiver copies
+are preserved. See [the office folder and archive runbook](../../docs/signing/OFFICE-SHARED-FOLDER.md)
+for rollout, requirements, storage-provider migration and verification.
+
+## Selected distribution: operator-managed unsigned installation
+
+On September 24 the owner chose personal installation by remote control without
+procuring a code-signing certificate. Use `release/build-managed-distribution.ps1`
+and [the Spanish installation guide](release/managed/INSTALACION.md). The prepared
+GitHub folder separates repository documentation from large Release assets.
+This path supports new installations and matching interrupted-installation resume;
+existing managed 0.12.0 installations use `Update-Notifica.ps1`; see
+[the upgrade guide](release/managed/ACTUALIZACION.md). It stages a new version,
+preserves enrollment/settings/documents, checks service startup and restores the
+previous version on failure. Destination-PC elevated acceptance is still required.
+It does not disable Windows protection or remove the PDF/token trust requirements.
+The signed bootstrapper described below remains an optional, separate path.
+
+## Phase 11 release tooling
+
+Agent 0.12.0 adds an office-wide remote signing session and includes minimum-version compatibility reporting and authenticated
+device retirement. The release bootstrapper, signed-package builder, staged
+upgrade/rollback and pilot evidence verifier live in `release/` and `Notifica.Setup/`.
+See [the Phase 11 runbook](../../docs/signing/PHASE-11-RUNBOOK.md) for configuration,
+installation, enrollment, recovery, removal and the mandatory pilot scenarios.
+Release candidates built with `-PrepareOnly` are deliberately unsigned and not
+installable. The actual publisher signature, elevated installer lifecycle checks,
+two-computer receiver pilot and operator acceptance are still required before
+Phase 11 is complete. `install.ps1` remains development-only; it is not an update
+or signature-bypass entry point in a release package.
 
 The x64 .NET 10 agent consists of a Windows service and a per-user tray process
 from the same executable. It enrolls over HTTPS, maintains short-lived device
 sessions and reports disk/token/certificate health every 30 seconds. Normal
 signer foundation mode does not log into the E-Cert token or sign PDFs.
-Enrolled receiver roles automatically mirror committed signed documents.
+The historical receiver mirror below is retained only for legacy transfer tests;
+the running agent uses the shared office folder.
 Phase 6 adds an explicit controlled-test mode with local batch approval
 and protected PIN entry. Phase 7 connects an enrolled signer to immutable server
 documents when `signingEngine` is explicitly configured. Enrollment codes and
 token PINs use separate UI and protocol paths.
 
 Build from this directory with `./build.ps1 -Dotnet <path-to-dotnet.exe>`.
+
+## Phase 10 operations
+
+Agent 0.10.0 reports receiver-folder disk space and fixed worker failure codes in
+its heartbeat. Heartbeats continue during signing without opening another token
+session. Firmados shows office-wide alerts independently of date filters, the
+next eligible retry time, signed certificate/version/checksum evidence, and each
+receiver's delivery status. An administrator can review and reactivate a failed
+delivery; this copies the existing signed file and cannot create a signature.
+
+Network/storage delivery failures receive six attempts per reviewed cycle, with
+30-second exponential backoff capped at one hour. Disk, checksum, collision and
+unknown failures wait for review. A repeated failure response does not reset its
+backoff. Lost acknowledgements preserve the exact local copy for replay.
+
+Signed uploads retain their exact bytes and persist a six-failure transport
+budget with backoff. Exhaustion or permanent rejection preserves the journal for
+operator review. A committed response can still be reconciled through the original
+attempt and matching checksum. Never delete a signing journal to force a retry.
+PIN errors never repeat automatically. Known TSA/revocation failures release the
+failed attempt only for a fresh claim with an enabled token session; after a token/engine failure the operator must enable a new session locally. The
+requested profile stays unchanged. Unknown token outcomes require reviewed recovery.
+
+`operations.jsonl` contains only fixed error codes, batch/correlation IDs and UTC
+time. Rotation bounds it to one 1 MiB file plus one previous file, with a 30-day
+age limit enforced on the next write. Protect these files with the existing state
+directory ACLs. Source/output PDFs, active journals and manifests are recovery
+evidence and are not deleted by this technical-log policy.
+
+Run `--failure-policy-self-test` for mappings, retry bounds, log redaction/rotation
+and committed-result recovery after the upload budget is exhausted. These tests
+use synthetic data; no token login is performed.
 The pinned SDK is in `global.json`; the published payload includes its runtime.
 The direct NuGet dependency is Microsoft's `System.ServiceProcess.ServiceController`
 10.0.12, which supplies the `ServiceBase` lifecycle. There are no third-party
@@ -150,11 +220,18 @@ sign. An enrolled signer without `signingEngine` retains foundation-only behavio
 The backend also needs an independent validator; setup and runtime/deployment
 choices are in [`../../scripts/signing/README.md`](../../scripts/signing/README.md).
 
-The worker claims one document per approval, downloads to a unique `.part` file,
-checks length and SHA-256, flushes and renames without overwriting existing files.
-Use the tray's pending-signature action to review the requester, office, certificate,
-profile and document before entering the PIN locally. The backend receives no PIN.
-The lease is renewed while approval/signing is active. The selected profile must
+Any active account member in the office can authorize selected documents in Firmados
+from any computer, without administrator permission or a web PIN. On the token PC,
+open **Sesión de firma remota…**, check the office/certificate, consent to office
+requests and enter the PIN once. The authenticated PKCS#11 session lasts up to eight
+hours; it is not a saved PIN. **Cerrar sesión de firma**, service restart, expiry or
+token/engine failure disables it. Closing the tray window alone does not disable it.
+The worker claims one document at a time only while enabled, downloads to a unique
+`.part` file, checks length and SHA-256, flushes and renames without overwriting files.
+No per-document local approval is required. The backend receives the requesting
+account, immutable source, device and remote-session ID, never the PIN. Leases are
+renewed during signing. A requester's active office membership is rechecked at start.
+The selected profile must
 validate before a signed file can be promoted; the authenticated web transport
 currently limits each PDF to 4 MiB.
 
@@ -182,7 +259,8 @@ an administrator's reviewed retry for that exact attempt number. Stop the old wo
 and inspect the local journal and any output before authorizing a new operation.
 If a committed output exists, use its same-byte recovery; do not authorize another
 signature. The service keeps source/output files, clears only the resolved active
-journal, and requests a fresh lease and local approval. It never reuses the PIN.
+journal, and requests a fresh lease. A valid enabled token session is required;
+if it closed after failure, enable it locally again. The PIN is never retained.
 
 An assignment cancelled or released before signing can be cleared automatically.
 A different device or lease cannot resolve that journal. If the device is revoked,
@@ -190,15 +268,16 @@ authentication fails and recovery cannot proceed. The web control center does no
 change the local PIN policy, token configuration or receiver distribution.
 
 `Notifica.Agent.exe --recovery-self-test <absolute-engine-json>` verifies the real
-coordinator and owned worker with a deliberately missing provider and synthetic
-PIN: retained failure, reviewed resolution, fresh lease/approval, no automatic
-second operation and preserved source. No USB login is possible in this test.
+coordinator with an injected failing token session and synthetic PIN: a locked
+session claims nothing, enabled requests need no per-document approval, failures
+remain retained, reviewed recovery gets a fresh lease and source files survive.
+No USB login is possible in this test.
 
 ## Receiver mirror (Phase 9)
 
 Agent **0.9.0** runs the HTTPS mirror for `RECEIVER` and `SIGNER_RECEIVER` identities.
 A receiver never invokes signing/PIN functions. A combined device runs both
-processors independently; signing retains its explicit local approval policy.
+processors independently; signing uses the locally enabled remote token session.
 
 During enrollment, choose the destination with **Elegir…** in the tray. The
 service verifies a local absolute path and write access before consuming the

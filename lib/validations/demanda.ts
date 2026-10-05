@@ -16,6 +16,7 @@ export const DemandaCreateSchema = z.object({
   rol: z.string().trim().min(1).transform(value => value.toUpperCase()),
   tribunalId: z.string().trim().min(1),
   caratula: z.string().trim().min(1),
+  bancoId: optionalInt.optional(),
   cuantia: z.union([z.string(), z.number()]).nullable().optional(),
   abogadoId: z.coerce.number().int().positive(),
   materiaId: optionalInt.optional(),

@@ -1,37 +1,32 @@
 import 'server-only'
 import { createHash, randomUUID } from 'node:crypto'
 import { Prisma, type PrismaClient, type SigningDevice } from '@prisma/client'
-import { createServerSupabaseStorageClient } from '../supabaseServer'
-import { assertEligibleVersion, SigningError, SupportedSigningLevel } from './core'
+import { documentObjectStore, type DocumentObjectStore } from '../documents/objectStore'
+import { assertEligibleVersion, SigningError, SupportedSigningLevel, safeSigningError } from './core'
+import { recordCriticalEvent } from '../audit/activityEvent'
+import { signingTrace } from './telemetry'
 import { DeviceError, DeviceLease, Secret, sha256 } from './deviceProtocol'
 import { lockSigningOffice } from './transaction'
 import { createSigningService } from './service'
 import { MAX_SIGNING_PDF, type PdfValidator, validateSigningPdf, ValidationReport } from './pdfValidator'
 
-export interface SigningStorage {
-  assertPrivate(bucket: string): Promise<void>
-  download(bucket: string, key: string): Promise<Buffer>
-  upload(bucket: string, key: string, bytes: Buffer): Promise<void>
-  remove(bucket: string, key: string): Promise<void>
-}
+export type SigningStorage = DocumentObjectStore
 export const signingStorage: SigningStorage = {
   async assertPrivate(bucket) {
-    const { data, error } = await createServerSupabaseStorageClient({ requireServiceRole: true, timeoutMs: 60_000 }).storage.getBucket(bucket)
-    if (error || !data || data.public) throw new SigningError('PRIVATE_STORAGE_REQUIRED')
+    try { await documentObjectStore().assertPrivate(bucket) } catch { throw new SigningError('PRIVATE_STORAGE_REQUIRED') }
   },
   async download(bucket, key) {
-    const { data, error } = await createServerSupabaseStorageClient({ requireServiceRole: true, timeoutMs: 60_000 }).storage.from(bucket).download(key)
-    if (error || !data || data.size > MAX_SIGNING_PDF) throw new SigningError('STORAGE')
-    return Buffer.from(await data.arrayBuffer())
+    try {
+      const bytes = await documentObjectStore().download(bucket, key)
+      if (bytes.length > MAX_SIGNING_PDF) throw new Error('STORAGE')
+      return bytes
+    } catch { throw new SigningError('STORAGE') }
   },
   async upload(bucket, key, bytes) {
-    const { error } = await createServerSupabaseStorageClient({ requireServiceRole: true, timeoutMs: 60_000 }).storage.from(bucket)
-      .upload(key, bytes, { contentType: 'application/pdf', upsert: false })
-    if (error) throw new SigningError('STORAGE')
+    try { await documentObjectStore().upload(bucket, key, bytes) } catch { throw new SigningError('STORAGE') }
   },
   async remove(bucket, key) {
-    const { error } = await createServerSupabaseStorageClient({ requireServiceRole: true, timeoutMs: 60_000 }).storage.from(bucket).remove([key])
-    if (error) throw new SigningError('STORAGE')
+    try { await documentObjectStore().remove(bucket, key) } catch { throw new SigningError('STORAGE') }
   },
 }
 export type ArtifactDependencies = { storage?: SigningStorage; validator?: PdfValidator }
@@ -111,10 +106,23 @@ export function createArtifactService(db: PrismaClient, authenticate: Authentica
       if (initial.prior) return publicResult(initial.prior)
       if (initial.item.status !== 'SIGNING') throw new SigningError('SIGNING_NOT_STARTED')
       const source = await sourceBytes(initial.item)
-      const report = ValidationReport.parse(await validate({ source, signed: bytes, sourceChecksum: initial.item.sourceChecksum,
-        signerFingerprint: initial.item.signerFingerprint, requestedLevel: SupportedSigningLevel.parse(initial.item.job.requestedLevel) }))
-      if (report.sourceChecksum !== initial.item.sourceChecksum || report.signedChecksum !== checksum || report.signerFingerprint !== initial.item.signerFingerprint)
-        throw new SigningError('INVALID_EVIDENCE')
+      let report: ReturnType<typeof ValidationReport.parse>
+      try {
+        report = ValidationReport.parse(await validate({ source, signed: bytes, sourceChecksum: initial.item.sourceChecksum,
+          signerFingerprint: initial.item.signerFingerprint, requestedLevel: SupportedSigningLevel.parse(initial.item.job.requestedLevel) }))
+        if (report.sourceChecksum !== initial.item.sourceChecksum || report.signedChecksum !== checksum || report.signerFingerprint !== initial.item.signerFingerprint)
+          throw new SigningError('INVALID_EVIDENCE')
+      } catch (error) {
+        const safe = safeSigningError(error instanceof SigningError ? error.code : 'VALIDATION_FAILED')
+        await transaction(initial.lease.officeId, async (tx, now) => {
+          await authenticate(tx, token, now, 'signer')
+          await recordCriticalEvent(tx, { officeId: initial.lease.officeId, requestId: signingTrace.getStore(), actorType: 'SYSTEM', source: 'INTERNAL' }, {
+            eventType: 'signing.validation_failed', module: 'documents', recordType: 'SigningItem', recordId: initial.item.id,
+            result: 'failure', metadata: { jobId: initial.item.jobId, itemId: initial.item.id, deviceId: initial.lease.deviceId,
+              attemptNumber: initial.item.attemptCount, errorCode: safe.code } })
+        })
+        throw new SigningError(safe.code)
+      }
       const current = await access(token, raw, checksum)
       if (current.prior) return publicResult(current.prior)
       const id = randomUUID(), bucket = current.item.sourceVersion.storageBucket

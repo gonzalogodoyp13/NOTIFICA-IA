@@ -10,6 +10,16 @@ internal static class Program
         try
         {
             Signing.ProcessPrivacy.Apply();
+            int folderRead = Array.IndexOf(args, "--office-folder-read-test");
+            if (folderRead >= 0 && folderRead + 2 < args.Length) return OfficeFolderSelfTest.Read(args[folderRead + 1], args[folderRead + 2]);
+            if (args.Contains("--office-folder-self-test")) {
+                try { return OfficeFolderSelfTest.Run().GetAwaiter().GetResult(); }
+                catch (Exception error) { Console.Error.WriteLine($"OFFICE_FOLDER_SELF_TEST: {error}"); return 1; }
+            }
+            if (args.Contains("--remote-token-worker")) return Signing.RemoteTokenSession.RunWorker().GetAwaiter().GetResult();
+            int remoteTest = Array.IndexOf(args, "--remote-session-self-test");
+            if (remoteTest >= 0 && remoteTest + 1 < args.Length) return Signing.RemoteSessionSelfTest.Run(args[remoteTest + 1]);
+            if (args.Contains("--failure-policy-self-test")) return FailurePolicySelfTest.Run().GetAwaiter().GetResult();
             if (args.Contains("--self-test")) return SelfTest.Run().GetAwaiter().GetResult();
             if (args.Contains("--signing-self-test")) return Signing.SigningSelfTest.Run().GetAwaiter().GetResult();
             if (args.Contains("--transfer-self-test")) return Signing.TransferSelfTest.Run().GetAwaiter().GetResult();
@@ -31,6 +41,8 @@ internal static class Program
             string configPath = configIndex >= 0 && configIndex + 1 < args.Length ? Path.GetFullPath(args[configIndex + 1])
                 : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "NotificaIA", "Agent", "config.json");
             var config = Configuration.Load(configPath);
+            if (args.Contains("--validate-config")) return 0;
+            if (args.Contains("--retire")) return Retirement.Run(config).GetAwaiter().GetResult();
             if (args.Contains("--signing-preflight"))
             {
                 using var token = new Signing.Pkcs11SigningToken(config.Pkcs11Library,
@@ -40,6 +52,7 @@ internal static class Program
                 return 0;
             }
             if (args.Contains("--initialize-service-key")) { DeviceKey.ProvisionService(config); return 0; }
+            if (args.Contains("--repair-service-key")) { DeviceKey.ProvisionService(config, resume: true); return 0; }
             if (args.Contains("--integration-test")) return SelfTest.Integration(config, configPath).GetAwaiter().GetResult();
             if (args.Contains("--probe")) { Console.WriteLine(JsonSerializer.Serialize(new TokenProbe().Read(config), Configuration.Json)); return 0; }
             if (args.Contains("--status"))
@@ -108,6 +121,9 @@ internal static class Program
         Task connectivity = worker.Run(linked.Token), pipe = LocalPipe.Serve(config, worker, linked.Token);
         Task remote = worker.Remote?.Run(linked.Token) ?? Task.Delay(Timeout.Infinite, linked.Token);
         Task mirror = worker.Mirror.Run(linked.Token);
+        if (config.MachineKey && !pipe.IsCompleted && !connectivity.IsCompleted && !remote.IsCompleted && !mirror.IsCompleted)
+            ReceiverMirror.SaveJson(Path.Combine(config.DataDirectory, "service-ready.json"), new {
+                processId = Environment.ProcessId, version = typeof(Program).Assembly.GetName().Version!.ToString(3), at = DateTimeOffset.UtcNow });
         await Task.WhenAny(connectivity, pipe, remote, mirror);
         linked.Cancel();
         try { await Task.WhenAll(connectivity, pipe, remote, mirror); }

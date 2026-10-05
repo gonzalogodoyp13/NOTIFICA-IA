@@ -45,15 +45,23 @@ export class SigningError extends Error {
 // Error messages from middleware may contain PINs, URLs or credentials. Never
 // persist arbitrary error text: map only exact, recognized codes to fixed text.
 const ERRORS = {
+  AGENT_UPDATE_REQUIRED: ['Update the signing agent before starting new work.', false],
   NETWORK: ['Network temporarily unavailable.', true],
   STORAGE: ['Document storage temporarily unavailable.', true],
+  VALIDATOR_UNAVAILABLE: ['Signature validator temporarily unavailable.', true],
+  VALIDATOR_BUSY: ['Signature validator is busy.', true],
   TSA_UNAVAILABLE: ['Timestamp service temporarily unavailable.', true],
   REVOCATION_UNAVAILABLE: ['Revocation evidence temporarily unavailable.', true],
   TOKEN_MISSING: ['Connect the signing token.', false],
   DRIVER_MISSING: ['Install the configured token driver.', false],
+  DRIVER_ERROR: ['The token driver requires operator attention.', false],
+  DISK: ['Check free space and local folder permissions.', false],
+  PIN_LOCKED: ['The token PIN is locked. Contact the provider.', false],
+  PIN_EXPIRED: ['The token PIN has expired. Local operator action is required.', false],
   PIN_REQUIRED: ['Unlock the local token session by entering its PIN on the signing device.', false],
   PIN_INCORRECT: ['The token PIN was incorrect. Operator action is required on the signing device.', false],
   CERT_EXPIRED: ['The signing certificate has expired.', false],
+  CERT_REVOKED: ['The signing certificate has been revoked.', false],
   VALIDATION_FAILED: ['Signature validation failed.', false],
   CHECKSUM_MISMATCH: ['Document checksum verification failed.', false],
   LEASE_EXPIRED: ['The signing lease expired.', false],
@@ -63,8 +71,9 @@ const ERRORS = {
 export function safeSigningError(value: unknown) {
   const code = typeof value === 'string' && Object.hasOwn(ERRORS, value) ? value as keyof typeof ERRORS : 'UNKNOWN'
   const [message, retryable] = ERRORS[code]
-  return { code, message, retryable, operatorRequired: ['PIN_REQUIRED', 'PIN_INCORRECT', 'TOKEN_MISSING', 'DRIVER_MISSING', 'OUTCOME_UNKNOWN'].includes(code) }
+  return { code, message, retryable, operatorRequired: ['AGENT_UPDATE_REQUIRED', 'PIN_REQUIRED', 'PIN_INCORRECT', 'PIN_LOCKED', 'PIN_EXPIRED', 'TOKEN_MISSING', 'DRIVER_MISSING', 'DRIVER_ERROR', 'DISK', 'OUTCOME_UNKNOWN'].includes(code) }
 }
+export const SigningFailureCode = z.enum(Object.keys(ERRORS) as [keyof typeof ERRORS, ...(keyof typeof ERRORS)[]])
 
 export function assertEligibleVersion(version: {
   officeId: number; id: string; checksumSha256: string; mimeType: string;

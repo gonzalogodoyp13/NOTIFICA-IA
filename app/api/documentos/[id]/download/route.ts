@@ -142,7 +142,7 @@ export async function GET(
     })
 
     // Retornar PDF como binary response
-    return new NextResponse(pdfBuffer, {
+    return new NextResponse(new Uint8Array(pdfBuffer), {
       headers: {
         'Content-Type': 'application/pdf',
         'Content-Disposition': disposition,

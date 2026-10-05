@@ -40,12 +40,17 @@ internal sealed class DeviceKey : IDisposable
         byte[] proof = rsa.SignData(challenge, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
         if (!rsa.VerifyData(challenge, proof, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1)) throw new CryptographicException("DEVICE_KEY_PROOF_FAILED");
     }
-    internal static void ProvisionService(Configuration config)
+    internal static void ProvisionService(Configuration config, bool resume = false)
     {
         if (!config.MachineKey || !new WindowsPrincipal(WindowsIdentity.GetCurrent()).IsInRole(WindowsBuiltInRole.Administrator))
             throw new InvalidOperationException("ADMINISTRATOR_PROVISIONING_REQUIRED");
-        if (CngKey.Exists(config.KeyName, CngProvider.MicrosoftSoftwareKeyStorageProvider, CngKeyOpenOptions.MachineKey))
+        bool existed = CngKey.Exists(config.KeyName, CngProvider.MicrosoftSoftwareKeyStorageProvider, CngKeyOpenOptions.MachineKey);
+        if (existed && !resume)
             throw new InvalidOperationException("DEVICE_KEY_ALREADY_EXISTS");
+        if (resume && !existed && File.Exists(Path.Combine(config.DataDirectory, "identity.json")))
+            throw new InvalidOperationException("ENROLLED_DEVICE_KEY_MISSING");
+        if (resume && (ServiceHost.ProcessId() != 0 || File.Exists(Path.Combine(config.DataDirectory, "signing-work.json"))))
+            throw new InvalidOperationException("STOP_AND_REVIEW_ACTIVE_WORK");
         var serviceSid = (SecurityIdentifier)new NTAccount("NT SERVICE", ServiceHost.Name).Translate(typeof(SecurityIdentifier));
         using var device = new DeviceKey(config, true);
         try
@@ -59,7 +64,7 @@ internal sealed class DeviceKey : IDisposable
             int error = NCryptSetProperty(handle, "Security Descr", binary, binary.Length, 4); // DACL_SECURITY_INFORMATION
             if (error != 0) throw new CryptographicException(error);
         }
-        catch { device.key.Delete(); throw; }
+        catch { if (!existed) device.key.Delete(); throw; }
     }
     internal string PublicKey => Convert.ToBase64String(rsa.ExportSubjectPublicKeyInfo());
     internal string Sign(string message) => Convert.ToBase64String(rsa.SignData(Encoding.UTF8.GetBytes(message), HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1));

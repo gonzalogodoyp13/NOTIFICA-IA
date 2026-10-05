@@ -93,6 +93,16 @@ internal sealed class Pkcs11SigningToken : ISigningToken
         catch { Dispose(); throw new SigningFailure(SigningError.DriverFailure); }
     }
 
+    internal void CheckAuthenticated()
+    {
+        ObjectDisposedException.ThrowIf(disposed, this);
+        if (!authenticated) throw new SigningFailure(SigningError.SessionExpired);
+        Check(Function<GetSessionInfo>("C_GetSessionInfo")(session, out var info));
+        if (info.State != 1) throw new SigningFailure(SigningError.SessionExpired);
+        using var cert = X509CertificateLoader.LoadCertificate(certificate);
+        if (cert.NotBefore.ToUniversalTime() > DateTime.UtcNow || cert.NotAfter.ToUniversalTime() <= DateTime.UtcNow)
+            throw new SigningFailure(SigningError.CertificateInvalid);
+    }
     public void Authenticate(PinBuffer pin)
     {
         try

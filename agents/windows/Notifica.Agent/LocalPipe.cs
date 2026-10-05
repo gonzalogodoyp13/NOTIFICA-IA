@@ -72,9 +72,24 @@ internal static class LocalPipe
                 if (!authorized) continue;
                 using var document = JsonDocument.Parse(input);
                 string action = document.RootElement.GetProperty("action").GetString() ?? "";
-                var signing = controlled ?? worker.Remote?.Current;
+                var signing = controlled;
                 object result;
                 if (action == "status" && document.RootElement.EnumerateObject().Count() == 1) result = new { ok = true, status = worker.Status };
+                else if (action == "remote-session" && worker.Remote is not null && document.RootElement.EnumerateObject().Count() == 1)
+                    result = new { ok = true, session = worker.Remote.Session, officeId = worker.Remote.OfficeId, fingerprint = config.CertificateFingerprint };
+                else if (action == "disable-remote-session" && worker.Remote is not null && document.RootElement.EnumerateObject().Count() == 1) {
+                    worker.Remote.Disable(); result = new { ok = true };
+                }
+                else if (action == "enable-remote-session" && worker.Remote is not null && document.RootElement.EnumerateObject().Count() == 2
+                    && document.RootElement.GetProperty("consent").ValueKind == JsonValueKind.True) {
+                    deadline.CancelAfter(TimeSpan.FromSeconds(50));
+                    await WriteLine(pipe, new { ok = true, readyForPin = true }, deadline.Token);
+                    using var pinDeadline = CancellationTokenSource.CreateLinkedTokenSource(deadline.Token);
+                    pinDeadline.CancelAfter(TimeSpan.FromSeconds(5));
+                    using var pin = await Signing.PinTransfer.ReceiveAsync(pipe, pinDeadline.Token);
+                    await worker.Remote.Enable(pin, deadline.Token);
+                    result = new { ok = true, session = worker.Remote.Session };
+                }
                 else if (action == "controlled-batch" && signing is not null && document.RootElement.EnumerateObject().Count() == 1)
                     result = new { ok = true, batch = signing.View() };
                 else if (action == "approve-controlled-batch" && signing is not null && document.RootElement.EnumerateObject().Count() == 3)
@@ -129,6 +144,19 @@ internal static class LocalPipe
             if (!accepted.RootElement.GetProperty("ok").GetBoolean()) throw new Signing.SigningFailure(Signing.SigningError.EngineFailure);
         }
         finally { pin.Dispose(); }
+    }
+    internal static async Task EnableRemote(Configuration config, Signing.PinBuffer pin, CancellationToken ct)
+    {
+        try {
+            await using var pipe = new NamedPipeClientStream(".", config.PipeName, PipeDirection.InOut, PipeOptions.Asynchronous, TokenImpersonationLevel.Identification);
+            await pipe.ConnectAsync(2000, ct); VerifyServer(pipe, config);
+            await WriteLine(pipe, new { action = "enable-remote-session", consent = true }, ct);
+            using var ready = JsonDocument.Parse(await ReadLine(pipe, ct));
+            if (!ready.RootElement.GetProperty("ok").GetBoolean() || !ready.RootElement.GetProperty("readyForPin").GetBoolean()) throw new IOException("REMOTE_SESSION_REJECTED");
+            await Signing.PinTransfer.SendAsync(pipe, pin, ct);
+            using var accepted = JsonDocument.Parse(await ReadLine(pipe, ct));
+            if (!accepted.RootElement.GetProperty("ok").GetBoolean()) throw new IOException("REMOTE_SESSION_FAILED");
+        } finally { pin.Dispose(); }
     }
     private static void VerifyServer(NamedPipeClientStream pipe, Configuration config)
     {

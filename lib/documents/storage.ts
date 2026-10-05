@@ -2,7 +2,7 @@ import 'server-only'
 
 import { createHash } from 'crypto'
 
-import { createServerSupabaseStorageClient } from '@/lib/supabaseServer'
+import { documentObjectStore } from './objectStore'
 
 export const DOCUMENT_STORAGE_BUCKET = 'documents'
 export const PDF_MIME_TYPE = 'application/pdf'
@@ -80,18 +80,9 @@ export async function uploadPdfToDocumentStorage(input: UploadPdfInput): Promise
   const buffer = pdfBase64ToBuffer(input.pdfBase64)
   const checksumSha256 = createHash('sha256').update(buffer).digest('hex')
   const storageKey = buildDocumentStorageKey({ ...input, fileName })
-  const supabase = createServerSupabaseStorageClient()
-
-  const { error } = await supabase.storage
-    .from(DOCUMENT_STORAGE_BUCKET)
-    .upload(storageKey, buffer, {
-      contentType: PDF_MIME_TYPE,
-      upsert: false,
-    })
-
-  if (error) {
-    throw new Error(`No se pudo subir el PDF a storage: ${error.message}`)
-  }
+  const store = documentObjectStore()
+  await store.assertPrivate(DOCUMENT_STORAGE_BUCKET)
+  await store.upload(DOCUMENT_STORAGE_BUCKET, storageKey, buffer)
 
   return {
     storageBucket: DOCUMENT_STORAGE_BUCKET,
@@ -104,21 +95,11 @@ export async function uploadPdfToDocumentStorage(input: UploadPdfInput): Promise
 }
 
 export async function downloadPdfFromDocumentStorage(storageBucket: string, storageKey: string) {
-  const supabase = createServerSupabaseStorageClient()
-  const { data, error } = await supabase.storage.from(storageBucket).download(storageKey)
-
-  if (error || !data) {
-    throw new Error(`No se pudo descargar el PDF desde storage: ${error?.message ?? 'archivo no encontrado'}`)
-  }
-
-  return Buffer.from(await data.arrayBuffer())
+  const store = documentObjectStore()
+  await store.assertPrivate(storageBucket)
+  return store.download(storageBucket, storageKey)
 }
 
 export async function deletePdfFromDocumentStorage(storageBucket: string, storageKey: string) {
-  const supabase = createServerSupabaseStorageClient()
-  const { error } = await supabase.storage.from(storageBucket).remove([storageKey])
-
-  if (error) {
-    throw new Error(`No se pudo eliminar el PDF de storage: ${error.message}`)
-  }
+  await documentObjectStore().remove(storageBucket, storageKey)
 }

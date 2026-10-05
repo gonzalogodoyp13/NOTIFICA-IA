@@ -292,7 +292,7 @@ export default function EjecutarWizard({
     }
 
     if (!bancoId) {
-      failField('banco-recibo', 'Selecciona el banco del recibo.')
+      setErrorMsg('La demanda no tiene banco asignado. Selecciónalo en Editar demanda.')
       return
     }
 
@@ -348,7 +348,7 @@ export default function EjecutarWizard({
     }
 
     if (!bancoId) {
-      failField('banco-recibo', 'Selecciona el banco del recibo.')
+      setErrorMsg('La demanda no tiene banco asignado. Selecciónalo en Editar demanda.')
       return
     }
 
@@ -539,7 +539,9 @@ export default function EjecutarWizard({
             </button>
           </header>
           <div className="mt-4 text-sm text-slate-700">
-            Notificación no encontrada. Cierra y vuelve a abrir el wizard desde la tabla.
+            {workflowLoading ? <span role="status">Cargando datos del flujo…</span>
+              : workflowError ? 'No se pudo cargar la notificación. Cierra y vuelve a intentarlo.'
+              : 'Notificación no encontrada. Cierra y vuelve a abrir el wizard desde la tabla.'}
           </div>
         </div>
       </div>
@@ -594,28 +596,7 @@ export default function EjecutarWizard({
           {/* Step I: Fecha y Hora */}
           {step === 1 && (
             <>
-              <div>
-                <label className="block font-medium text-slate-700" htmlFor="banco-recibo">
-                  Banco *
-                </label>
-                <select
-                  id="banco-recibo"
-                  className="mt-1 w-full rounded border border-slate-300 p-2"
-                  value={bancoId ?? ''}
-                  onChange={event => {
-                    setBancoId(event.target.value ? Number(event.target.value) : null)
-                    setMontoManual(false)
-                    setAmountSource('tariff')
-                    setFieldError(null)
-                  }}
-                >
-                  <option value="">Seleccione un banco…</option>
-                  {workflow?.bankContext.banks.map(bank => (
-                    <option key={bank.id} value={bank.id}>{bank.nombre}</option>
-                  ))}
-                </select>
-                {fieldError?.field === 'banco-recibo' && <p className="mt-1 text-xs text-rose-600">{fieldError.message}</p>}
-              </div>
+              {!workflowLoading && !bancoId && <p role="alert" className="text-rose-700">La demanda no tiene banco asignado. Selecciónalo en Editar demanda antes de continuar.</p>}
               <div>
                 <label className="block font-medium text-slate-700" htmlFor="fecha-ejecucion">
                   Fecha de ejecución *

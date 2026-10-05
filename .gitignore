@@ -39,5 +39,8 @@ next-env.d.ts
 /agents/windows/**/bin/
 /agents/windows/**/obj/
 /agents/windows/artifacts/
+/output/github/
+/output/office-folder-agent-*/
+/tmp/office-folder-*
 
 

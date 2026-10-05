@@ -139,7 +139,11 @@ export async function loadReceiptWorkflow(params: {
   const meta = isPlainObject(notification.meta) ? notification.meta : {}
   const execution = isPlainObject(meta.ejecucion) ? meta.ejecucion : {}
   const selectedEstampoTipo = parseEstampoTipo(meta)
-  const selectedBankId = notification.bancoId ?? (banks.length === 1 ? banks[0].id : null)
+  const demand = notification.diligencia.rol.demanda
+  const prefix = demand?.caratula.split('/')[0].trim().toLowerCase()
+  const matchingBanks = banks.filter(bank => bank.nombre.trim().toLowerCase() === prefix)
+  const selectedBankId = notification.bancoId ?? demand?.bancoId
+    ?? (matchingBanks.length === 1 ? matchingBanks[0].id : banks.length === 1 ? banks[0].id : null)
 
   const [customEstampos, wizardCategories, arancelRows, activeReceipt] = await Promise.all([
     loadActiveLegacyEstampos({ officeId: params.officeId, officeCacheRevision: params.officeCacheRevision, includeContent: params.includeEstampoContent }),

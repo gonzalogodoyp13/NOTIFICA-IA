@@ -69,11 +69,11 @@ class Handler(BaseHTTPRequestHandler):
                 clean_env.update(TEMP=temporary, TMP=temporary)
                 result = subprocess.run([settings.get('python', sys.executable), '-I', str(Path(__file__).with_name('validate_pdf.py')), str(config_path)],
                     input=json.dumps(request), text=True, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=90, env=clean_env)
-                if result.returncode or len(result.stdout) > 32768:
+                if len(result.stdout) > 32768:
                     return self.answer(422, {'ok': False, 'error': 'VALIDATION_FAILED'})
                 value = json.loads(result.stdout)
-                if value.get('ok') is not True:
-                    return self.answer(422, {'ok': False, 'error': 'VALIDATION_FAILED'})
+                if result.returncode or value.get('ok') is not True:
+                    return self.answer(422, {'ok': False, 'error': 'CERT_REVOKED' if value.get('error') == 'CERT_REVOKED' else 'VALIDATION_FAILED'})
                 return self.answer(200, value)
         except Exception:
             return self.answer(422, {'ok': False, 'error': 'VALIDATION_FAILED'})

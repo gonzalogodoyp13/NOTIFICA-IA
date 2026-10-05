@@ -3,9 +3,10 @@ using System.Text.Json;
 
 namespace Notifica.Agent.Signing;
 
-internal sealed record RemoteJournal(string ItemId, string LeaseToken, SigningBatch Batch, string State, SignedPdf? Output = null);
+internal sealed record RemoteJournal(string ItemId, string LeaseToken, SigningBatch Batch, string State, SignedPdf? Output = null,
+    int TransportFailures = 0, DateTimeOffset? RetryAt = null);
 
-// One leased document per local approval for this first transfer integration.
+// Web-authorized documents execute through a separately enabled local token session.
 // A durable signed output is retried as the SAME bytes, never signed again.
 internal sealed class RemoteSigning : IAsyncDisposable
 {
@@ -15,14 +16,20 @@ internal sealed class RemoteSigning : IAsyncDisposable
     private readonly Action<bool> setActive;
     private readonly Func<CancellationToken, Task> waitForProbeIdle;
     private readonly string journalPath;
+    private readonly IRemoteTokenSession tokenSession;
+    private readonly SemaphoreSlim enabling = new(1);
+    internal RemoteSessionView Session => tokenSession.View;
+    internal int? OfficeId => identity()?.OfficeId;
     private RemoteJournal? journal;
     private volatile ControlledSigning? current;
     private DateTimeOffset nextClaim = DateTimeOffset.MinValue;
     internal ControlledSigning? Current => current;
+    internal string? ErrorCode { get; private set; }
     internal RemoteSigning(Configuration config, DeviceApi api, Func<Identity?> identity,
-        Action<bool> setActive, Func<CancellationToken, Task> waitForProbeIdle)
+        Action<bool> setActive, Func<CancellationToken, Task> waitForProbeIdle, IRemoteTokenSession? tokenSession = null)
     {
         this.config = config; this.api = api; this.identity = identity; this.setActive = setActive; this.waitForProbeIdle = waitForProbeIdle;
+        this.tokenSession = tokenSession ?? new RemoteTokenSession(config);
         LocalSigningFiles.RequireLocalPath(config.DataDirectory);
         journalPath = Path.Combine(config.DataDirectory, "signing-work.json");
         if (File.Exists(journalPath)) {
@@ -32,6 +39,29 @@ internal sealed class RemoteSigning : IAsyncDisposable
             journal.Batch.Validate();
         }
     }
+    internal async Task Enable(PinBuffer pin, CancellationToken ct)
+    {
+        try {
+            await enabling.WaitAsync(ct);
+            try {
+                var enrolled = identity();
+                if (enrolled is null || enrolled.Role is not ("SIGNER" or "SIGNER_RECEIVER")) throw new SigningFailure(SigningError.ReceiverForbidden);
+                if (Session.Enabled || current?.View().State == "SIGNING") throw new SigningFailure(SigningError.ExistingTokenSession);
+                await api.Authenticate(enrolled, ct);
+                setActive(true);
+                try {
+                    await waitForProbeIdle(ct);
+                    await tokenSession.Enable(enrolled.OfficeId, pin, ct);
+                    ErrorCode = null;
+                } catch (Exception failure) {
+                    setActive(false);
+                    ErrorCode = failure is SigningFailure known ? FailurePolicy.SigningCode(known.Code.ToString()) : "UNKNOWN";
+                    throw;
+                }
+            } finally { enabling.Release(); }
+        } finally { pin.Dispose(); }
+    }
+    internal void Disable() { tokenSession.Disable(); setActive(false); }
     private void Save(RemoteJournal value)
     {
         string temporary = journalPath + ".part";
@@ -49,12 +79,21 @@ internal sealed class RemoteSigning : IAsyncDisposable
     }
     internal async Task Run(CancellationToken ct)
     {
+        int transportFailures = 0;
         try {
             while (!ct.IsCancellationRequested) {
                 try {
                     var enrolled = identity();
                     if (enrolled is null || enrolled.Role == "RECEIVER") { await Task.Delay(1000, ct); continue; }
                     await api.Authenticate(enrolled, ct);
+                    if (current?.View().State != "SIGNING" && await enabling.WaitAsync(0, ct)) {
+                        try {
+                            if (Session.Enabled) {
+                                try { await tokenSession.Check(ct); }
+                                catch { Disable(); ErrorCode = "PIN_REQUIRED"; }
+                            } else { Disable(); }
+                        } finally { enabling.Release(); }
+                    }
                     var saved = journal;
                     if (saved is not null) {
                         if (saved.Batch.OfficeId != enrolled.OfficeId || saved.Batch.SignerFingerprint != config.CertificateFingerprint)
@@ -62,38 +101,61 @@ internal sealed class RemoteSigning : IAsyncDisposable
                         var view = current?.View();
                         if (saved.State != "COMMITTED" && view?.State is not ("RECEIVING_PIN" or "SIGNING")) {
                             var recovery = await api.Post("recovery", Lease(saved), ct, true);
+                            // Even an exhausted transfer budget may have committed remotely.
+                            // Reconcile the original attempt/hash before clearing its journal.
+                            if (recovery.TryGetProperty("committed", out var committed) && committed.GetBoolean()
+                                && saved.Output is not null && recovery.GetProperty("checksumSha256").GetString() == saved.Output.Sha256) {
+                                Save(saved with { State = "COMMITTED" }); current?.MarkCommitted(); ErrorCode = null;
+                                nextClaim = DateTimeOffset.UtcNow.AddSeconds(30); continue;
+                            }
                             if (recovery.GetProperty("released").GetBoolean()) {
                                 await Clear();
-                                continue; // A new claim requires a new local approval; retained files are untouched.
+                                continue; // Reviewed recovery authorizes a fresh claim; retained files are untouched.
                             }
                         }
                         if (view?.State is "AWAITING_APPROVAL" or "RECEIVING_PIN" or "SIGNING") {
                             await api.Post("renew", Lease(saved), ct, true);
                         } else if (saved.State == "SIGNED" && saved.Output is not null) {
                             // This includes restart recovery and lost HTTP responses.
+                            if (saved.RetryAt > DateTimeOffset.UtcNow) { await Task.Delay(1000, ct); continue; }
                             await Upload(saved, ct);
+                            ErrorCode = null;
                             current?.MarkCommitted(); nextClaim = DateTimeOffset.UtcNow.AddSeconds(30);
                         } else if (saved.State == "COMMITTED") {
                             if (DateTimeOffset.UtcNow >= nextClaim) { await Clear(); }
                         } else if (view?.State == "EXPIRED" || (current is null && saved.State == "CLAIMED")) {
                             await api.Post("release", Lease(saved), ct, true); await Clear();
                         } else if (saved.State != "WAITING_FOR_OPERATOR" && (view?.State == "FAILED" || current is null)) {
-                            string code = view?.Error switch {
-                                "PinIncorrect" or "PinLocked" or "PinExpired" => "PIN_INCORRECT",
-                                "TokenMissing" or "TokenRemoved" => "TOKEN_MISSING",
-                                "InputChanged" => "CHECKSUM_MISMATCH", _ => "OUTCOME_UNKNOWN" };
+                            string code = FailurePolicy.SigningCode(view?.Error);
+                            ErrorCode = code;
+                            FailurePolicy.Log(config, code, saved.Batch.Id);
                             await api.Post("fail", new { itemId = saved.ItemId, leaseToken = saved.LeaseToken, errorCode = code }, ct, true);
                             Save(saved with { State = "WAITING_FOR_OPERATOR" });
                         }
-                    } else if (DateTimeOffset.UtcNow >= nextClaim) {
+                    } else if (Session.Enabled && DateTimeOffset.UtcNow >= nextClaim) {
                         var claimed = await api.Post("claim", new { }, ct, true);
                         if (claimed.ValueKind != JsonValueKind.Null) await Prepare(claimed, enrolled, ct);
-                    }
+                    } else if (!Session.Enabled) ErrorCode ??= "PIN_REQUIRED";
+                    transportFailures = 0;
                 } catch (OperationCanceledException) when (ct.IsCancellationRequested) { break; }
-                catch { /* Bounded retry of transport only; no approval/PIN/token retry. Journal retained. */ }
-                await Task.Delay(TimeSpan.FromSeconds(15), ct);
+                catch (Exception failure) {
+                    transportFailures++;
+                    ErrorCode = FailurePolicy.TransferCode(failure);
+                    if (failure is ApiFailure rejected && rejected.Code is "DEVICE_UNAUTHORIZED" or "DEVICE_FORBIDDEN" or "DEVICE_ROLE_FORBIDDEN") Disable();
+                    FailurePolicy.Log(config, ErrorCode, journal?.Batch.Id ?? Guid.NewGuid());
+                    var saved = journal;
+                    if (saved?.State == "SIGNED") {
+                        int failures = saved.TransportFailures + 1;
+                        bool stopped = failures >= FailurePolicy.MaximumTransportAttempts || ErrorCode is "VALIDATION_FAILED" or "CERT_REVOKED" or "CHECKSUM_MISMATCH" or "DISK";
+                        Save(saved with { TransportFailures = failures, RetryAt = DateTimeOffset.UtcNow + FailurePolicy.Delay(failures), State = stopped ? "WAITING_FOR_OPERATOR" : "SIGNED" });
+                        if (stopped) {
+                            try { await api.Post("fail", new { itemId = saved.ItemId, leaseToken = saved.LeaseToken, errorCode = ErrorCode == "NETWORK" ? "OUTCOME_UNKNOWN" : ErrorCode }, ct, true); } catch { }
+                        }
+                    }
+                }
+                await Task.Delay(FailurePolicy.Delay(transportFailures), ct);
             }
-        } finally { if (current is not null) await current.DisposeAsync(); }
+        } finally { Disable(); if (current is not null) await current.DisposeAsync(); }
     }
     private async Task Prepare(JsonElement claimed, Identity enrolled, CancellationToken ct)
     {
@@ -113,12 +175,14 @@ internal sealed class RemoteSigning : IAsyncDisposable
                 Enum.Parse<SigningProfile>(metadata.GetProperty("requestedLevel").GetString()!),
                 ImmutableArray.Create(new SigningDocument(documentId, file, sourceHash)));
             Save(new(itemId, leaseToken, batch, "CLAIMED"));
+            var enabled = Session;
+            if (!enabled.Enabled || enabled.SessionId is null) throw new SigningFailure(SigningError.SessionExpired);
             current = new ControlledSigning(config, batch, config.SigningEngine!, enrolled.Role, setActive, waitForProbeIdle) {
                 BeforeSign = async cancellation => {
                     await api.Authenticate(enrolled, cancellation);
                     // Persist uncertainty BEFORE the remote irreversible-work fence.
                     Save(journal! with { State = "SIGNING" });
-                    await api.Post("start", lease, cancellation, true);
+                    await api.Post("start", new { itemId, leaseToken, remoteSessionId = enabled.SessionId.Value, batchId = batch.Id }, cancellation, true);
                 },
                 AfterSign = async (results, cancellation) => {
                     if (results.Count != 1) throw new SigningFailure(SigningError.ValidationFailed);
@@ -127,17 +191,19 @@ internal sealed class RemoteSigning : IAsyncDisposable
                     nextClaim = DateTimeOffset.UtcNow.AddSeconds(30);
                 }
             };
-        } catch {
-            if (journal is null) { try { await api.Post("release", lease, ct, true); } catch { } }
+            current.StartRemote(tokenSession, enabled.SessionId.Value);
+        } catch (Exception error) {
+            ErrorCode = FailurePolicy.TransferCode(error);
+            if (journal is null) { try { await api.Post("fail", new { itemId, leaseToken, errorCode = ErrorCode }, ct, true); } catch { } }
             throw;
         }
     }
     private async Task Clear()
     {
         if (current is not null) await current.DisposeAsync();
-        current = null; journal = null;
+        current = null; journal = null; ErrorCode = null;
         if (File.Exists(journalPath)) File.Delete(journalPath);
         // Retain source/output files for recovery; no broad directory deletion.
     }
-    public ValueTask DisposeAsync() => current?.DisposeAsync() ?? ValueTask.CompletedTask;
+    public async ValueTask DisposeAsync() { Disable(); if (current is not null) await current.DisposeAsync(); tokenSession.Dispose(); }
 }

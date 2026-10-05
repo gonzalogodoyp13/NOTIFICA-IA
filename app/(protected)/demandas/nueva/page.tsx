@@ -172,7 +172,7 @@ export default function NuevaDemandaPage({
   }
 
   const handleAbogadoChange = (newAbogadoId: string) => {
-    setFormData(prev => ({ ...prev, abogadoId: newAbogadoId }))
+    setFormData(prev => ({ ...prev, abogadoId: newAbogadoId, procuradorId: '' }))
 
     if (!newAbogadoId) {
       // If clearing abogado and no banco selected, clear everything
@@ -186,7 +186,8 @@ export default function NuevaDemandaPage({
     // Find selected abogado
     const abogado = allAbogados.find(a => a.id === Number(newAbogadoId))
     
-    const firstBancoId = abogado?.bancos?.[0]?.banco.id
+    const firstBancoId = abogado?.bancos?.some(link => link.banco.id === Number(bancoId))
+      ? Number(bancoId) : abogado?.bancos?.[0]?.banco.id
 
     if (firstBancoId) {
       setBancoId(String(firstBancoId))
@@ -213,6 +214,7 @@ export default function NuevaDemandaPage({
         rol: formData.rol,
         tribunalId: formData.tribunalId,
         caratula,
+        bancoId: Number(bancoId),
         cuantia: formData.cuantia ? cleanCuantiaInput(formData.cuantia) : null,
         abogadoId: formData.abogadoId ? Number(formData.abogadoId) : null,
         materiaId: formData.materiaId ? Number(formData.materiaId) : null,

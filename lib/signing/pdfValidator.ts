@@ -34,7 +34,9 @@ export async function validateSigningPdfRemote(request: PdfValidationRequest, tr
       'X-Source-Length': String(request.source.length), 'X-Source-Sha256': request.sourceChecksum,
       'X-Signer-Sha256': request.signerFingerprint, 'X-Requested-Level': request.requestedLevel },
     body: new Uint8Array(Buffer.concat([request.source, request.signed])), cache: 'no-store' })
-  if (!response.ok || !response.body) throw new SigningError('VALIDATION_FAILED')
+    .catch(() => { throw new SigningError('VALIDATOR_UNAVAILABLE') })
+  if (response.status === 429 || response.status >= 500) throw new SigningError('VALIDATOR_UNAVAILABLE')
+  if (!response.body) throw new SigningError('VALIDATION_FAILED')
   const reader = response.body.getReader(), chunks: Uint8Array[] = []
   let length = 0
   try {
@@ -46,8 +48,9 @@ export async function validateSigningPdfRemote(request: PdfValidationRequest, tr
       chunks.push(value)
     }
   } finally { reader.releaseLock() }
-  return z.object({ ok: z.literal(true), evidence: ValidationReport }).strict()
-    .parse(JSON.parse(Buffer.concat(chunks).toString('utf8'))).evidence
+  const value = JSON.parse(Buffer.concat(chunks).toString('utf8'))
+  if (!response.ok) throw new SigningError(value?.error === 'CERT_REVOKED' ? 'CERT_REVOKED' : 'VALIDATION_FAILED')
+  return z.object({ ok: z.literal(true), evidence: ValidationReport }).strict().parse(value).evidence
 }
 
 /** Separate backend process, independent of the Windows worker and its report.
@@ -71,7 +74,12 @@ export const validateSigningPdf: PdfValidator = async request => {
       const child = execFile(config.python, ['-I', path.join(process.cwd(), 'scripts/signing/validate_pdf.py'), configPath], {
         timeout: 90_000, maxBuffer: 32_768, windowsHide: true, encoding: 'utf8',
         env: { NODE_ENV: 'production', SystemRoot: process.env.SystemRoot, WINDIR: process.env.WINDIR, TEMP: directory, TMP: directory },
-      }, (error, stdout) => error ? reject(new SigningError('VALIDATION_FAILED')) : resolve(stdout))
+      }, (error, stdout) => {
+        if (!error) { resolve(stdout); return }
+        let code = 'VALIDATION_FAILED'
+        try { if (JSON.parse(stdout)?.error === 'CERT_REVOKED') code = 'CERT_REVOKED' } catch { /* No raw output. */ }
+        reject(new SigningError(code))
+      })
       child.stdin?.on('error', () => { /* child completion reports the fixed error */ })
       child.stdin?.end(JSON.stringify({ sourcePath, signedPath, sourceChecksum: request.sourceChecksum,
         signerFingerprint: request.signerFingerprint, requestedLevel: request.requestedLevel }))

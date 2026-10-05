@@ -43,6 +43,7 @@ export function mapProcuradorListItem(procurador: {
   createdAt: Date
   updatedAt: Date
   abogados: AbogadoRecord[]
+  bancos: BancoRecord[]
 }) {
   const abogados = procurador.abogados
     .map((item) => ({
@@ -60,7 +61,9 @@ export function mapProcuradorListItem(procurador: {
     activo: procurador.activo,
     abogados,
     abogadoIds: abogados.map((abogado) => abogado.id),
-    bancos: deriveBancosFromAbogados(procurador.abogados),
+    bancos: procurador.bancos.filter(link =>
+      deriveBancosFromAbogados(procurador.abogados).some(bank => bank.bancoId === link.bancoId)
+    ),
     createdAt: procurador.createdAt.toISOString(),
     updatedAt: procurador.updatedAt.toISOString(),
   }

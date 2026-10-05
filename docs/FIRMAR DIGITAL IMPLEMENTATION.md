@@ -4,6 +4,56 @@ This file is the central record for all Firmar Digital implementation notes,
 decisions, phase results, and verification evidence. Add future implementation
 notes here as subsequent phases are completed.
 
+**Current storage policy, October 1, 2026 (agent 0.13.0):** signed PDFs now use a
+shared, cloud-backed office archive with an on-demand Windows folder on every
+authorized device, including signer-only laptops. The folder shows the last
+**50 elapsed days**; older signed documents remain searchable and retrievable in
+the application. New signatures and enrollments no longer schedule automatic PDF
+copies to every PC. A storage-provider adapter supports a later move from
+Supabase object storage to a dedicated archive server without changing how users
+find or retrieve documents. See the
+[current behavior, storage contract and rollout evidence](#shared-office-storage-update-october-1-2026).
+Earlier delivery/mirror sections and the September 28 installed pilot are
+historical evidence; their automatic-delivery behavior is superseded by this
+policy after the updated backend and Windows agents are deployed. The 0.13.0
+release package is prepared locally, not yet published or installed by this work.
+
+**Deployment policy update, September 24, 2026:** the owner selected unsigned,
+personally managed installation by remote control. A purchased code-signing
+certificate is no longer a prerequisite for that path. Follow
+`agents/windows/release/managed/INSTALACION.md` and `GUIA_GITHUB.md` for the current
+package. Earlier signed-installer requirements describe the retained optional
+Authenticode system.
+
+**Pilot status update, September 28, 2026:** elevated managed installation and
+enrollment succeeded on GONZA (signer) and JARVIS (one separate receiver), with
+an installation recovery workaround on JARVIS. Two manual requests processed
+three real token-signed documents, accepted by the server and automatically
+delivered to JARVIS. Full pilot acceptance and production activation remain
+pending. See the September 28 results below and the
+[Phase 11 runbook](signing/PHASE-11-RUNBOOK.md). Earlier dated statements that no
+installation or remote hardware signing had occurred describe those earlier
+sessions, not the current status. A publisher certificate remains optional for
+the selected managed distribution path.
+
+## Current signing policy — remote office session (September 23, 2026)
+
+Any authenticated, active member of the receptor's office can authorize new
+signatures from any computer. Administrator rights are required for recovery,
+cancellation and device management, not for requesting a signature. On the token
+computer, the configured Windows operator explicitly enables **Sesión de firma
+remota…** with consent and one local PIN entry. Requests then run without local
+per-document approval while that session remains active, for at most eight hours.
+The PIN is cleared after one PKCS#11 login; it is never persisted or transmitted
+to the web/server. Closing the session, restarting the service, expiry or a
+token/engine failure disables signing until local reactivation. Closing the tray
+window alone leaves the session active. Requests waiting in the queue can execute
+when a session is enabled; review the queue before enabling it.
+
+The phase sections below retain dated test evidence. Their current operational
+instructions have been revised to this policy. Historical controlled-test approval
+dialogs are test utilities, not the enrolled agent's production authorization flow.
+
 ## Scope and sequencing
 
 The owner explicitly authorized phases 1 and 2 before Phase 0 provider/token
@@ -838,17 +888,20 @@ transfer and production version promotion remain Phase 7.
 
 Implemented:
 
-- Immutable batch metadata and one-use, five-minute approval binding the office,
-  requester, signer, certificate, profile and exact input checksums. Receiver
-  roles cannot approve. The native dialog displays those details and document IDs.
+- Immutable batch metadata binds office, requester, signer, certificate, profile
+  and exact input checksums. The controlled-test utility retains a one-use,
+  five-minute local approval; the enrolled agent now uses web authorization and
+  the locally enabled office token session. Receiver-only agents cannot sign.
 - A custom masked PIN control with no PIN-bearing Windows text value; bounded
   binary transfer after pipe-server and client-SID verification; explicit buffer
   clearing in tray, service and worker. No PIN persistence, JSON, arguments or
   environment fields. Unsupported PIN characters/overflow prevent submission.
-- One PKCS#11 login per batch, no incorrect-PIN retry, explicit certificate
+- One PKCS#11 login per authenticated session, no incorrect-PIN retry, explicit certificate
   selection, RSA/SHA-256 signing with immediate public-key verification, private
   key attribute checks, logout/session cleanup, and a five-minute parent-enforced
-  worker deadline. A Windows job terminates owned children if their owner exits.
+  worker deadline in controlled-test mode. The enrolled remote session lasts up
+  to eight hours with a five-minute deadline per document. A Windows job
+  terminates owned children if their owner exits.
   The worker waits for existing health probing to finish and suppresses new
   probes during the signing session.
 - Current-process WER no-heap/no-snapshot flags, disabled child .NET diagnostics,
@@ -1075,11 +1128,12 @@ official deployment limit and configuration details in the validator README.
 
 ### Windows integration and recovery
 
-Agent version 0.7.0 uses an explicit `signingEngine` configuration for enrolled
-signers, separate from controlled-test mode. It claims one document per local
-approval, displays requester/office/certificate/profile/document metadata, and
-uses the existing secured local PIN channel. Receivers cannot use it. Lease
-renewal continues during approval/signing, and `start` establishes the backend
+The enrolled-agent path introduced in 0.7.0 uses an explicit `signingEngine`
+configuration, separate from controlled-test mode. In 0.12.0 it claims one
+document at a time while the office token session is enabled. Local PIN entry
+enables that bounded session once; web authorization supplies the requester,
+certificate, profile and exact document version. Receiver-only agents cannot use
+the signing path. Lease renewal continues during signing, and `start` establishes the backend
 irreversible-operation fence before the token operation.
 
 The protected `signing-work.json` journal records uncertainty before starting and
@@ -1193,22 +1247,23 @@ status/deploy/generate sequence passed with **44 migrations applied**.
   failures/operator waits, validated signatures, device/token health, certificate
   expiry, last contact and existing delivery progress. Missing delivery rows are
   displayed as no distribution scheduled, never as a successful delivery.
-- Administrators can select individual estampos, every eligible row on a page,
+- Active office members can select individual estampos, every eligible row on a page,
   or all eligible results within the execution-date range. The all-results action
   rejects more than 500 matches and asks for a narrower range; it never silently
   truncates a batch. Selection stores exact version IDs and checksums. Changing
   filters clears the selection; paging can retain it.
 - A native modal dialog presents the frozen document list, certificate and
-  B/LT/LTA profile and requires explicit confirmation. It explains that approval
-  and PIN entry happen on the Windows signer. No PIN input exists in the web UI.
+  B/LT/LTA profile and requires explicit web authorization. It explains that the
+  token must have a locally enabled session and that no further local approval is
+  needed per document. No PIN input exists in the web UI.
   The selected profile is preserved exactly, with no silent downgrade.
 - Automatic and manual requests share the same table and statuses. Rows show
   origin, requester, profile, attempts, original version/checksum and job ID.
   A role-workspace link opens the associated documents. Fixed Spanish business
   messages explain failures; the separate diagnostic code is returned/displayed
   only for office administrators. Raw stored exception text is never serialized.
-- Active office members can read the center. Only an active office administrator
-  can queue, retry or cancel. `GET/POST /api/signing/center` obtains office/user
+- Active office members can read the center and queue signatures. Only an active
+  office administrator can retry or cancel. `GET/POST /api/signing/center` obtains office/user
   identity from `withApiUser`; request-supplied office IDs are rejected. Service
   methods recheck membership/permissions against the database. Mutation requests
   require matching browser Origin/Host and bounded JSON input. The Host comparison
@@ -1272,8 +1327,9 @@ cross-office notification links cannot expose their execution metadata.
   that exact attempt has an explicitly reviewed retry; a pre-signing terminated
   assignment may be released safely. Revoked/foreign devices cannot resolve it.
 - Once resolved, the agent clears only its active journal, preserves source/output
-  files and requests a fresh lease and local approval. It never repeats a PIN or
-  starts a second token operation automatically. Committed output continues using
+  files and requests a fresh lease. Another signature requires a reviewed retry
+  and an enabled token session; a closed session requires local reactivation.
+  The PIN is never retained or retried automatically. Committed output continues using
   Phase 7's same-byte replay path instead of re-signing.
 
 ### Verification and acceptance evidence
@@ -1346,11 +1402,11 @@ Final results, including the production-browser acceptance pass:
 | Consistent automatic/manual visibility | Shared row contract and table; live database assertions for both origins and statuses. |
 | Retry only eligible failures; never duplicate completion | Guarded service retry binds review to attempt number, preserves attempt limits and source checks; database cases reject stale reviews and completed signatures. |
 | Cancel only before irreversible signing | Canonical start-event and attempt guards share the office mutation lock; database cases reject post-start/waiting cancellation and old-lease start after cancellation; browser submits exact attempt snapshot. |
-| Sanitized business errors and admin-only diagnostics | Fixed message/code mapping, no raw stored errors in DTO; live member/admin isolation and browser read-only checks. Network uncertainty remains visible in Spanish through a polling interval. |
+| Sanitized business errors and admin-only diagnostics | Fixed message/code mapping and no raw stored errors in DTO. Active members can request signatures; recovery and diagnostic codes remain administrator-only. Network uncertainty remains visible in Spanish through a polling interval. |
 | Polling without browser processing | Visible-page reads every 15 seconds, aborted/stale-response fencing, suspension during confirmation/mutation; lost-response browser regression proves retained confirmation and identical replay. |
 | Server-side office isolation | Active membership/admin rechecks, office-scoped queries and existing tenant constraints; live foreign-source/context and malformed-link tests, plus actual endpoint authentication/origin checks. |
 | Responsive end-to-end behavior | Passing desktop and 390-pixel mobile Chromium cases, viewport bounds and overflow assertions, inspected screenshots. |
-| Administrator recovery without server access | Firmados retry/cancel browser actions plus real database review/recovery and native coordinator/worker checks prove retained-journal resolution, new lease/local approval, no automatic second signature and preserved files. Operator instructions are in `agents/windows/README.md`. |
+| Administrator recovery without server access | Firmados retry/cancel actions retain the reviewed-attempt requirement. Resolution preserves files and obtains a fresh lease; signing then requires an enabled token session. Committed output follows same-byte recovery. Operator instructions are in `agents/windows/README.md`. |
 | Preserve phase boundaries | No PIN-policy change, agent installation, production activation or receiver mirror; cleanup/environment audit and native test's zero hardware-login evidence. |
 
 Reproduce browser acceptance against a running production build with
@@ -1367,6 +1423,13 @@ Phase 9; broader failure monitoring and installer/pilot rollout remain Phases
 10–11. Production signing has not been activated.
 
 ## Phase 9 — Receiver role and local signed-document mirror
+
+**Historical implementation:** this section records the September 22 receiver
+delivery design and its tests. Agent 0.13.0 and the October 1 backend replace its
+automatic per-device delivery queues with the
+[shared office folder](#shared-office-storage-update-october-1-2026). In the new
+design, signer-only devices also have folder access. Do not use the scheduling,
+signer-denial or local-mirror instructions below as the current storage policy.
 
 Implemented September 22, 2026. Agent 0.9.0 adds the outbound HTTPS receiver
 processor for `RECEIVER` and `SIGNER_RECEIVER`. It reuses the existing device
@@ -1525,3 +1588,786 @@ and preserved authoritative storage. Acceptance used two isolated receiver
 instances on one Windows host; the multi-computer office pilot, signed installer,
 broader monitoring and production activation remain Phases 10–11. Automatic
 enqueue and proxy trust remain disabled and no production validator is configured.
+
+
+## Phase 10 — Failure policy, retries, monitoring and audit completeness
+
+Implemented September 23, 2026. This phase preserves immutable source/output
+versions, server-owned validation, office isolation, B/LT/LTA selection and the
+session-only PIN policy. The three phase reports were read before implementation.
+Prisma status, deploy and generate passed in order: **44 applied migrations**, no
+pending migration and no new schema migration required. No production office,
+agent installation, automatic enqueue setting or validator deployment was enabled.
+
+### Failure policy and recovery
+
+| Failure class | Behavior |
+| --- | --- |
+| Network, storage, validator unavailable/busy | Signing queue uses its existing per-item attempt budget (default four), exponential delay from 5 seconds capped at 5 minutes. Transfer retries reuse retained signed bytes. |
+| TSA or OCSP/CRL evidence unavailable | Explicit fixed codes, bounded pending retry, unchanged requested profile. A known failed engine attempt may be released for a fresh claim; the engine failure closes the token session, so local reactivation is required before another token operation. |
+| Missing token, missing/failed driver, disk permissions/space | Operator attention; no automatic token/PIN operation. |
+| PIN incorrect, locked or expired | Distinct fixed codes, operator attention, no automatic PIN retry. |
+| Expired/revoked certificate, invalid signature, checksum mismatch | Fail closed. No promotion and no weaker-profile fallback. Server pyHanko revocation status now produces CERT_REVOKED through both local and HTTPS validator transports. |
+| Unknown/interrupted token outcome | Preserve journal/output and require reviewed recovery. Expired SIGNING leases become WAITING_FOR_OPERATOR. |
+| Receiver network/storage | Six attempts per reviewed cycle; exponential delay from 30 seconds capped at one hour. Failed responses are idempotent and cannot extend the delay repeatedly. |
+| Receiver disk/checksum/collision/unknown | Pause immediately for operator action. Same-office admins can reactivate delivery after explicit review; stale attempt snapshots, revoked devices and foreign offices are rejected. |
+
+Agent **0.10.0** persists its signed-upload failure count and next retry time.
+Six failed transport cycles or a permanent rejection stop upload attempts while
+preserving the journal and exact signed file. Even an exhausted journal reconciles
+an already-committed result through the original device/attempt and checksum;
+it does not upload or sign again. Connectivity/acknowledgement polling uses capped
+backoff and continues so restored connectivity can be detected. Receiver begin
+replays do not consume another attempt while the same download is in progress.
+
+Batch aggregation retains the existing semantics: remaining runnable work can
+complete despite other failed items; operator waits remain explicit; all-success
+is COMPLETED, mixed terminal outcomes are PARTIAL, and all-failed is FAILED.
+Exhausted signing budgets remain a deliberate stop; reviewed recovery cannot
+bypass the signing attempt limit.
+
+### Central monitoring and maintenance
+
+Firmados now includes an office-wide alert panel independent of execution-date
+filters/pagination. It derives alerts directly from durable device, item, attempt,
+validation-event, artifact and delivery records, so monitoring does not depend on
+an agent or browser processing the queue. It detects:
+
+- Missing/stale heartbeat after 90 seconds; token missing and driver/certificate
+  selection problems; certificate expiry within 30 days and already-expired or
+  reported/validated revoked certificates.
+- Queue age and delivery lag beyond 15 minutes, operator-required/failed work,
+  expired assignments and uncommitted uploads awaiting cleanup.
+- Repeated TSA and revocation failures (two in 24 hours), individual validation
+  rejection and repeated validation failure (two in 24 hours).
+- Receiver disk errors/low space (below 64 MiB), local processing errors, failed
+  deliveries, and maintenance missing/stale for 10 minutes.
+
+Diagnostic codes are returned only to office administrators; members receive
+fixed business messages. Each signed row exposes its certificate SHA-256, signed
+version/checksum, validating time and signer device, alongside each receiver's
+status, delivered time, retry time and reviewed recovery action. Local worker
+failures are included in strict, fixed-code heartbeats. Disk reporting uses the
+receiver destination volume. Heartbeats continue through signing using the last
+public certificate observation without opening another PKCS#11 session.
+
+The protected GET endpoint at /api/internal/signing/maintenance runs lease
+recovery and safe Phase 7 orphan cleanup even when no signer is online. It services
+up to 100 offices oldest-success-first, retains the existing 100-lease/20-artifact
+per-office bounds, and stops starting additional offices after four minutes.
+Each successful office pass records a canonical maintenance marker; failures
+return 503 and the dashboard independently detects missing success. Committed
+artifacts and objects referenced by document versions remain protected.
+
+Deployment must provision **CRON_SECRET** (random, at least 32 characters) on the
+server and scheduler. Missing/wrong secrets fail closed before database work.
+Use **SIGNING_MAINTENANCE_URL** pointing to that HTTPS endpoint and run
+**node scripts/signing/maintenance-runner.mjs** under a supervisor; it dispatches
+one bounded request per five-minute cycle, rejects redirects/credential-bearing
+URLs and emits fixed diagnostics. **--once** exits with success/failure for an
+external scheduler. The scheduler is implemented, but has not been installed or
+activated against production in this phase.
+
+An existing managed scheduler can call the same endpoint every five minutes.
+Vercel Pro/Enterprise can use a five-minute cron; Hobby supports daily schedules
+only, so vercel.json was left unchanged rather than adding a plan-dependent
+deployment failure. See [Vercel cron limits](https://vercel.com/docs/cron-jobs/usage-and-pricing)
+and [cron authorization](https://vercel.com/docs/cron-jobs/manage-cron-jobs).
+The maintenance credential is never sent to a signing/receiving agent.
+
+### Audit, correlation and retention
+
+Canonical events include assignment, web-requester remote authorization, signing
+start, automatic retry scheduling, successful independent validation, failed
+validation and delivery start/reviewed retry, in addition to the existing request,
+claim, attempt, commit, cancellation, delivery failure/acknowledgement and device
+enrollment/revocation events. `signing.remote_authorized` records the requesting
+account, device, attempt, exact source version/hash, certificate, batch and enabled
+remote-session ID. Session identity is attested by the authorized agent; it is not
+an independently verified Windows-user identity. Historical `signing.local_approved`
+events are retained without relabeling them as remote authorization.
+
+Validation failures persist separately without promoting a document. Successful
+validation, commit, signature evidence, item/attempt completion, version promotion
+and delivery creation remain atomic. Critical audit persistence failure rolls back
+the associated mutation. Commit metadata includes source/output versions and
+hashes plus certificate identity. Historical delivery failures retain fixed error
+codes and attempt counts even when an operator reactivates a delivery.
+
+Device requests generate correlation IDs; structured logs project only fixed
+fields and allowlisted error codes. The correlation ID is returned in
+X-Signing-Correlation-Id and propagated into signing/validation audit events.
+The local batch ID links native diagnostics with device-attested approval.
+Arbitrary exception text, request bodies, authorization, PINs, URLs and storage
+credentials are never included in these new diagnostics.
+
+Retention rules:
+
+- Native technical diagnostics: one 1 MiB operations.jsonl plus one previous
+  file, maximum 30-day age enforced on the next write, under existing protected
+  state-directory ACLs. An offline machine cannot perform timed deletion until
+  the process runs again.
+- Server stdout/request diagnostics: deployment log destination must enforce a
+  maximum 30-day retention and restricted operations access. This is an explicit
+  deployment requirement; no external log-provider setting was changed.
+- Expired device sessions/challenges: maintenance removes them after 24 hours.
+- Canonical audit, attempts, signature/validation evidence, referenced source and
+  signed PDFs, delivery records and manifests: retained indefinitely by this
+  implementation. No technical-log cleanup can delete them. Any future legal
+  retention or archival/LTA policy needs its own approved implementation.
+- Active/unresolved local journals and PDFs remain available for reviewed recovery;
+  only uncommitted, unreferenced server uploads follow the existing two-hour
+  reservation expiry and safe cleanup protocol.
+
+Current Supabase changelog, RLS and storage access-control documentation were
+reviewed. The project remains Prisma-only/default-deny for signing tables; no
+Data API grant or storage exposure was added. References:
+[Supabase changelog](https://supabase.com/changelog),
+[RLS](https://supabase.com/docs/guides/database/postgres/row-level-security),
+[storage access control](https://supabase.com/docs/guides/storage/security/access-control).
+
+### Verification
+
+| Check | Result |
+| --- | --- |
+| Standard integration suite | **320 passed**, 77 opt-in checks skipped in this invocation. |
+| Opt-in database suite | **73 passed**, across eight isolated schemas cloned from deployed constraints/triggers. All temporary schemas removed. |
+| Production build | Next.js production compilation, TypeScript and lint passed. |
+| Repository guards | Authentication/audit scan (360 files), UTF-8 and infrastructure verification passed; live database connectivity passed with zero infrastructure warnings. |
+| Browser | **Seven Chromium cases passed** against the local production build, including mobile alerts/evidence/reviewed delivery retry, read-only views, exact retry payloads and actual endpoint authorization. UI mutations use intercepted synthetic fixtures. |
+| Windows publish | Self-contained win-x64 agent 0.10.0 published successfully, zero warnings. |
+| Native regression | Foundation **12**, session **22**, transfer **8**, receiver **10**, reviewed recovery **5**, failure/retention/reconciliation **17** checks passed. No token login. |
+| Actual compiled agent over HTTPS | **Two integration cases passed**, including identity/session, heartbeat, restart and revocation. The connected USB token was probed for public certificate information only. |
+| Fresh cryptographic fixtures | **Four cases passed**: current revocation evidence, missing evidence rejection, revoked signer rejection with CERT_REVOKED, and altered-source rejection. |
+| Private validator HTTP | **Four valid-signer checks and four revoked-signer checks passed**, including bearer enforcement and fixed error propagation. |
+| Deployment safety | Scheduler fails closed without configuration. No production agent enrollment, validator, maintenance scheduler or automatic enqueue was activated. |
+
+The initial run against retained historical LT fixtures rejected the dated real-token
+fixture under current-time validation. That run is **not counted as passing** and
+does not establish a new hardware LT signing result. Fresh software certificates
+and CRLs were generated for this phase's failure-policy checks. No PIN was requested,
+no C_Login was performed, and no new token signature was produced. The earlier
+phase reports remain the source of the hardware signing evidence.
+
+Local evidence (gitignored generated artifacts):
+
+- `agents/windows/artifacts/phase10/`: the six native self-test JSON reports,
+  `monitoring-mobile.png`, `validator-http.json`, `validator-http-revoked.json`
+  and `cleanup-results.json`.
+- `agents/windows/artifacts/phase10/validator-tests-593b2729ec2444d382c0d129b2e35631/`:
+  fresh cryptographic fixtures and validation results.
+- `agents/windows/artifacts/integration-results.json`: compiled-agent HTTPS evidence.
+
+Repeat the main checks with `npm run test:integration`,
+`npm run test:signing:database`, `npm run build`, `npm run check:auth-audit`,
+`npm run check:utf8` and `npm run verify:infrastructure`.
+Run `npx playwright test e2e/firmados.spec.ts --project=chromium` with the existing
+QA authentication and a local test server. Native executable flags are documented
+in `agents/windows/README.md`, including `--failure-policy-self-test`.
+`scripts/signing/test_validator.py --fresh-only` selects newly generated fixtures;
+the test still requires the validator dependencies/configuration described in the
+earlier phases. Do not interpret opt-in skips as executed acceptance checks.
+
+Final cleanup verified **zero temporary signing schemas, zero synthetic public
+offices, zero public signing devices and 44 applied migrations**. Automatic enqueue
+and trusted proxy remain disabled; validator and maintenance configuration remain
+absent. Temporary HTTP servers and agent processes were stopped. No Windows
+service was installed. Generated changes to the older tracked screenshots and the
+unchanged Vercel deployment file were restored; the Phase 10 screenshot is retained
+under the evidence directory.
+
+### Phase 10 requirement and exit-criterion audit
+
+| Requirement | Evidence |
+| --- | --- |
+| Explicit failure policy and bounded retry | Fixed error map, queue/delivery budgets, persisted native upload budget, unit/native tests and 16 actual database failure injections. |
+| No automatic PIN retry or PAdES downgrade | PIN errors require an operator; requested LT survives injected failures; a failed engine session must be locally enabled again before retry. |
+| Partial batches finish remaining work | Actual database mixed-outcome batch completes its remaining item, preserves one signature on commit replay, and aggregates PARTIAL. |
+| Central visibility independent of active signer | All-office monitoring ignores date filters; stale heartbeat/maintenance and expired-lease/orphan alerts expose interrupted/offline work. Database maintenance test runs without an online device. |
+| Distinguishable automatic retry and operator intervention | Retry times, fixed business messages and per-receiver status in Firmados; tested mobile review workflow and admin/member separation. |
+| Recoverable delivery and lost commit response | Bounded delivery retries with audited admin review; native exhausted-journal reconciliation verifies the already-committed checksum without upload or token use. |
+| Reconstruct request, signer, source, validation and delivery | Canonical related events plus immutable version/hash/certificate evidence; database assertions cover local approval, validation failure/success, commit, retries and delivery history. |
+| Critical audit must persist | Injected audit persistence failure rolls back signing start; existing atomic completion/delivery rollback checks also pass. |
+| Safe diagnostics and retention | Generated correlations on JSON/PDF responses, allowlisted logging/heartbeat payloads, strict audit metadata, native redaction/rotation/age tests and preservation of audit/attempt evidence during maintenance. |
+
+**Phase 10 exit criterion met in the implemented and tested workflow:** signing
+and delivery failure classes are represented by durable state, visible central
+alerts, explicit retry scheduling or operator action. Offline agents and absent
+maintenance are themselves visible. This is dashboard monitoring; it does not
+send email/SMS alerts. Runtime maintenance and server-log retention must be
+provisioned during deployment as described above. The installer, multi-computer
+office pilot, operator acceptance and production activation remain **Phase 11**.
+
+## Phase 11 — Release tooling and local verification; pilot still pending
+
+Started September 23, 2026. **Phase 11 is not complete and production is not
+approved.** The user confirmed that two receiver computers are not currently
+available and delegated the technical release choices. No code-signing certificate
+with a private key was found in the Windows user/machine certificate stores.
+The current process is not Windows-administrator elevated. These limits are not
+replaced by local test processes or an unsigned build.
+
+Before implementation, Prisma status, deploy and generate passed in that order:
+44 migrations applied, none pending, no new schema migration. All Phase 10 changes
+remain in place. The implementation adds the following:
+
+- **Agent 0.11.0 and release compatibility policy.** Server-only
+  `SIGNING_MIN_AGENT_VERSION` prevents older/unknown versions from claiming or
+  starting new signing work and beginning new receiver transfers. Heartbeats,
+  existing transfer completion, recovery, acknowledgements and retirement remain
+  available. Malformed policy fails closed. Firmados shows an update alert.
+  An unset floor preserves pre-rollout behavior; the current remote-session
+  deployment requires `0.12.0`, documented in `.env.example`. No active environment was changed.
+  The agent reports its assembly version; this is compatibility control, not
+  remote binary attestation.
+- **Authenticated retirement.** A purpose-bound proof of the software device key
+  can revoke only that same device. The transaction invalidates all sessions and
+  challenges and records canonical revocation once. Replay after a lost response
+  returns the confirmed result, including for an already-revoked device. The native
+  administrative retirement command requires the service stopped, refuses active
+  signing journals, retains a receipt, and deletes the software key only after
+  confirmation. It never operates the USB private key.
+- **Installer source and signed-release builder.** `Notifica.Setup` builds an x64
+  bootstrapper using the Windows .NET Framework 4.8 prerequisite. Embedded scripts
+  are extracted under administrator/SYSTEM-only ACLs. Child PowerShell uses the
+  system executable and module directory; SCM operations use the absolute Windows
+  binary path. The bootstrapper and agent executables/assembly must have the same
+  pinned publisher as the trusted, timestamped Authenticode manifest. SHA-256 binds
+  the entire payload. Manifest/archive locks span verification and consumption.
+  There is no release-mode option to skip signature checks.
+- **Pinned packaged dependencies.** .NET agent runtime 10.0.12, build SDK 10.0.401
+  without roll-forward, Microsoft OpenJDK 21.0.12.1+1, and DSS 6.5. The Java/DSS
+  archives are checked against the existing known SHA-256 values; upstream
+  redistribution materials are retained. Drivers remain separately installed.
+- **Protected service and tray installation.** A virtual service account, local
+  non-exportable machine CNG identity, delayed startup, 10/30/60-second service
+  recovery, per-user tray task, protected version/configuration/state directories,
+  explicit certificate/trust/TSA setup, a newly provisioned receiver directory,
+  readiness tied to the current SCM process/version, and an Add/Remove Programs
+  entry. Enrollment still authorizes SIGNER, RECEIVER or SIGNER_RECEIVER centrally.
+- **Staged upgrades and rollback.** Signed manifests constrain pilot computer names,
+  source versions, minimum version, upgrade/rollback intent and authorization expiry.
+  New versions use separate protected directories. The switch journals its previous
+  installation/configuration, restores it on activation failure, and keeps a durable
+  recovery journal if rollback also fails. Explicit `repair` restores an interrupted
+  upgrade. Active signing journals block upgrade/removal. A signed rollback cannot
+  go below the installed minimum. First installation now records its validated
+  configuration/key identity before service/key provisioning. `repair` resumes
+  that checkpoint, preserves an existing key and refuses to replace a missing
+  enrolled identity. Failures before checkpoint creation still require inspection.
+  Setup serializes operations, validates public configuration before directory
+  creation, and checks recorded service/tray ownership before stopping them.
+  These recovery paths have not passed the elevated signed-install acceptance
+  scenario.
+- **Removal preserves evidence.** After confirmed retirement it removes the service,
+  tray task and installed-program entry while retaining configuration, binaries,
+  source/output PDFs, receiver copies and manifests. If retirement cannot be
+  confirmed, removal stops with the installation retained. It performs no recursive
+  document-directory deletion.
+- **Runbook and acceptance gate.** The new
+  [Phase 11 runbook](signing/PHASE-11-RUNBOOK.md) covers release preparation,
+  installation/enrollment, upgrades, rollback, removal, certificate renewal, token
+  replacement, PIN reset, device revocation, partial batches, TSA/OCSP outages and
+  recovery. The [pilot record](signing/phase11-pilot.template.json) contains every
+  mandatory scenario. The verifier requires operator acceptance, two distinct
+  receiver computer/device identities, matching PDF hashes, complete scenarios and
+  gates, and existing hash-matched evidence files. Broad release metadata binds the
+  accepted record's hash. This checks completeness, not the truth of an operator's
+  attestation; release owners must review the evidence itself.
+
+### Verified locally
+
+| Check | Observed result |
+| --- | --- |
+| Standard integration | **331 passed**, 80 opt-in checks skipped in that invocation. |
+| Full signing database suite | **76 passed**, including purpose-bound retirement/replay, foreign-device proof rejection, session invalidation, version gating and in-progress delivery completion. Disposable schemas only. |
+| Production build and guards | Next.js compilation/type checking/build passed; standalone lint had no warnings/errors; auth/audit scan passed (361 files); UTF-8 passed; infrastructure/live DB checks passed with zero warnings. |
+| Signing-center browser suite | **Seven Chromium cases passed** against the production build, including actual endpoint authorization and synthetic UI mutation fixtures. This is the signing-center suite, not a claim that every unrelated deployed-QA workflow was executed. |
+| Native agent checks | Foundation **14**, signing session **22**, transfer **8**, receiver **11**, reviewed recovery **5**, failure policy **18** passed. Foundation checks include guards against provisioning/repair with a user-key configuration. The new receiver check proves update-required preserves pending work without falsely reporting a failed transfer. |
+| Packaged Java/DSS | **Five software-certificate checks passed** using the candidate's actual bundled runtime/library paths, including B/LT/LTA engine paths. No USB login or operating-system trust change. |
+| Actual agent HTTPS | **Three cases passed** across signer foundation and two receiver processes: CNG identity, public token heartbeat, restart/revocation, interrupted download, lost acknowledgement, collision preservation, same-byte private-storage delivery and source preservation. Both receivers ran on this one PC. |
+| Release integrity/fault recovery | **34 checks passed** under both PowerShell 7 and Windows PowerShell 5.1. Covers checksum tampering, archive traversal/device names, target/source version restrictions, rollback floor, unsigned/wrong-publisher rejection, atomic configuration replacement, injected activation failure, successful rollback, failed rollback with retained journal, document preservation, side-effect-free preflight, receiver-directory separation, initial activation checkpoints and service ownership. |
+| Pilot verifier | **Six checks passed** using explicitly fictional records; missing acceptance, a single computer, incomplete scenarios/gates and modified evidence are rejected. No actual pilot acceptance was recorded. |
+| Candidate packaging | Checksum-pinned dependency assembly and native/bootstrapper compilation passed. The candidate is explicitly **unsigned and non-installable**, with `distributable=false` and no signed release manifest. |
+
+Evidence is retained in `agents/windows/artifacts/phase11/`, including native JSON
+reports, `bundled-engine-self-test.json`, `package-tests/results.json`,
+`package-tests-ps51/results.json`, `pilot-verifier-tests/results.json` and
+`candidate-final/candidate.json`. The final candidate payload hash is recorded in
+that JSON. Existing HTTPS harness outputs are
+`agents/windows/artifacts/integration-results.json` and
+`agents/windows/artifacts/phase9/receiver-https-results.json`; their timestamps
+identify this 0.11.0 regression run. Generated candidates/evidence remain gitignored.
+
+### Acceptance still required — do not mark Phase 11 complete
+
+| Requirement | Missing authoritative evidence |
+| --- | --- |
+| Signed installer and signed update packages | A provisioned organization-owned code-signing certificate/signing service, successful trusted publisher/timestamp verification and actual signed release artifacts. The USB FEA certificate is not a substitute. |
+| Installed Windows lifecycle | Elevated installation, actual SCM recovery, tray access as the intended ordinary user, upgrade/rollback/repair/uninstall on the signed package, confirmation of credential revocation and preserved PDFs. Source/unit tests alone do not prove this. |
+| Pilot topology | One pilot office, one actual signer token and **two separate receiver computers**. The user explicitly reports these receivers are unavailable. |
+| Complete automatic chain and fault scenarios | Real workflow/manual selection from another computer, a locally enabled token session reused across hardware LT signatures, independent validation, authoritative storage and matching automatic delivery on both receiver computers; all scenarios in the pilot template observed and reviewed. |
+| Renewal and operational acceptance | Actual certificate renewal/retirement exercise, local PIN/token/provider recovery checks, operator sign-off and review of the complete evidence pack. |
+| Production rollout | Accepted signed pilot, release security review and required QA suites, verified TLS/private validator/TSA settings, minimum version, maintenance schedule and log retention, then controlled office activation. |
+
+Automatic enqueue, trusted proxy, validator and maintenance production configuration
+remain disabled/unconfigured. No public signing devices were enrolled, no Windows
+service was installed by this phase, no code-signing certificate was procured, and
+no trusted roots were installed. The connected token was used only for public
+certificate probing, not a new private-key signing operation. **Phase 11 remains
+open until the signed installed pilot and operator acceptance are actually proven.**
+
+Final cleanup confirmed zero temporary signing schemas, zero synthetic public
+offices, zero public signing devices and 44 applied migrations. Temporary agent
+processes and the local browser-test server were stopped. The two historical
+tracked screenshots regenerated by the browser checks were restored. The latest
+unsigned candidate has payload SHA-256
+`20d7afe136514e1f0b96b685cd24c3aafc044c998d1d652881248e623dd9a13a`;
+this checksum records the candidate, not a publisher signature or pilot acceptance.
+
+Follow-up recovery hardening was rebuilt on September 23: both native projects
+compiled successfully, release scripts parsed successfully, and the refreshed
+foundation regression passed all 14 checks. Its first sandboxed attempt could
+not use Windows CNG; the unrestricted run passed and removed its temporary
+software key. The 34 release checks passed on both PowerShell versions. No service
+or operating-system trust was installed, and no USB login was attempted. The
+checkpoint and ownership changes above remain subject to the signed installed
+lifecycle acceptance gate; they are not evidence of a completed office pilot.
+
+## Remote signing from the receptor account — September 23, 2026
+
+**Implemented in agent 0.12.0.** The owner explicitly selected one local token
+activation followed by remote signatures while that session stays active.
+The earlier phase instructions above were revised where they required an
+administrator to request signatures or local approval/PIN entry for every document.
+Dated hardware and controlled-test evidence remains identified as historical.
+
+### Operational behavior
+
+1. On the token computer, the configured Windows operator opens **Sesión de firma
+   remota…**, verifies the office and certificate, accepts the office-request
+   consent and enters the PIN once. The local SID and service identity checks
+   still protect that channel; enrollment and PIN transfer remain separate.
+2. Any authenticated, active account member of that same office can select and
+   authorize eligible documents in **Firmados** from another computer. That
+   browser does not need a Windows agent, the USB token or its PIN. There is no
+   additional local approval per document. A RECEIVER agent still only downloads;
+   the user on that computer authorizes signatures through the web.
+3. A private, owned worker keeps the actual authenticated PKCS#11 session open
+   for at most eight hours. It receives the PIN once, clears it after login and
+   processes one immutable document per claim. It does not store a PIN for later
+   logins. Per-document execution remains bounded to five minutes. Public health
+   probes are suppressed while the session owns the provider.
+4. **Cerrar sesión de firma**, expiry, service restart or token/engine failure
+   closes the session. Removing the token closes it when the failure is detected;
+   reconnecting it does not reactivate signing. Closing just the tray window
+   leaves the session enabled. Pending requests can execute after activation.
+5. Without an enabled session, the agent does not claim new work and reports
+   `PIN_REQUIRED`; Firmados can show the session-required operational alert.
+   Incorrect, locked and expired PINs are distinguished without an automatic retry.
+6. Administrators retain recovery, cancellation, delivery retry and device
+   management. A failed/uncertain attempt retains its journal for reviewed recovery.
+   An already signed PDF follows the existing same-byte upload/reconciliation path;
+   a lost network response is not permission to invoke the token again.
+
+### Authorization and evidence
+
+- Server queries recheck active office membership when accepting a web request,
+  selecting work and starting the signing operation. Foreign/inactive accounts
+  cannot authorize work for that office. Source version/hash, certificate, role,
+  lease, requested profile and independent PDF validation remain enforced.
+- `signing.remote_authorized` records the actual requesting account, device,
+  attempt, immutable source version/hash, certificate, batch and remote-session ID.
+  Persistence is critical: an audit failure rolls back the start fence. Historical
+  local-approval events keep their original meaning. A shared account identifies
+  the account used, not which human was physically at a remote keyboard.
+- The remote-session ID is public correlation metadata attested by the agent,
+  not a PIN or bearer credential. The device contract rejects PIN fields and
+  conflicting local/remote approval modes. A queued operation cannot silently
+  switch to a replacement token session after its session ID was captured.
+- Agent and setup source versions are 0.12.0. The example minimum-version floor,
+  installation example and Phase 11 runbook were updated. Existing unsigned
+  0.11.0 candidates are historical artifacts and must be rebuilt before rollout.
+- The Spanish manual was revised throughout and regenerated as a 27-page
+  edition 1.1: `output/pdf/NOTIFICA_IA_Manual_de_Firma_Digital.pdf`. Instructions
+  now distinguish web users, the token host, receivers and administrative recovery.
+
+### Verification
+
+| Check | Result |
+| --- | --- |
+| Required Prisma startup | Status, deploy and generate succeeded in order; 44 applied migrations, none pending; no new schema migration required. |
+| Application | Production build, TypeScript and ESLint passed; 331 standard tests passed. |
+| Signing database suite | 78 passed across eight suites using disposable schemas. Follow-up checks passed for requesting-account attribution, audit rollback and the strict remote-start device contract. |
+| Chromium | Seven cases passed against the production build, including ordinary-member selection/authorization, no web PIN, exact retry payloads, mobile layout and actual endpoint authentication/origin checks. Mutations used synthetic intercepted fixtures. |
+| Native signing session | 28 checks passed, including two separate requests with one simulated login, explicit close, eight-hour expiry, office/certificate binding, token-removal failure, no PIN retry and no profile downgrade. |
+| Native coordinator recovery | Seven checks passed: no claim while locked, automatic processing after activation without local per-document approval, retained failure, no unreviewed second operation, fresh reviewed lease/batch and preserved source. |
+| Worker / secured pipe / native window | Six checks passed with process exit 0. A deliberately missing provider proves failed activation clears the PIN and leaves no enabled session; the actual form requires consent and preserves typed input through secured-pipe polling. Its rendered layout was inspected. |
+| Manual | All 27 pages rendered and visually reviewed; pagination, titles and extracted text checks passed. |
+
+These native tests use synthetic token implementations or a deliberately missing
+provider. **No real token PIN or private-key operation was used to test the new
+remote-session workflow, and no agent was installed or deployed.** The real
+multi-computer, signed-installer pilot remains part of the open Phase 11 gate.
+Historical successful USB signatures do not establish that this new end-to-end
+remote workflow has already passed that pilot.
+
+## Operator-managed unsigned GitHub distribution — September 24, 2026
+
+The owner explicitly declined purchasing a code-signing certificate and selected
+personal installation by remote control. A separate Windows distribution folder
+was requested, rather than publication of the whole web application repository.
+
+Implemented `agents/windows/release/build-managed-distribution.ps1` and the
+`release/managed/` installer, manifest verifier, tests and Spanish guides. This is
+an explicit unsigned installation path; the Authenticode bootstrapper remains
+unchanged and optional. The package makes no claim of a verified Windows publisher.
+
+The installer supports new installations and resuming its own incomplete install
+with the same package/request hashes and device key. It rejects existing completed
+installations rather than overwriting their identity or documents. It verifies an
+operator-supplied manifest hash, package files and payload; preserves protected
+ACLs, virtual service identity, local SID checks, configuration validation, token
+driver signature checking and service readiness checks. It does not disable Windows
+protections. Updates, rollback and removal of these manual installations require
+a separately reviewed procedure; the old signed bootstrapper is not that procedure.
+
+Prepared output:
+
+- `output/github/notifica-windows/repository`: eight small files (Spanish guides,
+  installer tools, sanitized receiver template and `.gitignore`) for a new private
+  GitHub repository, suggested name `notifica-windows`.
+- `output/github/notifica-windows/release-assets`: the approximately 406 MiB
+  `NOTIFICA-Windows-0.12.0-managed.zip`, SHA-256 list and ready-to-copy release notes.
+  The ZIP belongs in **GitHub Releases**, not ordinary repository commits.
+- ZIP SHA-256: `5f429a0002b5efbf38f1a0dd685462115dabb6106a669c5838ca9b3c1ee12802`.
+- Manifest SHA-256: `030e1d7638791d761a3318d0e373da36f1d483e5fdfee4a475c248e984cb53ce`.
+
+The builder uses a hash-pinned previously verified runtime archive and rebuilds
+the current .NET agent and Java bridge. It retains dependency notices while
+omitting the upstream public demonstration P12 key. The final payload scan found
+no PFX/P12/private-key filenames, environment files, device identity, customer
+configuration or signing journals. No project `.env`, database or client PDF was
+copied. Generated GitHub output is ignored by the application repository.
+
+Verification: 12 managed distribution checks passed under PowerShell 7 and 5.1;
+34 existing release integrity checks passed. The packaged agent passed 14
+foundation, 28 signing-session and eight transfer checks. Final packaged Java/DSS
+passed three synthetic PDF checks, including source mismatch and missing-TSA
+rejection. The final outer ZIP was re-extracted, its manifest/files/payload hashes
+verified, and its PowerShell 5.1 preflight passed without creating an installation
+or receiver directory. Required Prisma status/deploy/generate completed; the
+verified local Next.js development server was restarted to release a DLL lock and
+returned on port 3000. No migrations were pending.
+
+During the September 24 preparation session, no GitHub repository or release was
+created or published, no Windows service was installed and no real token login
+was used. At that point, actual elevated installation, Windows policy compatibility
+on target PCs and the multi-computer pilot remained pending; see the September 28
+results below for subsequent installed testing.
+The GitHub guide recommends a pre-release until those checks are accepted. SHA-256
+provides comparison with the operator's trusted reference; it is not publisher
+authentication. The guides explain that closing a Windows warning is insufficient
+and some application-control policies can prevent unsigned execution entirely.
+
+## Phase 11 — Installed managed pilot results — September 28, 2026
+
+**Partial pilot passed; Phase 11 remains open and production is not approved.**
+This entry consolidates the observations recorded in the
+[Phase 11 runbook](signing/PHASE-11-RUNBOOK.md). It records previously performed
+tests; this documentation update did not rerun the pilot or independently audit
+the GitHub release. The owner reported creating the repository and downloading
+`NOTIFICA-Windows-0.12.0-managed.zip` onto the separate testing laptop.
+
+### Installed environment and enrollment
+
+The package reference hashes are those recorded in the September 24 distribution
+entry above. Both computers were new installations. Preflight returned
+`PREFLIGHT_PASSED_NO_INSTALLATION_PERFORMED`; elevated installation ultimately
+returned `INSTALLED_ENROLLMENT_REQUIRED` on each computer. Separate ten-minute
+enrollment codes from the same office administrator enrolled both devices, and
+the operator confirmed both connected in Firmados.
+
+| Computer / enrolled device | Role | Observed setup |
+| --- | --- | --- |
+| `GONZA - Signer` | `SIGNER` | USB token with signed x64 `C:\Windows\System32\eTPKCS11.dll`; remote signing session enabled locally with consent and PIN. Signer installation used PowerShell 7. |
+| `JARVIS - Receiver` | `RECEIVER` | Separate computer without a token; received PDFs automatically into `C:\NotificaFirmados`. Installation required the service-creation recovery described below. |
+
+The public token probe returned `READY`, with certificate SHA-256
+`67887678fae15909edc535e064368b78d0d65c0eeb70b314d4e9baccd16b1a01`
+and expiry September 14, 2027. The probe itself did not log in or sign.
+The backend used a temporary HTTPS tunnel to the local application. This is a
+test environment, not a permanent production address. Replacing the origin
+requires updating the server public-origin setting and protected agent
+configuration. The signer used public CA/TSA certificates and the prior
+controlled-test FreeTSA configuration; production provider approval is pending.
+
+### Problems encountered and resolutions recorded
+
+| Observation | Resolution and limitation |
+| --- | --- |
+| `LOCAL_PATH_REQUIRED` | Used absolute installer/request paths instead of a relative request path; integrity checks remained enabled. |
+| `MANAGED_INSTALLATION_FAILED` / SID translation failure | Corrected the transcribed receiver SID using `whoami /user` under the intended interactive account. |
+| `ADMINISTRATOR_REQUIRED` | Reran installation in an elevated PowerShell window. |
+| `SERVICE_CONFIGURATION_FAILED` on JARVIS | Verified the incomplete installation had no service, created the service with `sc.exe --%` to preserve quoted paths, verified executable/account/delayed startup, then used the original package/request with `-Resume`. Identity and state were preserved. This proves recovery with operator intervention, not a clean original PowerShell 5.1 installation. The distributed installer was not patched or republished. |
+| Enrollment `403 / ORIGIN_REQUIRED` | Configured the exact public HTTPS origin using server-only `SIGNING_BROWSER_ORIGIN`, with `SIGNING_TRUST_PROXY=true` on the loopback test backend. HTTPS, exact-origin and authenticated-office checks remained enforced; arbitrary forwarded host headers were not trusted. Fourteen relevant tests passed and an unauthenticated live request returned 401. |
+| Validator-not-enabled warning | Enabled local `SIGNING_VALIDATOR_CONFIG` with the controlled-test runtime and public trust configuration. Four fresh cryptographic checks and four worker HTTP checks passed, including rejection of revoked certificates, missing revocation evidence, altered documents and unauthorized worker requests. An older token-signed sample still failed current trust validation; requirements were not relaxed. |
+| Signing-center origin `403` | Updated its separate comparison to the same pinned public-origin policy while preserving direct local testing. Twenty-two targeted tests passed; login returned 200 and an unauthenticated center mutation returned 401. The rejected request had not entered the queue and was resubmitted by the operator. |
+
+The targeted test counts above describe their respective recorded runs and must
+not be added together as a count of distinct tests. The validator checks used
+synthetic cases; they are separate from the real hardware observations below.
+
+### Real signing and automatic delivery observed
+
+With GONZA's token session active, the operator authorized requests from Firmados
+on JARVIS, selecting `GONZA - Signer` and the guided PAdES-LT profile:
+
+- **One estampo:** completed and appeared automatically in `C:\NotificaFirmados`;
+  the operator located and opened the PDF.
+- **Two-estampo batch:** the operator reported both additional documents completed
+  during the ongoing remote signing session.
+
+Server logs corroborated two successful center requests and three successful
+`start`, `result`, `delivery-begin`, `delivery-download` and `ack` sequences.
+Together with operator observations, this establishes real hardware-token
+signing, server acceptance/independent validation and automatic delivery to a
+separate computer for three documents.
+
+The exact token-login count was not independently instrumented. A separate
+authoritative-versus-local SHA-256 comparison and a complete immutable evidence
+pack were not collected. The successful batch does not establish recovery from
+a partially failed batch, and manual selection does not establish automatic
+workflow enqueue or date-range filtering acceptance.
+
+### Supporting records
+
+- `.tools/temporary-test/app-enrollment.stdout.log`: enrollment and origin-fix observations.
+- `.tools/temporary-test/app-signing.stdout.log`: successful signing/delivery sequences.
+- `.tools/temporary-test/validator-tests-1cc51469fa2b47febad613b207058e8f/results.json`
+  and `.tools/temporary-test/validator-service-fresh-readiness.json`: synthetic validator checks.
+- `output/windows-signer-installer/token-probe-result.json`: public token readiness.
+
+These are local working records, not a completed pilot acceptance record. Do not
+include personalized installation requests, enrollment codes, device credentials
+or PINs in an exported evidence pack.
+
+### Remaining Phase 11 acceptance
+
+The following list records the remaining September 28 pilot work. For the current
+0.13.0 release, replace automatic-delivery acceptance with the shared-folder,
+archive and upgrade checks in the
+[October 1 update](#shared-office-storage-update-october-1-2026). The historical
+0.12.0 pilot does not establish installed-PC acceptance of the new folder.
+
+- Explicit session closure was deferred by the operator. Verify requests wait
+  after closure and complete only after local reactivation; also verify service/PC
+  restart, session expiry, token removal/reconnection, one-login reuse and account
+  authorization boundaries on the installed workflow.
+- Exercise interrupted upload/download and uncertain-result recovery, duplicate
+  completion, partial-batch failure, offline/disk-full receivers, local PDF changes,
+  timestamp/revocation-service failures and the remaining pilot-template scenarios.
+- Verify device revocation and certificate expiry/revocation/renewal/retirement
+  through controlled lifecycle exercises. Synthetic validator results alone do
+  not complete those acceptance scenarios.
+- Correct and republish the managed installer service-creation path and verify a
+  clean Windows PowerShell 5.1 installation. Provide and exercise managed-package
+  upgrade, rollback and removal procedures; the optional signed bootstrapper's
+  tests do not prove these operations for the selected unsigned package.
+- Add the second separate receiver required by the current pilot plan; only one
+  receiver was installed in this session. Verify automatic workflow enqueue,
+  manual date-range selection and identical authoritative/local PDF hashes on both.
+- Complete and review `signing/phase11-pilot.template.json`, retain validation and
+  delivery evidence, and obtain explicit operator acceptance.
+- Before production activation, establish stable HTTPS, approved validator/trust/TSA
+  policy, minimum agent version, scheduled maintenance, technical-log retention,
+  security review and full release checks, then activate the accepted office in
+  a controlled rollout.
+
+No purchased code-signing certificate is required for the owner's selected
+operator-managed path. **These successful installed tests advance Phase 11 but
+do not close its remaining acceptance or production gates.**
+
+## Shared office storage update (October 1, 2026)
+
+**Status:** implemented and verified locally; Windows agent **0.13.0** and its
+managed release ZIP are prepared. Publication, installation on the office PCs,
+permanent hosting and production activation have not been performed by this work.
+This entry supersedes the automatic-delivery behavior in Phase 9 and the
+delivery-specific UI, monitoring and pilot instructions in later historical
+sections. The remote signing-session/PIN policy above is unchanged.
+
+### User-visible behavior and document lifetime
+
+| Area | Current behavior |
+| --- | --- |
+| Office archive | One authoritative logical archive per office, currently backed by private Supabase object storage. Devices query the office catalog rather than receiving independently scheduled copies. |
+| Authorized devices | Enrolled, non-revoked `SIGNER`, `RECEIVER` and `SIGNER_RECEIVER` devices have access to their own office. The signing laptop requires no receiver role, connected token or open signing session to read documents. |
+| Windows location | The tray action **Abrir firmados de la oficina** opens `<configured Firmados directory>\Oficina-<officeId>`. The existing directory setting is retained. |
+| Recent documents | The folder lists eligible, independently validated and committed FEA-signed PDF versions from the last **50 elapsed days**, across document types and originating PCs. It is not limited to the document's current version. |
+| File transfer | Native Windows Cloud Files placeholders show the document catalog. Listing transfers metadata; opening or copying a PDF fetches and verifies its bytes. Windows previews or scanners may also request file content. There is no automatic full-PDF delivery to every PC. |
+| Documents older than 50 days | They leave the managed Windows view but remain in the authoritative archive, database and signature evidence. **Firmados → Archivo de la oficina** searches and downloads the complete retained signed history. The 50-day window is a display/cache rule, not an archive retention limit. |
+| Historical search | Search by document name, ROL, document ID or signed-version ID; download the exact signed version even after another version becomes current. |
+| Existing local PDFs | Flat copies from the old receiver system remain outside the new office subfolder. The upgrade does not delete, overwrite or upload them. |
+
+The cutoff uses `DocumentSignature.createdAt` in server UTC, with the lower
+50-day boundary included and future dates excluded. It does not use the source
+document date, notification execution date or the user's Windows clock as the
+catalog authority. The service applies committed-artifact/version/checksum
+eligibility checks; unvalidated uploads and failed signing attempts are not
+published as office documents. Historical downloads are bounded to 32 MiB; the
+existing 4 MiB new-signing transfer limit is unchanged.
+
+Normal catalog polling is every 15 seconds with failure backoff. The agent must
+fetch a complete authenticated, paginated snapshot before removing missing
+entries. An interrupted refresh preserves the last complete view. An offline PC
+can retain its previous catalog and cached content; uncached files require the
+running agent and HTTPS access. Thus connected, refreshed devices see the same
+office catalog, while an offline device can temporarily show an older snapshot.
+
+When an entry ages out, only the owned placeholder/local cache is removed. An open
+file can delay cleanup until Windows releases it. The folder is read-only to the
+configured Windows user; rename/delete requests are denied and there is no
+upload/delete-back operation. Unrelated files and conflicting filenames are not
+overwritten. Exported copies are ordinary local files outside the managed view.
+
+### Backend, Windows integration and authorization
+
+- `lib/signing/officeFolder.ts` implements the recent device catalog, exact signed
+  downloads and all-history browser archive. Device actions `office-folder` and
+  `office-folder-download` use the existing challenge/session authentication and
+  derive the office from the enrolled device, never a client-supplied office ID.
+- Browser routes `GET /api/signing/archive` and `GET /api/signing/archive/[id]`
+  require active office membership. They do not apply the 50-day restriction;
+  downloads are audited and responses use private/no-store caching semantics.
+- Downloads bind the immutable signed version to its committed artifact and
+  checksum, check PDF header/length/SHA-256 and recheck authorization after storage
+  I/O. Devices and browsers receive document/signature identifiers, not provider
+  credentials or physical storage paths/URLs.
+- `OfficeFolder.cs` and `CloudFiles.cs` replace the agent's active receiver-mirror
+  loop. The managed distribution requires Windows 11 x64, local NTFS storage and
+  the Windows Cloud Files platform. The service maintains the folder; the
+  configured Windows user receives read/execute access.
+- Revocation denies new downloads and clears owned cached entries when observed,
+  including after an agent restart. Offline PCs, already open files and exported
+  copies cannot be recalled immediately. Unrelated files are preserved.
+- Signing completion and enrollment no longer create delivery fan-out/backfill
+  rows. Legacy pending/failed deliveries remain historical and cannot start new
+  copies; a transfer already `DOWNLOADING` may finish and acknowledge. Retired
+  delivery operations return `DELIVERY_RETIRED` where applicable.
+- Firmados now reports availability in the office folder or archive instead of
+  per-PC delivery totals/retries. Obsolete pending-delivery alerts are removed;
+  folder/disk monitoring also applies to signer-only devices.
+
+No new schema migration or Supabase Data API grant/policy was required. Existing
+office constraints, immutable version locators and append-only signing evidence
+remain intact. Prisma's required status → deploy → generate sequence was run for
+implementation and release preparation; 44 migrations were applied with none
+pending. A repository development-server DLL lock was cleared for generation and
+the server was restarted. `prisma migrate dev` was not used.
+
+### Storage boundary and later dedicated archive server
+
+`lib/documents/objectStore.ts` defines the server-only `DocumentObjectStore`
+contract: `assertPrivate`, `download`, immutable `upload` and idempotent `remove`.
+Both ordinary document storage (`lib/documents/storage.ts`) and signing artifacts
+(`lib/signing/artifacts.ts`) use this boundary. Logical bucket/key identities stay
+in the existing version/artifact records. Folder and application retrieval use
+stable document/signature identities independently of the physical storage host.
+
+| Server configuration | Meaning |
+| --- | --- |
+| `DOCUMENT_STORAGE_PROVIDER=supabase` | Default provider; private Supabase storage and server-only credentials. |
+| `DOCUMENT_STORAGE_PROVIDER=archive-http` | Use the implemented HTTPS archive adapter. |
+| `DOCUMENT_ARCHIVE_ORIGIN` | HTTPS origin of the future dedicated archive service. |
+| `DOCUMENT_ARCHIVE_TOKEN` | Server-only archive-service credential, never sent to the Windows agents or browser. |
+
+The adapter is implemented; a dedicated archive server has **not** been provisioned
+or populated. That service must implement authenticated private-bucket metadata
+and immutable object GET/PUT/DELETE operations, including `If-None-Match: *` on
+creation. It must provide durable storage and backups. Plain HTTP, redirects,
+unsafe paths and unauthenticated shares are not the supported archive interface.
+The complete protocol is documented in the
+[office-folder/storage runbook](signing/OFFICE-SHARED-FOLDER.md).
+
+Migration is an explicit whole-store cutover, not automatic tiering after 50 days:
+
+1. Inventory all referenced objects, including old signatures, source versions
+   and pending signing artifacts.
+2. Copy exact bytes under the same logical bucket/key; verify each object's length
+   and SHA-256 against the database. Do not rewrite append-only signing evidence.
+3. Pause document/signature writes briefly, copy and verify the final delta, and
+   configure the application server to use `archive-http`.
+4. Verify recent-folder reads, historical retrieval, new writes and private access
+   before resuming normal operation. Preserve the prior provider for rollback;
+   copy any new writes back before switching to it again.
+
+The Windows folder location, Firmados search/download flow and agent-facing APIs
+stay the same. This changes PDF object storage only; it does not by itself move
+the application's database or authentication service away from Supabase.
+
+### Release package and installed-PC rollout
+
+Prepared output: `output/github/notifica-windows-0.13.0-release/`.
+Its `START-HERE.md` has the GitHub release-page steps and exact PC commands.
+The release assets are `NOTIFICA-Windows-0.13.0-managed.zip` (426,090,455 bytes),
+`SHA256SUMS.txt` and `ACTUALIZACION.md`, with `RELEASE-NOTES.md` to paste into the
+GitHub description. Suggested tag: `v0.13.0-managed.1`, initially a pre-release.
+
+- ZIP SHA-256: `ade4e20898d2ac6bd2d85b01cb087af51ecf102cb43b61637df4fc8bfcacb65a`.
+- Manifest SHA-256: `d701e09880aa3519a652e7e5c21909ee6fdd5e464ffdb0ea105af4068dac715f`.
+
+The ZIP contains the agent, .NET/Java/DSS runtimes, new-install tools and a separate
+`Update-Notifica.ps1` for managed **0.12.0 → 0.13.0** upgrades. Run its read-only
+`-Preflight` from administrator PowerShell, then run the update. It preserves
+enrollment, device key, office, role, configuration and documents; stages a new
+program directory; verifies service startup; and retains the previous payload
+for recovery. `-Recover` restores an interrupted update using its journal.
+Unresolved signing work blocks replacement; journals must not be deleted to
+force an upgrade. Existing PCs must not be uninstalled or re-enrolled. Other
+installation types/versions require their own migration path. New PCs continue
+to use `Install-Notifica.ps1`.
+
+Deploy the updated web application/backend before the coordinated agent rollout.
+During local testing, the temporary HTTPS site is sufficient only while the
+updated application and validator are reachable at the agents' configured origin.
+A stable hosted test environment is the recommended next deployment step; it
+must include the separate PDF-validation service and its configuration. The
+Windows updater preserves the existing server URL, so a changed origin must be
+configured separately. Publishing a GitHub Release does not deploy the web app
+or automatically install the package on PCs. Signing still requires the token
+laptop online with a locally enabled remote signing session.
+
+The selected distribution remains operator-managed and unsigned; a purchased
+publisher certificate is not required for that path. Detailed upgrade/recovery
+steps are in [ACTUALIZACION.md](../agents/windows/release/managed/ACTUALIZACION.md).
+
+### Verification evidence and remaining acceptance
+
+These are the recorded October 1 implementation/package results; this
+documentation-only update does not claim to rerun those tests or deploy anything.
+
+| Verification | Recorded result |
+| --- | --- |
+| Application regressions | 345 ordinary tests passed; gated suites remained explicitly skipped in that run. |
+| Database behavior | 39 cases passed across folder, retired-delivery, artifact, center and operations suites using disposable schemas. |
+| Native Windows folder | 12 checks passed on the newly packaged agent: metadata-only listing, hydration, corruption rejection, refresh/restart, expiration, revocation cleanup and preservation of unrelated files. |
+| Two-agent HTTPS/private-storage test | Real SIGNER and RECEIVER processes listed the same office with zero listing downloads, opened identical signed bytes, retried interruption, handled restart/revocation and preserved the legacy copy/cloud source. It reused a previously accepted signed-PDF fixture, with no new USB-token login. |
+| Browser | Six cases passed, including archive/mobile behavior. One real-center case returned 503 because the separate QA database lacked signing tables; that QA schema prerequisite remains unresolved. |
+| Build/static checks | Optimized Next.js build, TypeScript, targeted ESLint, auth/audit verification and UTF-8 checks passed. |
+| Release/updater | 15 distribution checks, 18 transaction/preservation checks and 10 full updater-entry scenarios passed. The entry scenarios simulated Windows service/task operations; they are not an installed-PC upgrade pilot. Final ZIP, payload and eight pinned distribution files verified; no excluded private-key/configuration/state files found. |
+
+Evidence includes `output/office-folder-agent-0.13.0/two-agent-verification.json`,
+the new release's `verification/` directory, database/integration test sources and
+the detailed [office-folder runbook](signing/OFFICE-SHARED-FOLDER.md). The local
+installed agent was observed as managed 0.12.0 and left running unchanged. Its
+administrator-only updater preflight could not run without an elevated Windows
+session; package preparation does not establish that installed upgrade result.
+
+The new installed-PC pilot must verify the 0.12.0 upgrade on a receiver and the
+signing laptop, preserved enrollment/configuration, matching folder contents and
+PDF hashes, a real authorized token signature appearing on both, retrieval beyond
+50 days, and service restart/recovery/revocation behavior. Finish the remaining
+Phase 11 hardware/lifecycle/operational checks and operator acceptance before
+production activation. The September 28 automatic-delivery pilot remains valid
+historical evidence but does not close these new acceptance items.

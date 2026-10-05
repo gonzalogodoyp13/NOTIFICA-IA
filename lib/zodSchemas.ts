@@ -83,6 +83,7 @@ export const ProcuradorSchema = z.object({
   telefono: z.string().optional().nullable(),
   notas: z.string().optional().nullable(),
   abogadoIds: z.array(z.number().int().positive()).optional(),
+  bancoIds: z.array(z.number().int().positive()).optional(),
 });
 
 export const ProcuradorUpdateSchema = z.object({
@@ -94,6 +95,7 @@ export const ProcuradorUpdateSchema = z.object({
   telefono: z.string().optional().nullable(),
   notas: z.string().optional().nullable(),
   abogadoIds: z.array(z.number().int().positive()).optional(),
+  bancoIds: z.array(z.number().int().positive()).optional(),
 });
 
 export const LinkBancoSchema = z.object({

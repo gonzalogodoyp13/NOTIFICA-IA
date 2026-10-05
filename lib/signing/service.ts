@@ -1,5 +1,4 @@
 import 'server-only'
-import { scheduleSignatureDeliveries } from './deliveries'
 
 import { createHash, randomUUID } from 'node:crypto'
 import { Prisma, type PrismaClient, type SigningItem, type SigningAttemptResult } from '@prisma/client'
@@ -14,6 +13,7 @@ import {
 } from './core'
 
 import { lockSigningOffice } from './transaction'
+import { signingTrace } from './telemetry'
 
 type Tx = Prisma.TransactionClient
 const leaseDuration = z.number().int().min(1_000).max(300_000)
@@ -89,8 +89,10 @@ export function createSigningService(db: PrismaClient = prisma,
   async function audit(tx: Tx, officeId: number, event: string, metadata: {
     jobId: string; itemId?: string; deviceId?: string; attemptNumber?: number;
     status?: string; errorCode?: string; signatureId?: string; reviewed?: boolean;
+    sourceVersionId?: string; signedVersionId?: string; signerFingerprint?: string; sourceChecksum?: string; signedChecksum?: string;
+    batchId?: string; remoteSessionId?: string;
   }, userId?: string) {
-    await recordCriticalEvent(tx, { officeId, ...(userId ? { user: { id: userId }, actorType: 'USER' as const } : { actorType: 'SYSTEM' as const }), source: 'INTERNAL' }, {
+    await recordCriticalEvent(tx, { officeId, requestId: signingTrace.getStore(), ...(userId ? { user: { id: userId }, actorType: 'USER' as const } : { actorType: 'SYSTEM' as const }), source: 'INTERNAL' }, {
       eventType: event, module: 'documents', recordType: metadata.itemId ? 'SigningItem' : 'SigningJob',
       recordId: metadata.itemId ?? metadata.jobId, metadata,
       result: event === 'signing.failed' ? 'failure' : 'success',
@@ -164,7 +166,8 @@ export function createSigningService(db: PrismaClient = prisma,
           (signer.certificateExpiresAt && signer.certificateExpiresAt <= now)) throw new SigningError('DEVICE_NOT_READY')
         await recoverExpired(tx, officeId, now)
         const item = await tx.signingItem.findFirst({ where: { officeId, signerFingerprint: signer.certificateThumbprint,
-          status: { in: ['QUEUED', 'RETRY_PENDING'] }, availableAt: { lte: now } }, orderBy: [{ createdAt: 'asc' }, { id: 'asc' }] })
+          status: { in: ['QUEUED', 'RETRY_PENDING'] }, availableAt: { lte: now },
+          job: { requestedBy: { isActive: true, officeId } } }, orderBy: [{ createdAt: 'asc' }, { id: 'asc' }] })
         if (!item) return null
         try { await eligible(tx, item) } catch (error) {
           if (!(error instanceof SigningError)) throw error
@@ -181,6 +184,7 @@ export function createSigningService(db: PrismaClient = prisma,
           leaseToken, leaseExpiresAt: new Date(now.getTime() + durationMs), attemptCount: { increment: 1 }, errorCode: null, safeError: null } })
         await tx.signingAttempt.create({ data: { officeId, itemId: item.id, deviceId, attemptNumber: claimed.attemptCount, leaseToken, startedAt: now } })
         await audit(tx, officeId, 'signing.claimed', { jobId: item.jobId, itemId: item.id, deviceId, attemptNumber: claimed.attemptCount })
+        await audit(tx, officeId, 'signing.assigned', { jobId: item.jobId, itemId: item.id, deviceId, attemptNumber: claimed.attemptCount, sourceVersionId: item.sourceVersionId, signerFingerprint: item.signerFingerprint })
         await aggregate(tx, officeId, item.jobId, now)
         return claimed
       })
@@ -196,13 +200,23 @@ export function createSigningService(db: PrismaClient = prisma,
       })
     },
 
-    async start(lease: SigningLease) {
+    async start(lease: SigningLease, locallyApproved = false, batchId?: string, remoteSessionId?: string) {
       LeaseSchema.parse(lease)
+      if (batchId) z.string().uuid().parse(batchId)
+      if (remoteSessionId) z.string().uuid().parse(remoteSessionId)
+      if (remoteSessionId && locallyApproved) throw new SigningError('FORBIDDEN')
       return transaction(lease.officeId, async (tx, now) => {
         const item = await ownedLease(tx, lease, now)
         assertItemTransition(item.status, 'SIGNING')
         await eligible(tx, item)
+        const requested = await tx.signingJob.findFirstOrThrow({ where: { id: item.jobId, officeId: lease.officeId }, select: { requestedByUserId: true } })
+        await user(tx, { officeId: lease.officeId, userId: requested.requestedByUserId })
         const started = await tx.signingItem.update({ where: { id: item.id }, data: { status: 'SIGNING' } })
+        if (remoteSessionId) await audit(tx, lease.officeId, 'signing.remote_authorized', {
+          jobId: item.jobId, itemId: item.id, deviceId: lease.deviceId, attemptNumber: item.attemptCount,
+          sourceVersionId: item.sourceVersionId, sourceChecksum: item.sourceChecksum, signerFingerprint: item.signerFingerprint,
+          remoteSessionId, ...(batchId ? { batchId } : {}) }, requested.requestedByUserId)
+        if (locallyApproved) await audit(tx, lease.officeId, 'signing.local_approved', { jobId: item.jobId, itemId: item.id, deviceId: lease.deviceId, attemptNumber: item.attemptCount, sourceVersionId: item.sourceVersionId, signerFingerprint: item.signerFingerprint, ...(batchId ? { batchId } : {}) })
         await audit(tx, lease.officeId, 'signing.started', { jobId: item.jobId, itemId: item.id, deviceId: lease.deviceId, attemptNumber: item.attemptCount })
         return started
       })
@@ -233,6 +247,7 @@ export function createSigningService(db: PrismaClient = prisma,
         await tx.signingItem.update({ where: { id: item.id }, data: { status, ...clearLease, errorCode: safe.code, safeError: safe.message,
           availableAt: new Date(now.getTime() + retryDelayMs(item.attemptCount)), completedAt: status === 'FAILED' ? now : null } })
         await audit(tx, lease.officeId, 'signing.failed', { jobId: item.jobId, itemId: item.id, deviceId: lease.deviceId, errorCode: safe.code, status })
+        if (status === 'RETRY_PENDING') await audit(tx, lease.officeId, 'signing.retry_scheduled', { jobId: item.jobId, itemId: item.id, deviceId: lease.deviceId, attemptNumber: item.attemptCount, errorCode: safe.code, status })
         await aggregate(tx, lease.officeId, item.jobId, now)
       })
     },
@@ -273,14 +288,18 @@ export function createSigningService(db: PrismaClient = prisma,
           documentoId: item.documentoId, sourceVersionId: item.sourceVersionId, sourceChecksum: item.sourceChecksum, ...evidence } })
         await endAttempt(tx, item, 'SUCCEEDED', now)
         await tx.signingItem.update({ where: { id: item.id }, data: { status: 'COMPLETED', ...clearLease, completedAt: now, errorCode: null, safeError: null } })
-        await audit(tx, lease.officeId, 'signing.completed', { jobId: item.jobId, itemId: item.id, deviceId: lease.deviceId, signatureId: signature.id, attemptNumber: item.attemptCount })
+        const evidenceMetadata = { jobId: item.jobId, itemId: item.id, deviceId: lease.deviceId, signatureId: signature.id, attemptNumber: item.attemptCount,
+          sourceVersionId: item.sourceVersionId, sourceChecksum: item.sourceChecksum, signedVersionId: evidence.signedVersionId,
+          signedChecksum: evidence.signedChecksum, signerFingerprint: evidence.signerFingerprint }
+        if (artifact) await audit(tx, lease.officeId, 'signing.validated', evidenceMetadata)
+        await audit(tx, lease.officeId, 'signing.completed', evidenceMetadata)
         await aggregate(tx, lease.officeId, item.jobId, now)
         if (artifact) {
           const promoted = await tx.documento.updateMany({ where: { id: item.documentoId, officeId: lease.officeId,
             currentVersionId: item.sourceVersionId, voidedAt: null }, data: { currentVersionId: evidence.signedVersionId } })
           if (promoted.count !== 1) throw new SigningError('INELIGIBLE_SOURCE')
           await tx.signingArtifact.update({ where: { id: artifact.id }, data: { state: 'COMMITTED', validation: artifact.validation } })
-          await scheduleSignatureDeliveries(tx, lease.officeId, signature.id)
+          // The committed signature is now visible in the shared office catalog.
         }
         return signature
       })
@@ -335,6 +354,10 @@ export function createSigningService(db: PrismaClient = prisma,
         await user(tx, context, true)
         return recoverExpired(tx, context.officeId, now)
       })
+    },
+    // Internal maintenance only; never exposed through a user/device-supplied office ID.
+    async maintainOffice(officeId: number) {
+      return transaction(officeId, (tx, now) => recoverExpired(tx, officeId, now))
     },
   }
 }

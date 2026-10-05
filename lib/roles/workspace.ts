@@ -196,6 +196,7 @@ export async function loadRoleSummaryData(roleId: string, officeId: number) {
         id: rolCausa.demanda.id,
         cuantia: rolCausa.demanda.cuantia ?? null,
         caratula: rolCausa.demanda.caratula ?? null,
+        bancoId: rolCausa.demanda.bancoId,
         materia: rolCausa.demanda.materia
           ? {
               id: rolCausa.demanda.materia.id,

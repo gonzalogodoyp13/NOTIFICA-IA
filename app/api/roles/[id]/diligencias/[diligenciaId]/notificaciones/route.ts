@@ -112,6 +112,7 @@ export async function POST(
           id: randomUUID(),
           diligenciaId: params.diligenciaId,
           ejecutadoId: finalEjecutadoId,
+          bancoId: diligencia.rol.demanda?.bancoId ?? null,
           meta: {},
           updatedAt: new Date(),
         },

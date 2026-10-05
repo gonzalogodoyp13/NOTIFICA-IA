@@ -1,8 +1,7 @@
 import { NextRequest } from 'next/server'
 import { withApiUser } from '@/lib/api/server'
 import { createDeviceService } from '@/lib/signing/devices'
-import { deviceFailure, deviceResponse, readDeviceBody, requireDeviceHttps } from '@/lib/signing/deviceHttp'
-import { DeviceError } from '@/lib/signing/deviceProtocol'
+import { deviceFailure, deviceResponse, readDeviceBody, requireDeviceBrowserOrigin } from '@/lib/signing/deviceHttp'
 import { z } from 'zod'
 
 export const dynamic = 'force-dynamic'
@@ -16,8 +15,7 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   return withApiUser(req, 'post.signing.devices', async user => {
     try {
-      requireDeviceHttps(req)
-      if (req.headers.get('origin') !== req.nextUrl.origin) throw new DeviceError('ORIGIN_REQUIRED')
+      requireDeviceBrowserOrigin(req)
       const context = { officeId: user.officeId, userId: user.id }
       await service.throttle('admin-device', user.id, 20)
       const raw = await readDeviceBody(req)

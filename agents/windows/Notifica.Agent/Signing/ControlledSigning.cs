@@ -97,6 +97,31 @@ internal sealed class ControlledSigning : IAsyncDisposable
             if (state == "RECEIVING_PIN") { state = "FAILED"; error = SigningError.Cancelled.ToString(); }
     }
     internal void MarkCommitted() { lock (gate) { state = "COMPLETED"; error = null; } }
+    internal void StartRemote(IRemoteTokenSession session, Guid sessionId)
+    {
+        lock (gate)
+        {
+            if (state != "AWAITING_APPROVAL" || !session.View.Enabled || session.View.SessionId != sessionId)
+                throw new SigningFailure(SigningError.SessionExpired);
+            state = "SIGNING";
+            running = Task.Run(async () => {
+                try {
+                    if (BeforeSign is not null) await BeforeSign(lifetime.Token);
+                    if (!session.View.Enabled || session.View.SessionId != sessionId) throw new SigningFailure(SigningError.SessionExpired);
+                    var signed = await session.Sign(batch, sessionId, lifetime.Token);
+                    lock (gate) results = signed;
+                    if (AfterSign is not null) await AfterSign(signed, lifetime.Token);
+                    lock (gate) { state = "COMPLETED"; error = null; }
+                } catch (Exception failure) {
+                    lock (gate) {
+                        error = failure is SigningFailure known ? known.Code.ToString()
+                            : failure is OperationCanceledException ? SigningError.SessionExpired.ToString() : SigningError.EngineFailure.ToString();
+                        state = "FAILED";
+                    }
+                }
+            });
+        }
+    }
     internal void Start(PinBuffer pin)
     {
         lock (gate)

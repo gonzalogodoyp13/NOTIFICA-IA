@@ -9,6 +9,8 @@ import { createSigningService } from '../../lib/signing/service'
 import { createDeviceHandler } from '../../lib/signing/deviceHttp'
 import { type SigningStorage } from '../../lib/signing/artifacts'
 import { type PdfValidator } from '../../lib/signing/pdfValidator'
+import { SigningError } from '../../lib/signing/core'
+import { createSigningCenter } from '../../lib/signing/center'
 const hash = (bytes: Buffer | string) => createHash('sha256').update(bytes).digest('hex')
 const sourceBytes = Buffer.from('%PDF-1.7\nsynthetic source for orchestration tests only\n%%EOF')
 const signedBytes = Buffer.concat([sourceBytes, Buffer.from('\nsynthetic signature')])
@@ -60,21 +62,41 @@ describe.skipIf(process.env.SIGNING_DATABASE_TESTS !== '1')('Phase 7 artifact or
     f.objects.set(f.source.storageKey, Buffer.from('%PDF-tampered source'))
     await expect(f.service.download(f.token, f.lease)).rejects.toThrow('CHECKSUM_MISMATCH')
   }, 60_000)
+  it('records rejected validation with safe evidence and exposes repeated failures without promoting the document', async () => {
+    const f = await setup()
+    await f.service.queue(f.token, 'start', { ...f.lease, locallyApproved: true })
+    f.validator.mockRejectedValue(new Error('PIN=SECRET service_role=SECRET'))
+    await expect(f.service.submitArtifact(f.token, f.lease, signedBytes)).rejects.toThrow('VALIDATION_FAILED')
+    f.validator.mockRejectedValue(new SigningError('CERT_REVOKED'))
+    await expect(f.service.submitArtifact(f.token, f.lease, signedBytes)).rejects.toThrow('CERT_REVOKED')
+    const events = await sandbox.db.activityEvent.findMany({ where: { officeId: f.office.id, eventType: 'signing.validation_failed' } })
+    expect(events).toHaveLength(2)
+    expect(JSON.stringify(events)).not.toContain('SECRET')
+    expect((await createSigningCenter(sandbox.db).list(f.context, {})).alerts!.some(a => a.id === 'VALIDATION_FAILURE')).toBe(true)
+    expect((await sandbox.db.documento.findUniqueOrThrow({ where: { id: f.doc.id } })).currentVersionId).toBe(f.source.id)
+    expect(await sandbox.db.documentSignature.count({ where: { officeId: f.office.id } })).toBe(0)
+  }, 60000)
   it('commits one new signed version/evidence/attempt/current pointer and replays the exact result', async () => {
     const f = await setup()
     await f.service.queue(f.token, 'start', f.lease)
+    // Committed replay can be resolved even after the local transfer budget stops.
     const handler = createDeviceHandler(f.service)
     const response = await handler(new NextRequest('https://localhost/api/signing/device/result', { method: 'POST',
       headers: { authorization: `Bearer ${f.token}`, 'content-type': 'application/pdf', 'x-signing-item': f.lease.itemId, 'x-signing-lease': f.lease.leaseToken }, body: signedBytes }), 'result')
     expect(response.status).toBe(200)
     const { data: answer } = await response.json()
     expect(answer.committed).toBe(true)
+    expect(await f.service.recovery(f.token, f.lease)).toEqual({ released: false, committed: true, checksumSha256: hash(signedBytes) })
+    await expect(f.service.recovery(f.token, { ...f.lease, leaseToken: randomUUID() })).rejects.toThrow('STALE_LEASE')
+    const committedEvents = await sandbox.db.activityEvent.findMany({ where: { officeId: f.office.id, eventType: { in: ['signing.validated', 'signing.completed'] } } })
+    expect(committedEvents).toHaveLength(2)
+    expect(committedEvents.every(e => e.requestId === response.headers.get('x-signing-correlation-id'))).toBe(true)
     expect((await sandbox.db.documento.findUniqueOrThrow({ where: { id: f.doc.id } })).currentVersionId).toBe(answer.signedVersionId)
     expect(await f.service.submitArtifact(f.token, f.lease, signedBytes)).toEqual(answer)
     expect(vi.mocked(f.validator)).toHaveBeenCalledTimes(1)
     expect(await sandbox.db.documentSignature.count({ where: { itemId: f.item.id } })).toBe(1)
     expect(await sandbox.db.signingAttempt.count({ where: { itemId: f.item.id, result: 'SUCCEEDED' } })).toBe(1)
-    expect(await sandbox.db.documentDelivery.count({ where: { officeId: f.office.id } })).toBe(1)
+    expect(await sandbox.db.documentDelivery.count({ where: { officeId: f.office.id } })).toBe(0)
     const upload = await sandbox.db.signingArtifact.findUniqueOrThrow({ where: { id: answer.signedVersionId } })
     expect(upload.state).toBe('COMMITTED')
     expect(f.objects.get(f.source.storageKey)).toEqual(sourceBytes)

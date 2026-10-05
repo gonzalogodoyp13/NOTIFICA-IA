@@ -51,6 +51,7 @@ interface RolData {
   demanda: {
     id: string
     caratula: string | null
+    bancoId: number | null
     cuantia: number | null
     materia: {
       id: number
@@ -96,6 +97,9 @@ export default function EditarDemandaPage() {
   const [error, setError] = useState<string | null>(null)
   const [bancos, setBancos] = useState<Banco[]>([])
   const [bancoId, setBancoId] = useState<string>('')
+  const [caratulaDetalle, setCaratulaDetalle] = useState('')
+  const [manualBankEnabled, setManualBankEnabled] = useState(false)
+  const [manualBankName, setManualBankName] = useState('')
   const [abogados, setAbogados] = useState<Abogado[]>([])
   const [allAbogados, setAllAbogados] = useState<Abogado[]>([]) // Store all abogados for filtering
   const [tribunales, setTribunales] = useState<Tribunal[]>([])
@@ -121,14 +125,9 @@ export default function EditarDemandaPage() {
     procuradorId: '',
   })
 
-  // Calculate caratula from selected banco
-  const caratula = useMemo(() => {
-    if (bancoId) {
-      const banco = bancos.find(b => b.id === Number(bancoId))
-      return banco?.nombre || ''
-    }
-    return ''
-  }, [bancoId, bancos])
+  const selectedBancoName = useMemo(() => bancos.find(b => b.id === Number(bancoId))?.nombre || '', [bancoId, bancos])
+  const caratulaPrefix = manualBankEnabled ? manualBankName.trim() : selectedBancoName.trim()
+  const caratula = caratulaDetalle.trim() ? `${caratulaPrefix}/${caratulaDetalle.trim()}` : caratulaPrefix
 
   const fetchRolData = useCallback(async () => {
     try {
@@ -219,12 +218,16 @@ export default function EditarDemandaPage() {
       ? tribunales.find((t) => t.id === rolData.tribunal?.id)
       : null
 
-    const bancoFromCaratula = rolData.demanda?.caratula
-      ? bancos.find((b) => b.nombre === rolData.demanda?.caratula)
-      : null
-
-    const fallbackBanco = rolData.abogado?.bancos?.[0]?.banco ?? null
-    const selectedBancoId = bancoFromCaratula?.id ?? fallbackBanco?.id ?? null
+    const savedCaratula = rolData.demanda?.caratula || ''
+    const separator = savedCaratula.indexOf('/')
+    const prefix = separator >= 0 ? savedCaratula.slice(0, separator) : savedCaratula
+    const bancoFromCaratula = bancos.find(b => b.nombre.toLowerCase() === prefix.trim().toLowerCase())
+    const onlyBanco = rolData.abogado?.bancos?.length === 1 ? rolData.abogado.bancos[0].banco : null
+    const selectedBancoId = rolData.demanda?.bancoId ?? bancoFromCaratula?.id ?? onlyBanco?.id ?? null
+    const bankName = bancos.find(b => b.id === selectedBancoId)?.nombre || ''
+    setCaratulaDetalle(separator >= 0 ? savedCaratula.slice(separator + 1) : '')
+    setManualBankEnabled(prefix !== bankName)
+    setManualBankName(prefix !== bankName ? prefix : '')
 
     setFormData({
       rol: rolData.rol?.numero || '',
@@ -268,6 +271,7 @@ export default function EditarDemandaPage() {
 
   const handleBancoChange = (newBancoId: string) => {
     setBancoId(newBancoId)
+    setFormData(prev => ({ ...prev, procuradorId: '' }))
     
     if (!newBancoId) {
       setFormData(prev => ({ ...prev, abogadoId: '' }))
@@ -290,7 +294,7 @@ export default function EditarDemandaPage() {
   }
 
   const handleAbogadoChange = (newAbogadoId: string) => {
-    setFormData(prev => ({ ...prev, abogadoId: newAbogadoId }))
+    setFormData(prev => ({ ...prev, abogadoId: newAbogadoId, procuradorId: '' }))
 
     if (!newAbogadoId) {
       // If clearing abogado and no banco selected, clear everything
@@ -342,9 +346,9 @@ export default function EditarDemandaPage() {
 
     try {
       // Calculate caratula from banco if not already set
-      const finalCaratula = caratula || (bancoId ? bancos.find(b => b.id === Number(bancoId))?.nombre || '' : '')
+      const finalCaratula = caratula
       
-      if (!formData.rol || !formData.tribunalId || !finalCaratula) {
+      if (!formData.rol || !formData.tribunalId || !bancoId || !caratulaPrefix || !finalCaratula) {
         throw new Error('ROL, Tribunal y Banco son requeridos')
       }
 
@@ -365,6 +369,7 @@ export default function EditarDemandaPage() {
         rol: formData.rol,
         tribunalId: formData.tribunalId,
         caratula: finalCaratula,
+        bancoId: Number(bancoId),
         cuantia: formData.cuantia ? cleanCuantiaInput(formData.cuantia) : null,
         abogadoId: formData.abogadoId ? Number(formData.abogadoId) : null,
         materiaId: formData.materiaId ? Number(formData.materiaId) : null,
@@ -489,13 +494,70 @@ export default function EditarDemandaPage() {
                 )}
               </div>
 
-              {/* Carátula (hidden, auto-calculated) */}
-              <input
-                type="hidden"
-                id="caratula"
-                required
-                value={caratula}
-              />
+              {/* Carátula compuesta */}
+              <div className="rounded-2xl border border-sky-100 bg-sky-50/60 p-4 sm:p-5">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <label htmlFor="caratula-detalle" className="text-sm font-semibold text-slate-800">
+                    Carátula *
+                  </label>
+                  <label
+                    htmlFor="caratula-banco-manual-toggle"
+                    className="inline-flex cursor-pointer items-center gap-2 text-xs font-semibold text-sky-800"
+                  >
+                    <input
+                      id="caratula-banco-manual-toggle"
+                      type="checkbox"
+                      checked={manualBankEnabled}
+                      onChange={(event) => {
+                        setManualBankEnabled(event.target.checked)
+                        setManualBankName('')
+                      }}
+                      className="h-4 w-4 rounded border-sky-300 text-blue-700 focus:ring-sky-400"
+                    />
+                    Ingresar banco manualmente
+                  </label>
+                </div>
+
+                <div className="mt-3 grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2">
+                  {manualBankEnabled ? (
+                    <input
+                      type="text"
+                      aria-label="Banco manual de la carátula"
+                      required
+                      value={manualBankName}
+                      onChange={(event) => setManualBankName(event.target.value)}
+                      className="min-w-0 rounded-lg border border-sky-200 bg-white px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                      placeholder="Escriba el banco"
+                    />
+                  ) : (
+                    <input
+                      type="text"
+                      aria-label="Banco de la carátula"
+                      readOnly
+                      value={selectedBancoName}
+                      className="min-w-0 rounded-lg border border-sky-200 bg-white/80 px-3 py-2 text-sm font-medium text-slate-700"
+                      placeholder="Seleccione un banco arriba"
+                    />
+                  )}
+                  <span aria-hidden="true" className="text-xl font-light text-slate-400">/</span>
+                  <input
+                    id="caratula-detalle"
+                    type="text"
+                    required={Boolean(rolData.demanda?.caratula?.includes('/'))}
+                    value={caratulaDetalle}
+                    onChange={(event) => setCaratulaDetalle(event.target.value)}
+                    className="min-w-0 rounded-lg border border-sky-200 bg-white px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                    placeholder="Complete la carátula"
+                  />
+                </div>
+
+                <p className="mt-3 text-xs text-slate-500">
+                  Vista final:{' '}
+                  <strong className="font-semibold text-slate-700">
+                    {caratula || 'Banco/Detalle de la carátula'}
+                  </strong>
+                </p>
+              </div>
 
               {/* Tribunal */}
               <div>
