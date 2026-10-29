@@ -17,6 +17,7 @@ internal sealed class RemoteSessionDialog : Form
     internal RemoteSessionDialog(Configuration config)
     {
         this.config = config;
+        Icon = Brand.Icon;
         Text = "Sesión de firma remota · NOTIFICA IA"; Width = 690; Height = 540; MinimumSize = new Size(650, 520);
         StartPosition = FormStartPosition.CenterScreen;
         var layout = new FlowLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(24), FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoScroll = true };

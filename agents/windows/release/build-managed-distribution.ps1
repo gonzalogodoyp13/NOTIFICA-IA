@@ -88,12 +88,16 @@ $updateGuide | Set-Content (Join-Path $assets 'ACTUALIZACION.md') -Encoding utf8
 $guideHash=(Get-FileHash (Join-Path $assets 'ACTUALIZACION.md') -Algorithm SHA256).Hash.ToLowerInvariant()
 "$guideHash  ACTUALIZACION.md" | Add-Content (Join-Path $assets 'SHA256SUMS.txt') -Encoding utf8
 @"
-# NOTIFICA Windows $version - instalación administrada
+# NOTIFICA Windows $version - nueva interfaz y logo N
 
 Pre-release para instalación personal mediante control remoto. Sin firma de editor.
-Incluye instalación nueva y actualización administrada 0.12.0 -> 0.13.0 con conservación de inscripción, configuración y documentos.
-Carpeta compartida por oficina: últimos 50 días de PDF firmados FEA, descarga al abrir, también en el PC firmante.
-El historial completo permanece en Firmados de la aplicación. Requiere desplegar también la aplicación web/servidor.
+Logo N blanco en el ejecutable, bandeja y ventanas. Panel sencillo en español con estado del servicio/token,
+sesión de firma remota, carpeta de la oficina, inscripción, actualización de estado y controles de bandeja.
+Abre el panel con doble clic en la N de la bandeja o con Abrir NOTIFICA en su menú.
+Incluye instalación nueva y actualización administrada desde 0.12.0 o 0.13.0 a $version,
+con conservación de inscripción, configuración y documentos.
+La carpeta compartida conserva los últimos 50 días y descarga los PDF al abrirlos; el historial sigue en Firmados.
+Utiliza el servidor compatible con la carpeta compartida de 0.13.0. Este cambio de interfaz no requiere nuevas migraciones.
 Incluye agente, .NET 10.0.12, Java 21.0.12, motor DSS 6.5 y avisos de dependencias.
 No incluye controlador USB, certificado FEA, datos de clientes ni configuración del servidor.
 

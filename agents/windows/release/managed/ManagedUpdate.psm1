@@ -15,7 +15,9 @@ function Assert-ManagedTarget([string]$Target, [string]$Root, [string]$Version) 
 }
 function Assert-ManagedUpdateSource($Record, $Configuration, [string]$Root, [string]$Data, [string]$NewVersion) {
     if ($Record.mode -cne 'operator-managed-unsigned' -or $Record.status -cne 'installed') { throw 'MANAGED_INSTALLATION_REQUIRED' }
-    if ($Record.version -cne '0.12.0' -or $NewVersion -cne '0.13.0') { throw 'UNSUPPORTED_UPGRADE_SOURCE' }
+    $supported = ($Record.version -ceq '0.12.0' -and $NewVersion -ceq '0.13.0') -or
+        ($Record.version -cin @('0.12.0','0.13.0') -and $NewVersion -ceq '0.14.0')
+    if (-not $supported) { throw 'UNSUPPORTED_UPGRADE_SOURCE' }
     Assert-ManagedTarget $Record.target $Root $Record.version | Out-Null
     $state=Join-Path $Data 'state'
     if ($Configuration.dataDirectory -ine $state -or $Configuration.machineKey -ne $true -or
@@ -46,6 +48,31 @@ function Assert-NoSigningWork([string]$State) {
         if (Test-Path -LiteralPath (Join-Path $State $name)) { throw 'REVIEW_ACTIVE_WORK' }
     }
 }
+function Assert-ManagedTrayUser($Task, [string]$TaskXml, [string]$ExpectedSid) {
+    # Get-ScheduledTask may display only "gonza" for the stored GONZA\gonza
+    # principal. Validate the registered task's security identity, not that label.
+    $reader=$null
+    try {
+        $settings=[Xml.XmlReaderSettings]::new()
+        $settings.DtdProcessing=[Xml.DtdProcessing]::Prohibit
+        $settings.XmlResolver=$null; $settings.MaxCharactersInDocument=262144
+        $reader=[Xml.XmlReader]::Create([IO.StringReader]::new($TaskXml),$settings)
+        $document=[Xml.XmlDocument]::new(); $document.XmlResolver=$null
+        $document.Load($reader)
+        $namespace=[Xml.XmlNamespaceManager]::new($document.NameTable)
+        $namespace.AddNamespace('t','http://schemas.microsoft.com/windows/2004/02/mit/task')
+        $principals=$document.SelectNodes('/t:Task/t:Principals/t:Principal',$namespace)
+        if ($principals.Count -ne 1 -or $principals[0].GetAttribute('id') -cne $Task.Principal.Id) { throw 'TRAY_USER_MISMATCH' }
+        $users=$principals[0].SelectNodes('t:UserId',$namespace)
+        if ($users.Count -ne 1) { throw 'TRAY_USER_MISMATCH' }
+        $user=$users[0].InnerText
+        $actual=if ($user -match '^S-1-') { [Security.Principal.SecurityIdentifier]::new($user) }
+            else { ([Security.Principal.NTAccount]::new($user)).Translate([Security.Principal.SecurityIdentifier]) }
+        $expected=[Security.Principal.SecurityIdentifier]::new($ExpectedSid)
+        if ($actual.Value -cne $expected.Value) { throw 'TRAY_USER_MISMATCH' }
+    } catch { throw 'TRAY_USER_MISMATCH' }
+    finally { if ($reader) { $reader.Dispose() } }
+}
 function Invoke-ManagedUpdateTransaction([string]$Journal, $Checkpoint, [hashtable]$Operations) {
     if (Test-Path -LiteralPath $Journal) { throw 'RECOVER_INTERRUPTED_UPDATE_FIRST' }
     Save-ReleaseJson $Journal $Checkpoint
@@ -64,4 +91,4 @@ function Invoke-ManagedUpdateTransaction([string]$Journal, $Checkpoint, [hashtab
     }
     Remove-Item -LiteralPath $Journal
 }
-Export-ModuleMember -Function Read-UpdateJson,Assert-ManagedTarget,Assert-ManagedUpdateSource,New-ManagedUpdateConfiguration,Assert-NoSigningWork,Invoke-ManagedUpdateTransaction
+Export-ModuleMember -Function Read-UpdateJson,Assert-ManagedTarget,Assert-ManagedUpdateSource,New-ManagedUpdateConfiguration,Assert-NoSigningWork,Assert-ManagedTrayUser,Invoke-ManagedUpdateTransaction

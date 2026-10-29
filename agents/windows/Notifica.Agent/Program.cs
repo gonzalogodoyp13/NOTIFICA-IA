@@ -10,6 +10,9 @@ internal static class Program
         try
         {
             Signing.ProcessPrivacy.Apply();
+            int dashboardTest = Array.IndexOf(args, "--dashboard-self-test");
+            if (dashboardTest >= 0) return DashboardSelfTest.Run(false, dashboardTest + 1 < args.Length ? Path.GetFullPath(args[dashboardTest + 1]) : null);
+            if (args.Contains("--dashboard-preview")) return DashboardSelfTest.Run(true);
             int folderRead = Array.IndexOf(args, "--office-folder-read-test");
             if (folderRead >= 0 && folderRead + 2 < args.Length) return OfficeFolderSelfTest.Read(args[folderRead + 1], args[folderRead + 2]);
             if (args.Contains("--office-folder-self-test")) {
@@ -106,7 +109,7 @@ internal static class Program
             }
             ApplicationConfiguration.Initialize();
             using var tray = new Tray(config);
-            if (args.Contains("--show-status")) tray.ShowStatus();
+            if (args.Length == 0 || args.Contains("--show-status")) tray.ShowStatus();
             if (args.Contains("--show-signing")) tray.QueueSigning();
             Application.Run(tray);
             return 0;

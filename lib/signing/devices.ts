@@ -231,6 +231,9 @@ export function createDeviceService(db: PrismaClient = prisma, artifactDependenc
         if (action === 'claim' || action === 'start') requireSupportedAgent(d.agentVersion)
         if (d.id !== targetDevice || d.officeId !== targetOffice) throw new DeviceError('DEVICE_UNAUTHORIZED', 401)
         if (action === 'claim' && (!d.lastHeartbeatAt || now.getTime() - d.lastHeartbeatAt.getTime() > staleMs)) throw new DeviceError('DEVICE_OFFLINE', 409)
+        // Stop before assigning a lease or consuming an attempt. Older agents
+        // otherwise turn transferAvailable=false into an UNKNOWN job failure.
+        if (action === 'claim' && !artifacts.ready()) throw new DeviceError('VALIDATOR_UNAVAILABLE', 503)
       })
       if (action === 'claim') {
         z.object({}).strict().parse(raw)

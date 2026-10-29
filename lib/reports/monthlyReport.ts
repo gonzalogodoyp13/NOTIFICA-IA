@@ -34,8 +34,6 @@ const receiptInclude = {
 const diligenceSelect = {
   id: true,
   meta: true,
-  estadoCobro: true,
-  fechaPago: true,
   tipo: { select: { nombre: true } },
 } satisfies Prisma.DiligenciaSelect
 
@@ -120,8 +118,8 @@ function toMonthlyRow(receipt: ReceiptWithRelations, diligence: DiligenceRow | n
     numeroRecibo: label(receipt.numeroRecibo),
     numeroBoleta: label(receipt.numeroBoleta),
     fechaEjecucion: receipt.fechaEjecucion ?? receipt.createdAt,
-    fechaPago: diligence?.fechaPago ?? null,
-    estadoCobro: diligence?.estadoCobro ?? 'NO_PAGADO',
+    fechaPago: receipt.fechaPago ?? null,
+    estadoCobro: receipt.estadoCobro ?? 'NO_PAGADO',
     amount: qualified.amount,
     financialClass: qualified.financialClass,
     reconciliationWarnings: qualified.reconciliationWarnings,
@@ -196,7 +194,6 @@ export async function buildMonthlyReportData(officeId: number, bounds: ReturnTyp
   const notificationMap = new Map(notifications.map(notification => [notification.id, notification]))
   const diligenceMap = new Map(diligences.map(diligence => [diligence.id, diligence]))
   const coreSources = receipts.map(receipt => {
-    const diligence = receipt.diligenciaId ? diligenceMap.get(receipt.diligenciaId) ?? null : null
     return {
       receipt: {
         reciboId: receipt.id,
@@ -211,7 +208,7 @@ export async function buildMonthlyReportData(officeId: number, bounds: ReturnTyp
         const notification = notificationMap.get(receipt.notificacionId)
         return notification ? { id: notification.id, voidedAt: notification.voidedAt, documents: notification.documentos } : null
       })() : null,
-      estadoCobro: diligence?.estadoCobro ?? null,
+      estadoCobro: receipt.estadoCobro ?? null,
       numeroBoleta: receipt.numeroBoleta ?? null,
     }
   })

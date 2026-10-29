@@ -75,6 +75,7 @@ internal sealed class SigningDialog : Form
     internal SigningDialog(Configuration config, ControlledBatchView view)
     {
         this.config = config; this.view = view;
+        Icon = Brand.Icon;
         approvalDeadline = Environment.TickCount64 + Math.Clamp(view.RemainingApprovalMilliseconds, 0, 300_000);
         Text = config.ControlledSigning is not null ? "Autorizar lote de prueba · NOTIFICA IA" : "Autorizar firma · NOTIFICA IA";
         Width = 740; Height = 640; MinimumSize = new Size(680, 560);

@@ -1,4 +1,4 @@
-# Publicar NOTIFICA Windows 0.13.0 en GitHub
+# Publicar NOTIFICA Windows 0.14.0 en GitHub
 
 Usa tu repositorio privado **notifica-windows**, separado del proyecto web.
 Esta publicación distribuye el agente; no despliega el servidor ni actualiza los
@@ -7,14 +7,14 @@ PCs automáticamente. Conserva la Release anterior sin modificarla.
 ## Desde la página de Releases
 
 1. Pulsa **Draft a new release**.
-2. En **Choose a tag**, escribe `v0.13.0-managed.1` y pulsa **Create new tag**.
+2. En **Choose a tag**, escribe `v0.14.0-managed.1` y pulsa **Create new tag**.
    Selecciona **main** como Target. No reutilices un tag ya publicado.
 3. En **Release title**, escribe:
-   `NOTIFICA Windows 0.13.0 - carpeta compartida por oficina`.
+   `NOTIFICA Windows 0.14.0 - nueva interfaz y logo N`.
 4. Abre `release-assets/RELEASE-NOTES.md` del paquete preparado y copia su contenido
    completo en **Describe this release**, incluidas las huellas SHA-256.
 5. En el área de adjuntos, sube estos tres archivos desde **release-assets**:
-   - `NOTIFICA-Windows-0.13.0-managed.zip`
+   - `NOTIFICA-Windows-0.14.0-managed.zip`
    - `SHA256SUMS.txt`
    - `ACTUALIZACION.md` (guía con comandos y huellas completados).
 6. Espera a que terminen las tres cargas. Marca **This is a pre-release** durante
@@ -23,7 +23,7 @@ PCs automáticamente. Conserva la Release anterior sin modificarla.
    cuando quieras descargarla desde tus sesiones de control remoto.
 8. Confirma los tres adjuntos en **Assets**. Descarga el ZIP propio; los enlaces
    automáticos **Source code** no sirven para instalar.
-9. Despliega el servidor nuevo antes de ejecutar el actualizador. Actualiza primero
+9. Confirma que el servidor admite la carpeta compartida de 0.13.0. Actualiza primero
    un receptor y el firmante según ACTUALIZACION.md; valida antes de continuar.
 
 También puedes actualizar las guías del repositorio subiendo el contenido de la
@@ -35,7 +35,7 @@ normales del repositorio. Los binarios van como adjuntos de la Release.
 
 Un ZIP sirve para altas nuevas y actualizaciones. Los PCs existentes ejecutan
 **Update-Notifica.ps1**; los nuevos **Install-Notifica.ps1**. El actualizador admite
-instalaciones administradas 0.12.0 y conserva inscripción, configuración y documentos.
+instalaciones administradas 0.12.0 y 0.13.0 y conserva inscripción, configuración y documentos.
 No requiere comprar un certificado de firma de editor.
 
 Accede al repositorio privado con tu cuenta al descargar por control remoto y

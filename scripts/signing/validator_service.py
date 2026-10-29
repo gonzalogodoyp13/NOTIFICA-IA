@@ -17,11 +17,18 @@ from pathlib import Path
 
 MAX_PDF = 4 * 1024 * 1024
 slots = threading.BoundedSemaphore(2)
-config_path = Path(sys.argv[1]).resolve()
-settings = json.loads(config_path.read_text(encoding='utf-8-sig'))
-secret = os.environ.get('SIGNING_VALIDATOR_TOKEN', '')
-if not re.fullmatch(r'[A-Za-z0-9_-]{43,128}', secret):
-    raise SystemExit('VALIDATOR_TOKEN_REQUIRED')
+config_path = None
+settings = {}
+secret = ''
+
+
+def configure(path):
+    global config_path, settings, secret
+    config_path = Path(path).resolve()
+    settings = json.loads(config_path.read_text(encoding='utf-8-sig'))
+    secret = os.environ.get('SIGNING_VALIDATOR_TOKEN', '')
+    if not re.fullmatch(r'[A-Za-z0-9_-]{43,128}', secret):
+        raise RuntimeError('VALIDATOR_TOKEN_REQUIRED')
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -41,7 +48,7 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         self.connection.settimeout(30)
         self.close_connection = True
-        if self.path != '/validate' or not hmac.compare_digest(self.headers.get('Authorization', ''), 'Bearer ' + secret):
+        if not secret or self.path not in ('/validate', '/api/validate') or not hmac.compare_digest(self.headers.get('Authorization', ''), 'Bearer ' + secret):
             return self.answer(401, {'ok': False, 'error': 'UNAUTHORIZED'})
         if not slots.acquire(blocking=False):
             return self.answer(503, {'ok': False, 'error': 'VALIDATOR_BUSY'})
@@ -81,6 +88,8 @@ class Handler(BaseHTTPRequestHandler):
             slots.release()
 
 
-server = ThreadingHTTPServer(('127.0.0.1', int(sys.argv[2]) if len(sys.argv) > 2 else 8789), Handler)
-print(json.dumps({'ready': True, 'port': server.server_port}), flush=True)
-server.serve_forever()
+if __name__ == '__main__':
+    configure(sys.argv[1])
+    server = ThreadingHTTPServer(('127.0.0.1', int(sys.argv[2]) if len(sys.argv) > 2 else 8789), Handler)
+    print(json.dumps({'ready': True, 'port': server.server_port}), flush=True)
+    server.serve_forever()

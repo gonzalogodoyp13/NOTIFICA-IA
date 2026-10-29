@@ -1,5 +1,21 @@
 # Windows signing agent
 
+## Desktop dashboard — 0.14.0
+
+The white N identifies the executable, tray and dialogs. Double-click the tray
+icon or choose **Abrir NOTIFICA…** to open a Spanish dashboard with service/token
+status, remote session and expiry, office folder, enrollment, refresh, hide and
+exit controls. Closing the window keeps the tray/service running; exiting the
+tray does not disable the remote signing session. Its existing consent/PIN dialog
+remains the only way to enable signing. Logon launches continue in the tray.
+
+The managed package upgrades 0.12.0 and 0.13.0 installations to 0.14.0 while
+preserving enrollment, configuration and documents. Existing updater SID and
+quoted-service-path fixes are retained. Use `--dashboard-self-test <output-folder>`
+for isolated UI checks and rendered screenshots, or `--dashboard-preview` for a
+synthetic preview with no service, network or token access. Recreate the native
+multi-size icon with `build-icon.ps1`.
+
 ## Shared office folder — 0.13.0
 
 All authorized devices, including signer-only laptops, now use a read-only native

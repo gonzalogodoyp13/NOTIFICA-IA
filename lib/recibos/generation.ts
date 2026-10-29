@@ -794,7 +794,6 @@ export async function generateReceipt(params: {
       where: { id: params.input.notificacionId },
       data: { bancoId: params.input.bancoId, meta: nextMeta, updatedAt: fechaGeneracion },
     })
-    await tx.diligencia.update({ where: { id: diligenciaId }, data: { estadoCobro: 'NO_PAGADO' } })
     const workflow = await syncDiligenceWorkflowState(diligenciaId, tx, { officeId: params.context.officeId, userId: params.context.id })
 
     const eventType = eventTypeFor(currentReservation.operation)

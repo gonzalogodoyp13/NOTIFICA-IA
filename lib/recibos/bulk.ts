@@ -87,21 +87,15 @@ export async function buildReceiptBulkPreview(officeId: number, input: ReceiptBu
 
   const receipts = await db.recibo.findMany({
     where: { id: { in: ids }, status: 'ACTIVE', rol: { officeId } },
-    select: { id: true, diligenciaId: true, documentoId: true, numeroRecibo: true, numeroBoleta: true, ref: true, monto: true, rol: { select: { rol: true } } },
+    select: { id: true, diligenciaId: true, documentoId: true, numeroRecibo: true, numeroBoleta: true, estadoCobro: true, fechaPago: true, ref: true, monto: true, rol: { select: { rol: true } } },
   })
   const receiptMap = new Map(receipts.map(item => [item.id, item]))
   const documentIds = receipts.map(item => item.documentoId).filter((id): id is string => !!id)
-  const diligenceIds = receipts.map(item => item.diligenciaId).filter((id): id is string => !!id)
-  const [validDocuments, diligences] = await Promise.all([
-    documentIds.length ? db.documento.findMany({ where: { ...validDocumentWhere, id: { in: documentIds }, rol: { officeId } }, select: { id: true } }) : [],
-    diligenceIds.length ? db.diligencia.findMany({ where: { id: { in: diligenceIds }, rol: { officeId } }, select: { id: true, estadoCobro: true, fechaPago: true } }) : [],
-  ])
+  const validDocuments = documentIds.length ? await db.documento.findMany({ where: { ...validDocumentWhere, id: { in: documentIds }, rol: { officeId } }, select: { id: true } }) : []
   const validDocumentIds = new Set(validDocuments.map(item => item.id))
-  const diligenceMap = new Map(diligences.map(item => [item.id, item]))
 
   const states: ReceiptState[] = ids.map(id => {
     const receipt = receiptMap.get(id)
-    const diligence = receipt?.diligenciaId ? diligenceMap.get(receipt.diligenciaId) : null
     return {
       receiptId: id,
       diligenceId: receipt?.diligenciaId ?? null,
@@ -109,8 +103,8 @@ export async function buildReceiptBulkPreview(officeId: number, input: ReceiptBu
       numeroRecibo: receipt?.numeroRecibo?.trim() || '-',
       amount: Number(receipt?.monto ?? 0),
       validDocument: !!receipt?.documentoId && validDocumentIds.has(receipt.documentoId),
-      paymentStatus: diligence?.estadoCobro ?? null,
-      paymentDate: normalizeDate(diligence?.fechaPago),
+      paymentStatus: receipt?.estadoCobro ?? null,
+      paymentDate: normalizeDate(receipt?.fechaPago),
       boletaNumber: receipt ? (receipt.numeroBoleta?.trim() || null) : null,
     }
   })
@@ -145,13 +139,8 @@ function makeSnapshots(preview: ReceiptBulkPreview) {
     const after: OperationSnapshot[] = eligible.map(item => ({ targetType: 'receipt', targetId: item.receiptId, receiptIds: [item.receiptId], boletaNumber: item.proposedBoletaNumber }))
     return { before, after }
   }
-  const grouped = new Map<string, ReceiptBulkPreviewItem[]>()
-  for (const item of eligible) if (item.diligenceId) grouped.set(item.diligenceId, [...(grouped.get(item.diligenceId) ?? []), item])
-  const before: OperationSnapshot[] = []; const after: OperationSnapshot[] = []
-  for (const [diligenceId, items] of Array.from(grouped.entries())) {
-    before.push({ targetType: 'diligence', targetId: diligenceId, receiptIds: items.map(item => item.receiptId), paymentStatus: items[0].paymentStatus ?? 'NO_PAGADO', paymentDate: items[0].paymentDate })
-    after.push({ targetType: 'diligence', targetId: diligenceId, receiptIds: items.map(item => item.receiptId), paymentStatus: 'PAGADO', paymentDate: items[0].proposedPaymentDate })
-  }
+  const before: OperationSnapshot[] = eligible.map(item => ({ targetType: 'receipt', targetId: item.receiptId, receiptIds: [item.receiptId], paymentStatus: item.paymentStatus ?? 'NO_PAGADO', paymentDate: item.paymentDate }))
+  const after: OperationSnapshot[] = eligible.map(item => ({ targetType: 'receipt', targetId: item.receiptId, receiptIds: [item.receiptId], paymentStatus: 'PAGADO', paymentDate: item.proposedPaymentDate }))
   return { before, after }
 }
 
@@ -164,7 +153,7 @@ export async function executeReceiptBulkOperation(params: { officeId: number; us
     const { before, after } = makeSnapshots(preview)
 
     if (params.input.action === 'markPaid') {
-      for (const state of after) await tx.diligencia.update({ where: { id: state.targetId }, data: { estadoCobro: 'PAGADO', fechaPago: state.paymentDate ? new Date(state.paymentDate) : null } })
+      for (const state of after) await tx.recibo.update({ where: { id: state.targetId }, data: { estadoCobro: 'PAGADO', fechaPago: state.paymentDate ? new Date(state.paymentDate) : null } })
     } else {
       for (const state of after) await tx.recibo.update({ where: { id: state.targetId }, data: { numeroBoleta: state.boletaNumber ?? null } })
     }
@@ -198,7 +187,11 @@ export async function executeReceiptBulkOperation(params: { officeId: number; us
 }
 
 function snapshots(value: Prisma.JsonValue): OperationSnapshot[] {
-  return Array.isArray(value) ? value as unknown as OperationSnapshot[] : []
+  const saved = Array.isArray(value) ? value as unknown as OperationSnapshot[] : []
+  // Old operations recorded diligence targets. Undo only their explicitly selected receipts.
+  return saved.flatMap(state => state.targetType === 'diligence'
+    ? state.receiptIds.map(id => ({ ...state, targetType: 'receipt' as const, targetId: id, receiptIds: [id] }))
+    : [state])
 }
 
 export async function operationUndoability(officeId: number, operationId: string, db: ReceiptDb = prisma) {
@@ -207,13 +200,12 @@ export async function operationUndoability(officeId: number, operationId: string
   if (operation.undoneAt) return { reversible: false, reason: 'La operación ya fue deshecha.' }
   const after = snapshots(operation.afterState)
   for (const state of after) {
-    if (state.targetType === 'receipt') {
-      const receipt = await db.recibo.findFirst({ where: { id: state.targetId, status: 'ACTIVE', rol: { officeId } }, select: { numeroBoleta: true } })
-      if (!receipt || (receipt.numeroBoleta ?? null) !== (state.boletaNumber ?? null)) return { reversible: false, reason: 'Un recibo cambió después de la operación.' }
-    } else {
-      const diligence = await db.diligencia.findFirst({ where: { id: state.targetId, rol: { officeId } }, select: { estadoCobro: true, fechaPago: true } })
-      if (!diligence || diligence.estadoCobro !== state.paymentStatus || normalizeDate(diligence.fechaPago) !== (state.paymentDate ?? null)) return { reversible: false, reason: 'Una diligencia cambió después de la operación.' }
-    }
+    const receipt = await db.recibo.findFirst({ where: { id: state.targetId, status: 'ACTIVE', rol: { officeId } }, select: { numeroBoleta: true, estadoCobro: true, fechaPago: true } })
+    if (!receipt) return { reversible: false, reason: 'Un recibo cambió después de la operación.' }
+    const changed = operation.action === 'markPaid'
+      ? receipt.estadoCobro !== state.paymentStatus || normalizeDate(receipt.fechaPago) !== (state.paymentDate ?? null)
+      : (receipt.numeroBoleta ?? null) !== (state.boletaNumber ?? null)
+    if (changed) return { reversible: false, reason: 'Un recibo cambió después de la operación.' }
   }
   return { reversible: true, reason: null }
 }
@@ -225,8 +217,9 @@ export async function undoReceiptBulkOperation(params: { officeId: number; userI
     if (!undoability.reversible) throw new Error(undoability.reason ?? 'La operación no se puede deshacer.')
     const operation = await tx.receiptBulkOperation.findFirstOrThrow({ where: { id: params.operationId, officeId: params.officeId } })
     for (const state of snapshots(operation.beforeState)) {
-      if (state.targetType === 'receipt') await tx.recibo.update({ where: { id: state.targetId }, data: { numeroBoleta: state.boletaNumber ?? null } })
-      else await tx.diligencia.update({ where: { id: state.targetId }, data: { estadoCobro: state.paymentStatus ?? 'NO_PAGADO', fechaPago: state.paymentDate ? new Date(state.paymentDate) : null } })
+      await tx.recibo.update({ where: { id: state.targetId }, data: operation.action === 'markPaid'
+        ? { estadoCobro: state.paymentStatus ?? 'NO_PAGADO', fechaPago: state.paymentDate ? new Date(state.paymentDate) : null }
+        : { numeroBoleta: state.boletaNumber ?? null } })
     }
     await tx.receiptBulkOperation.update({ where: { id: operation.id }, data: { undoneAt: new Date(), undoneByUserId: params.userId } })
     await recordCriticalEvent(tx, { id: params.userId, officeId: params.officeId }, {

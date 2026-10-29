@@ -7,9 +7,11 @@ import { ArrowLeft, ArrowRight, Clock3, Search } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { readRecentRoles } from '@/lib/client/recentRoles'
+import { useOfficeCacheContext } from '@/lib/cache/officeCacheContext'
 import type { RecentRole, RoleSearchPayload } from '@/lib/dashboard/types'
 
 export default function DashboardSearch() {
+  const { userId, officeId } = useOfficeCacheContext()
   const [query, setQuery] = useState('')
   const [submitted, setSubmitted] = useState('')
   const [page, setPage] = useState(1)
@@ -19,7 +21,7 @@ export default function DashboardSearch() {
   const [error, setError] = useState<string | null>(null)
   const [highlighted, setHighlighted] = useState(0)
 
-  useEffect(() => setRecent(readRecentRoles()), [])
+  useEffect(() => setRecent(readRecentRoles({ userId, officeId })), [userId, officeId])
 
   useEffect(() => {
     if (!submitted) return

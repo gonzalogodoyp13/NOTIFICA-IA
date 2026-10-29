@@ -1,6 +1,6 @@
-# Actualizar PCs de NOTIFICA Windows 0.12.0 a 0.13.0
+# Actualizar PCs de NOTIFICA Windows 0.12.0 / 0.13.0 a 0.14.0
 
-Usa el mismo ZIP `NOTIFICA-Windows-0.13.0-managed.zip` para todos los PCs.
+Usa el mismo ZIP `NOTIFICA-Windows-0.14.0-managed.zip` para todos los PCs.
 En un PC existente ejecuta **Update-Notifica.ps1**. En uno nuevo, ejecuta
 **Install-Notifica.ps1** y sigue INSTALACION.md. GitHub no instala actualizaciones automáticamente.
 
@@ -12,8 +12,9 @@ tendrás que habilitarla nuevamente con el PIN.
 
 ## 1. Preparación
 
-1. Despliega primero la aplicación web/servidor con los nuevos endpoints de carpeta
-   compartida y archivo. Publicar esta Release no despliega el servidor.
+1. Confirma que el servidor ya admite la carpeta compartida de 0.13.0. Si vienes
+   de 0.12.0, despliega primero ese soporte. Esta actualización de interfaz no
+   requiere nuevas migraciones; publicar en GitHub no despliega el servidor.
 2. Empieza con un receptor y después el firmante. Valida ambos antes de actualizar
    el resto. Mantén la Release como pre-release durante este piloto.
 3. Inicia sesión remota en el PC. Necesitas Windows 11 x64, permisos de administrador
@@ -25,11 +26,11 @@ tendrás que habilitarla nuevamente con el PIN.
    Comprueba el ZIP contra la huella publicada y conservada por ti:
 
    ```powershell
-   Get-FileHash -Algorithm SHA256 -LiteralPath 'C:\Descargas\NOTIFICA-Windows-0.13.0-managed.zip'
+   Get-FileHash -Algorithm SHA256 -LiteralPath 'C:\Descargas\NOTIFICA-Windows-0.14.0-managed.zip'
    ```
 
    SHA-256 esperado: `HASH-ZIP-PUBLICADO-EN-LAS-NOTAS`.
-6. Extrae en una carpeta nueva, por ejemplo `C:\NotificaUpdate-0.13.0`. Dentro deben
+6. Extrae en una carpeta nueva, por ejemplo `C:\NotificaUpdate-0.14.0`. Dentro deben
    estar Update-Notifica.ps1, distribution.json y payload.zip. No extraigas encima
    de Program Files ni ProgramData.
 
@@ -38,7 +39,7 @@ tendrás que habilitarla nuevamente con el PIN.
 Abre **Windows PowerShell de 64 bits como administrador**:
 
 ```powershell
-Set-Location -LiteralPath 'C:\NotificaUpdate-0.13.0'
+Set-Location -LiteralPath 'C:\NotificaUpdate-0.14.0'
 $manifestHash = 'HASH-DE-DISTRIBUTION-JSON-PUBLICADO-EN-LAS-NOTAS'
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Update-Notifica.ps1 `
   -ExpectedManifestSha256 $manifestHash -Preflight
@@ -48,7 +49,8 @@ La guía adjunta a la Release ya tiene las huellas completadas. En la guía dent
 del ZIP, sustituye los marcadores por las huellas de las notas. No uses un hash
 calculado del manifiesto descargado como si fuera una referencia independiente.
 
-Resultado esperado: `PREFLIGHT_PASSED: 0.12.0 -> 0.13.0; no changes made`.
+Resultado esperado: `PREFLIGHT_PASSED: 0.12.0 -> 0.14.0; no changes made`.
+Si el PC tiene 0.13.0, el resultado mostrará `0.13.0 -> 0.14.0`.
 Revisa paquete, versión anterior, servicio, tarea de bandeja, configuración,
 disco y ausencia de diario de firma pendiente. Todavía no instala nada.
 
@@ -61,7 +63,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Update-Notifica.ps1 `
   -ExpectedManifestSha256 $manifestHash
 ```
 
-Resultado esperado: **UPDATED_TO_0_13_0_ENROLLMENT_PRESERVED**.
+Resultado esperado: **UPDATED_TO_0_14_0_ENROLLMENT_PRESERVED**.
 El script extrae una versión nueva, detiene el servicio y la tarea de bandeja,
 conserva identidad/configuración, activa la versión y comprueba su arranque.
 Deja la versión anterior intacta. No desinstales ni borres carpetas para actualizar.
@@ -79,10 +81,11 @@ Si una política corporativa lo bloquea, respeta esa política.
    (Get-Content 'C:\ProgramData\NotificaIA\Agent\managed-installation.json' -Raw | ConvertFrom-Json).version
    ```
 
-   Debe indicar `Running` y `0.13.0`. Si falta la bandeja, cierra e inicia la sesión
+   Debe indicar `Running` y `0.14.0`. Si falta la bandeja, cierra e inicia la sesión
    Windows del usuario configurado. No vuelvas a inscribir el PC.
-2. Confirma en NOTIFICA que conserva dispositivo/oficina. En la bandeja selecciona
-   **Abrir firmados de la oficina** y espera la primera sincronización.
+2. Haz doble clic en la nueva **N blanca** de la bandeja para abrir el panel.
+   Comprueba estado del servicio/token, versión 0.14.0 y sesión de firma.
+   Pulsa **Abrir firmados de la oficina** y confirma que conserva dispositivo/oficina.
 3. `Oficina-<id>` muestra firmados FEA de los últimos 50 días; los PDF se descargan
    al abrirlos. Las copias antiguas siguen fuera de esa nueva subcarpeta.
 4. Comprueba que receptor y firmante ven y pueden abrir el mismo PDF. Busca firmas
@@ -97,7 +100,7 @@ Si una política corporativa lo bloquea, respeta esa política.
 | --- | --- |
 | ALREADY_INSTALLED | El mismo paquete ya figura instalado; comprueba servicio y carpeta. |
 | REVIEW_ACTIVE_WORK | Resuelve el intento pendiente en NOTIFICA. No borres signing-work.json ni vuelvas a firmar a ciegas. Después repite. |
-| MANAGED_INSTALLATION_REQUIRED / UNSUPPORTED_UPGRADE_SOURCE | No es una instalación administrada completa 0.12.0. Conserva error y versión para preparar su migración. No instales encima ni desinstales para forzarlo. |
+| MANAGED_INSTALLATION_REQUIRED / UNSUPPORTED_UPGRADE_SOURCE | No es una instalación administrada completa 0.12.0 o 0.13.0. Conserva error y versión para preparar su migración. No instales encima ni desinstales para forzarlo. |
 | SIGNED_INSTALLATION_REQUIRES_SIGNED_UPDATER | Usa el canal firmado de esa instalación. |
 | UPDATE_FAILED_PREVIOUS_VERSION_RESTORED | Falló y restauró la versión anterior. Comprueba servicio/bandeja y conserva el paquete para investigar. |
 | RECOVER_INTERRUPTED_UPDATE_FIRST / RECOVERY_REQUIRED_JOURNAL_PRESERVED | Con las firmas detenidas, recupera con el comando siguiente y el mismo paquete. |
@@ -111,14 +114,13 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Update-Notifica.ps1 `
   -ExpectedManifestSha256 $manifestHash -Recover
 ```
 
-Resultado esperado: `PREVIOUS_VERSION_RESTORED`. Restaura 0.12.0 sin eliminar PDF ni
+Resultado esperado: `PREVIOUS_VERSION_RESTORED`. Restaura la versión anterior sin eliminar PDF ni
 identidades. Investiga el error y después repite preflight/actualización. Si hay
 trabajo de firma sin resolver, la recuperación también se detiene para conservarlo.
 
-La recuperación no permite degradar una actualización ya completada. Tras desplegar
-el servidor nuevo, la versión antigua ya no recibe nuevos PDF por el sistema de
-entregas retirado; termina la actualización a 0.13.0. Entretanto usa la aplicación
-para consultar documentos.
+La recuperación no permite degradar una actualización ya completada. Si se restaura
+0.12.0 contra un servidor que ya retiró las entregas antiguas, consulta los documentos
+en la web mientras resuelves la actualización. 0.13.0 ya admite la carpeta compartida.
 
 Los checkpoints privados quedan en `C:\ProgramData\NotificaIA\Agent\update-backups`.
 No subas backups, configuración real, claves, diarios ni documentos a GitHub.

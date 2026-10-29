@@ -15,12 +15,41 @@ $root=Join-Path $run 'program'; $data=Join-Path $run 'data'; $state=Join-Path $d
 New-Item -ItemType Directory -Path $state -Force | Out-Null
 $oldTarget=Join-Path $root ('versions\0.12.0-'+('a'*32)); $newTarget=Join-Path $root ('versions\0.13.0-'+('b'*32))
 $record=[pscustomobject]@{mode='operator-managed-unsigned';status='installed';version='0.12.0';target=$oldTarget;keyName=[Guid]::NewGuid().ToString()}
+$testSid=[Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+$tray=[pscustomobject]@{Principal=[pscustomobject]@{Id='Author';UserId='short-display-name'}}
+$taskXml='<Task xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task"><Principals><Principal id="Author"><UserId>'+$testSid+'</UserId></Principal></Principals></Task>'
+Check 'short display name accepted when stored task SID matches' { Assert-ManagedTrayUser $tray $taskXml $testSid }
+Check 'display name cannot hide a different stored SID' { Reject { Assert-ManagedTrayUser $tray ($taskXml.Replace($testSid,'S-1-5-18')) $testSid } 'TRAY_USER_MISMATCH' }
+Check 'different principal ID rejected' { Reject { Assert-ManagedTrayUser $tray ($taskXml.Replace('id="Author"','id="Other"')) $testSid } 'TRAY_USER_MISMATCH' }
+Check 'multiple principals rejected' { Reject { Assert-ManagedTrayUser $tray ($taskXml.Replace('</Principals>','<Principal id="Other"><UserId>S-1-5-18</UserId></Principal></Principals>')) $testSid } 'TRAY_USER_MISMATCH' }
+Check 'missing user identity rejected' { Reject { Assert-ManagedTrayUser $tray ($taskXml.Replace('<UserId>'+$testSid+'</UserId>','')) $testSid } 'TRAY_USER_MISMATCH' }
+Check 'malformed task XML rejected' { Reject { Assert-ManagedTrayUser $tray '<Task>' $testSid } 'TRAY_USER_MISMATCH' }
+Check 'DTD task XML rejected' { Reject { Assert-ManagedTrayUser $tray ('<!DOCTYPE Task [<!ENTITY owner "'+$testSid+'">]>'+($taskXml.Replace($testSid,'&owner;'))) $testSid } 'TRAY_USER_MISMATCH' }
+Check 'qualified account resolves to configured SID' {
+    $account=([Security.Principal.SecurityIdentifier]::new($testSid)).Translate([Security.Principal.NTAccount]).Value
+    Assert-ManagedTrayUser $tray ($taskXml.Replace($testSid,[Security.SecurityElement]::Escape($account))) $testSid
+}
 $config=[pscustomobject]@{serverUrl='https://test.invalid/';allowedUserSid='S-1-5-21-1-2-3-1000';dataDirectory=$state;
     machineKey=$true;keyName=$record.keyName;pkcs11Library='C:\Driver\token.dll';certificateFingerprint=('a'*64);receiverDirectory=(Join-Path $run 'documents');
     signingEngine=[pscustomobject]@{javaExecutable=(Join-Path $oldTarget 'java\bin\java.exe');bridgeJar=(Join-Path $oldTarget 'engine\notifica-dss-6.5.jar');
         librariesDirectory=(Join-Path $oldTarget 'engine\lib');outputDirectory=(Join-Path $state 'signed');timestampUrl='https://tsa.invalid/';
         timestampPolicyOid='1.2.3';trustedCertificateFiles=@('C:\Trust\public.cer')}}
 Check 'known managed 0.12 signer accepted' { Assert-ManagedUpdateSource $record $config $root $data '0.13.0' }
+Check 'managed 0.12 signer accepted for 0.14' { Assert-ManagedUpdateSource $record $config $root $data '0.14.0' }
+Check 'managed 0.13 signer and receiver accepted for 0.14' {
+    $previous=$record | ConvertTo-Json | ConvertFrom-Json
+    $previous.version='0.13.0'; $previous.target=$newTarget
+    $previousConfig=New-ManagedUpdateConfiguration $config $newTarget
+    Assert-ManagedUpdateSource $previous $previousConfig $root $data '0.14.0'
+    $previousConfig.PSObject.Properties.Remove('signingEngine')
+    Assert-ManagedUpdateSource $previous $previousConfig $root $data '0.14.0'
+}
+Check 'same-version replacement and downgrade rejected' {
+    $previous=$record | ConvertTo-Json | ConvertFrom-Json
+    $previous.version='0.14.0'
+    Reject { Assert-ManagedUpdateSource $previous $config $root $data '0.14.0' } 'UNSUPPORTED_UPGRADE_SOURCE'
+    Reject { Assert-ManagedUpdateSource $previous $config $root $data '0.13.0' } 'UNSUPPORTED_UPGRADE_SOURCE'
+}
 Check 'unknown old version rejected' {
     $copy=$record | ConvertTo-Json | ConvertFrom-Json; $copy.version='0.11.0'
     Reject { Assert-ManagedUpdateSource $copy $config $root $data '0.13.0' } 'UNSUPPORTED_UPGRADE_SOURCE'

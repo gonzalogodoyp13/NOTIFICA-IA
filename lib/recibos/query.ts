@@ -56,7 +56,7 @@ const receiptListInclude = {
 } satisfies Prisma.ReciboInclude
 
 const receiptDiligenceSelect = {
-  id: true, meta: true, estadoCobro: true, fechaPago: true, tipo: { select: { nombre: true } },
+  id: true, meta: true, tipo: { select: { nombre: true } },
 } satisfies Prisma.DiligenciaSelect
 
 const receiptNotificationSelect = { id: true, meta: true } satisfies Prisma.NotificacionSelect
@@ -145,14 +145,6 @@ async function scopedFilterIds(officeId: number, filters: ReceiptFiltersInput) {
   })
   const validDocumentIds = validReceiptDocuments.map(document => document.id)
 
-  let diligenceIds: string[] | undefined
-  if (filters.estados.length) {
-    const diligences = await prisma.diligencia.findMany({
-      where: { estadoCobro: { in: filters.estados }, rol: { officeId } }, select: { id: true },
-    })
-    diligenceIds = diligences.map(item => item.id)
-  }
-
   let templateLinks: { notificationIds: string[]; diligenceIds: string[] } | undefined
   if (filters.estampoTemplates.length) {
     const wizardIds = filters.estampoTemplates.filter(v => v.startsWith('wizard:')).map(v => Number(v.slice(7))).filter(Number.isInteger)
@@ -179,7 +171,7 @@ async function scopedFilterIds(officeId: number, filters: ReceiptFiltersInput) {
       diligenceIds: unique(documents.map(item => item.diligenciaId)),
     }
   }
-  return { validDocumentIds, diligenceIds, templateLinks }
+  return { validDocumentIds, templateLinks }
 }
 
 export async function getReceiptTemplateOptions(officeId: number): Promise<ReceiptTemplateOption[]> {
@@ -200,7 +192,7 @@ export async function getReceiptList(
   filters: ReceiptFiltersInput,
   options?: { exportAll?: boolean; reciboIds?: string[]; excludedIds?: string[] }
 ): Promise<ReceiptListResult> {
-  const { validDocumentIds, diligenceIds, templateLinks } = await scopedFilterIds(officeId, filters)
+  const { validDocumentIds, templateLinks } = await scopedFilterIds(officeId, filters)
   const demandConditions: Prisma.DemandaWhereInput[] = []
   if (filters.abogadoIds.length) demandConditions.push({ abogadoId: { in: filters.abogadoIds } })
   if (filters.procuradorIds.length) demandConditions.push({ procuradorId: { in: filters.procuradorIds } })
@@ -213,7 +205,7 @@ export async function getReceiptList(
     status: 'ACTIVE',
     documentoId: { in: validDocumentIds },
     ...(options?.reciboIds?.length ? { id: { in: options.reciboIds } } : options?.excludedIds?.length ? { id: { notIn: options.excludedIds } } : {}),
-    ...(diligenceIds ? { diligenciaId: { in: diligenceIds } } : {}),
+    ...(filters.estados.length ? { estadoCobro: { in: filters.estados } } : {}),
     ...(templateLinks ? { OR: [
       { notificacionId: { in: templateLinks.notificationIds } },
       { diligenciaId: { in: templateLinks.diligenceIds } },
@@ -270,8 +262,8 @@ export async function getReceiptList(
       procurador: label(receipt.rol.demanda?.procurador?.nombre),
       procuradorEmail: receipt.rol.demanda?.procurador?.email?.trim() || null,
       banco: bankLabel(receipt), valor: Number(receipt.monto), fechaRecibo: (receipt.fechaRecibo ?? receipt.createdAt).toISOString(),
-      fechaEjecucion: receipt.fechaEjecucion?.toISOString() ?? null, fechaPago: diligence?.fechaPago?.toISOString() ?? null,
-      estado: diligence?.estadoCobro === 'PAGADO' ? 'Pagado' as const : 'Sin pagar' as const,
+      fechaEjecucion: receipt.fechaEjecucion?.toISOString() ?? null, fechaPago: receipt.fechaPago?.toISOString() ?? null,
+      estado: receipt.estadoCobro === 'PAGADO' ? 'Pagado' as const : 'Sin pagar' as const,
       numeroBoleta: label(receipt.numeroBoleta ?? receipt.ref),
     }
   })

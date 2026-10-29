@@ -1,22 +1,23 @@
 # NOTIFICA IA · Distribución Windows
 
-Agente 0.13.0 para firma con token y carpeta compartida de firmados por oficina.
+Agente 0.14.0 con logo N blanco y panel sencillo para firma digital.
+Haz doble clic en la N de la bandeja para ver estado, sesión de firma, carpeta e inscripción.
 Muestra los últimos 50 días y descarga los PDF al abrirlos, también en el firmante.
 Distribución **sin certificado de firma de código**, instalada personalmente por
 el responsable mediante control remoto. Repositorio previsto: privado.
 
 ## Descargar
 
-Abre **Releases** y descarga el ZIP `NOTIFICA-Windows-0.13.0-managed.zip` junto con
+Abre **Releases** y descarga el ZIP `NOTIFICA-Windows-0.14.0-managed.zip` junto con
 sus huellas. El ZIP automático **Source code** no contiene los runtimes del agente.
 
 - [Instalación, inscripción y sesión remota](INSTALACION.md).
-- [Actualizar PCs existentes de 0.12.0 a 0.13.0](ACTUALIZACION.md).
+- [Actualizar PCs existentes de 0.12.0 o 0.13.0 a 0.14.0](ACTUALIZACION.md).
 - [Cómo cargar esta carpeta y publicar una versión en GitHub](GUIA_GITHUB.md).
 - [Plantilla de datos del PC](examples/install-request.example.json).
 
 Install-Notifica.ps1 admite altas nuevas y reanudación de su propia instalación
-interrumpida. Update-Notifica.ps1 actualiza instalaciones administradas 0.12.0,
+interrumpida. Update-Notifica.ps1 actualiza instalaciones administradas 0.12.0 y 0.13.0,
 conserva inscripción/configuración/documentos y recupera cambios fallidos. La
 actualización real en los PCs destino se acepta en un piloto; publica primero como pre-release.
 

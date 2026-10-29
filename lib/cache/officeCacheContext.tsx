@@ -3,6 +3,7 @@
 import { createContext, useContext } from 'react'
 
 export type OfficeCacheContextValue = {
+  userId: string
   officeId: number
   cacheRevision: number
   advanceCacheRevision(next: number): void

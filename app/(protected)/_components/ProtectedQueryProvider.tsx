@@ -5,6 +5,7 @@ import { type ReactNode, useCallback, useMemo, useState } from 'react'
 import { OfficeCacheContext } from '@/lib/cache/officeCacheContext'
 
 export default function ProtectedQueryProvider(props: {
+  userId: string
   officeId: number
   initialCacheRevision: number
   children: ReactNode
@@ -16,7 +17,7 @@ export default function ProtectedQueryProvider(props: {
   }))
   const [cacheRevision, setCacheRevision] = useState(props.initialCacheRevision)
   const advanceCacheRevision = useCallback((next: number) => setCacheRevision(current => Math.max(current, next)), [])
-  const context = useMemo(() => ({ officeId: props.officeId, cacheRevision, advanceCacheRevision }), [props.officeId, cacheRevision, advanceCacheRevision])
+  const context = useMemo(() => ({ userId: props.userId, officeId: props.officeId, cacheRevision, advanceCacheRevision }), [props.userId, props.officeId, cacheRevision, advanceCacheRevision])
 
   return (
     <QueryClientProvider client={queryClient}>

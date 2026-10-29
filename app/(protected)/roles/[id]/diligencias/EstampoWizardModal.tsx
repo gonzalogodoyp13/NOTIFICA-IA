@@ -54,6 +54,7 @@ export default function EstampoWizardModal({
   const [submitError, setSubmitError] = useState<string | null>(null)
   const [showTextEditor, setShowTextEditor] = useState(false)
   const [textoEditado, setTextoEditado] = useState<string | null>(null)
+  const [textDraft, setTextDraft] = useState('')
   const [previewingText, setPreviewingText] = useState(false)
 
   // Load wizard data when modal opens
@@ -180,8 +181,9 @@ export default function EstampoWizardModal({
   const handleOpenTextEditor = async () => {
     if (!selectedEstampoId) return
 
-    // If textoEditado already exists (non-empty), just open editor with existing text
+    // Reopen from the last confirmed text; editing a draft never changes submission.
     if (textoEditado && textoEditado.trim() !== '') {
+      setTextDraft(textoEditado)
       setShowTextEditor(true)
       return
     }
@@ -202,7 +204,7 @@ export default function EstampoWizardModal({
 
       const result = await response.json()
       if (result?.ok && result?.data?.renderedText) {
-        setTextoEditado(result.data.renderedText)
+        setTextDraft(result.data.renderedText)
         setShowTextEditor(true)
       } else {
         setSubmitError('Error al cargar vista previa')
@@ -510,21 +512,22 @@ export default function EstampoWizardModal({
             </p>
             <textarea
               className="w-full h-96 border rounded p-3 font-mono text-sm"
-              value={textoEditado || ''}
-              onChange={e => setTextoEditado(e.target.value)}
+              aria-label="Texto del estampo"
+              value={textDraft}
+              onChange={e => setTextDraft(e.target.value)}
             />
             <div className="mt-4 flex justify-end gap-3">
               <button
                 type="button"
                 onClick={() => {
                   setShowTextEditor(false)
-                  // Do NOT clear textoEditado on cancel - preserve user edits
+                  setTextDraft('')
                 }}
                 className="rounded bg-slate-200 px-4 py-2 text-sm"
               >
                 Cancelar
               </button>
-              {textoEditado && (
+              {(textDraft || textoEditado) && (
                 <button
                   type="button"
                   onClick={() => {
@@ -538,7 +541,10 @@ export default function EstampoWizardModal({
               )}
               <button
                 type="button"
-                onClick={() => setShowTextEditor(false)}
+                onClick={() => {
+                  setTextoEditado(textDraft)
+                  setShowTextEditor(false)
+                }}
                 className="rounded bg-blue-600 px-4 py-2 text-sm text-white"
               >
                 Confirmar

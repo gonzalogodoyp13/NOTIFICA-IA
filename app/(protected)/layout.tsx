@@ -27,7 +27,7 @@ export default async function ProtectedLayout({
 
   // Render children if authenticated
   return (
-    <ProtectedQueryProvider officeId={user.officeId} initialCacheRevision={user.officeCacheRevision}>
+    <ProtectedQueryProvider key={`${user.id}:${user.officeId}`} userId={user.id} officeId={user.officeId} initialCacheRevision={user.officeCacheRevision}>
       <TopBar />
       <main>{children}</main>
     </ProtectedQueryProvider>

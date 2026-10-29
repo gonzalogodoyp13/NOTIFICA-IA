@@ -14,7 +14,7 @@ try {
     if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) { throw 'ADMINISTRATOR_REQUIRED' }
     if (-not [Environment]::Is64BitProcess -or [Environment]::OSVersion.Version.Build -lt 22000) { throw 'WINDOWS_ELEVEN_X64_REQUIRED' }
     $package=Read-ManagedDistribution $PSScriptRoot $ExpectedManifestSha256
-    if ($package.format -ne 2 -or $package.version -cne '0.13.0') { throw 'UPDATE_PACKAGE_REQUIRED' }
+    if ($package.format -ne 2 -or $package.version -cnotin @('0.13.0','0.14.0')) { throw 'UPDATE_PACKAGE_REQUIRED' }
     $root=Assert-LocalPath (Join-Path ([Environment]::GetFolderPath('ProgramFiles')) 'NotificaIA\Agent')
     $data=Assert-LocalPath (Join-Path ([Environment]::GetFolderPath('CommonApplicationData')) 'NotificaIA\Agent')
     $state=Assert-LocalPath (Join-Path $data 'state')
@@ -22,7 +22,6 @@ try {
     $recordPath=Assert-LocalPath (Join-Path $data 'managed-installation.json')
     $journalPath=Assert-LocalPath (Join-Path $data 'managed-update.json')
     $serviceName='NotificaSigningAgent'; $taskName='NotificaSigningTray'
-    $sc=Join-Path ([Environment]::GetFolderPath('System')) 'sc.exe'
     if (Test-Path -LiteralPath (Join-Path $data 'installation.json')) { throw 'SIGNED_INSTALLATION_REQUIRES_SIGNED_UPDATER' }
     if (-not (Test-Path -LiteralPath $recordPath)) { throw 'MANAGED_INSTALLATION_REQUIRED' }
     if (-not $Preflight) {
@@ -55,10 +54,8 @@ try {
     $task=Get-ScheduledTask -TaskName $taskName -ErrorAction Stop
     if (@($task.Actions).Count -ne 1 -or $task.Actions[0].Execute -notin $allowed -or
         $task.Actions[0].Arguments -cne ('--config "'+$configPath+'"')) { throw 'TRAY_OWNERSHIP_MISMATCH' }
-    $sid=[Security.Principal.SecurityIdentifier]::new($originalConfig.allowedUserSid)
-    $account=$sid.Translate([Security.Principal.NTAccount]).Value
-    $taskUser=$task.Principal.UserId
-    if ($taskUser -ine $sid.Value -and $taskUser -ine $account) { throw 'TRAY_USER_MISMATCH' }
+    $taskXml=Export-ScheduledTask -TaskName $taskName
+    Assert-ManagedTrayUser $task $taskXml $originalConfig.allowedUserSid
     if (-not $Recover -and -not $task.Settings.Enabled) { throw 'ENABLE_EXISTING_TRAY_BEFORE_UPDATE' }
     Assert-NoSigningWork $state
     $folder=if (Test-Path -LiteralPath (Join-Path $state 'receiver-folder.json')) { Read-UpdateJson (Join-Path $state 'receiver-folder.json') }
@@ -69,24 +66,37 @@ try {
     if (-not $Recover) {
         $target=Join-Path $root ('versions\'+$package.version+'-'+[Guid]::NewGuid().ToString('N'))
         $checkpoint=[pscustomobject]@{format=1;manifestSha256=$ExpectedManifestSha256;installation=$previous;configuration=$originalConfig;
-            taskXml=(Export-ScheduledTask -TaskName $taskName);candidateTarget=$target;startedAt=[DateTimeOffset]::UtcNow.ToString('O')}
+            taskXml=$taskXml;candidateTarget=$target;startedAt=[DateTimeOffset]::UtcNow.ToString('O')}
     }
     $newExe=Join-Path $checkpoint.candidateTarget 'agent\Notifica.Agent.exe'
     if ($Preflight) { Write-Output ('PREFLIGHT_PASSED: '+$previous.version+' -> '+$package.version+'; no changes made'); exit 0 }
-    function Invoke-Sc([string[]]$Arguments) { & $sc @Arguments | Out-Null; if ($LASTEXITCODE -ne 0) { throw 'SERVICE_CONFIGURATION_FAILED' } }
+    function Set-ServiceExecutable([string]$Executable) {
+        $owned=Get-CimInstance Win32_Service -Filter "Name='NotificaSigningAgent'"
+        Assert-ServiceOwnership $owned @($oldExe,$newExe) $configPath
+        if ($owned.State -cne 'Stopped') { throw 'SERVICE_MUST_BE_STOPPED' }
+        $binaryPath='"'+$Executable+'" --service --config "'+$configPath+'"'
+        # Typed CIM arguments preserve embedded quotes under Windows PowerShell
+        # 5.1. Passing this path through sc.exe corrupts its native arguments.
+        $changed=Invoke-CimMethod -InputObject $owned -MethodName Change -Arguments @{PathName=$binaryPath}
+        if ($changed.ReturnValue -ne 0) { throw 'SERVICE_CONFIGURATION_FAILED' }
+        $configured=Get-CimInstance Win32_Service -Filter "Name='NotificaSigningAgent'"
+        if ($configured.PathName -cne $binaryPath) { throw 'SERVICE_CONFIGURATION_NOT_APPLIED' }
+        Assert-ServiceOwnership $configured @($Executable) $configPath
+    }
     function Stop-Installed {
         $owned=Get-CimInstance Win32_Service -Filter "Name='NotificaSigningAgent'"
         Assert-ServiceOwnership $owned @($oldExe,$newExe) $configPath
         $ownedTask=Get-ScheduledTask -TaskName $taskName
         if (@($ownedTask.Actions).Count -ne 1 -or $ownedTask.Actions[0].Execute -notin @($oldExe,$newExe) -or
             $ownedTask.Actions[0].Arguments -cne ('--config "'+$configPath+'"')) { throw 'TRAY_OWNERSHIP_MISMATCH' }
+        Assert-ManagedTrayUser $ownedTask (Export-ScheduledTask -TaskName $taskName) $originalConfig.allowedUserSid
         Disable-ScheduledTask -TaskName $taskName | Out-Null
         Stop-ScheduledTask -TaskName $taskName
         Stop-Service $serviceName
         (Get-Service $serviceName).WaitForStatus('Stopped',[TimeSpan]::FromSeconds(30))
     }
     function Set-Payload([string]$Executable) {
-        Invoke-Sc @('config',$serviceName,'binPath=',('"'+$Executable+'" --service --config "'+$configPath+'"'))
+        Set-ServiceExecutable $Executable
         $action=New-ScheduledTaskAction -Execute $Executable -Argument ('--config "'+$configPath+'"')
         Set-ScheduledTask -TaskName $taskName -Action $action | Out-Null
     }
@@ -119,7 +129,7 @@ try {
             Stop-Installed
             Assert-NoSigningWork $state
             Save-ReleaseJson $configPath $originalConfig
-            Invoke-Sc @('config',$serviceName,'binPath=',('"'+$oldExe+'" --service --config "'+$configPath+'"'))
+            Set-ServiceExecutable $oldExe
         }
         Register-ScheduledTask -TaskName $taskName -Xml $checkpoint.taskXml -Force | Out-Null
         Start-Service $serviceName
@@ -145,7 +155,7 @@ try {
     $backups=Assert-LocalPath (Join-Path $data 'update-backups')
     New-Item -ItemType Directory -Path $backups -Force | Out-Null
     Set-ReleaseAcl $backups
-    Save-ReleaseJson (Join-Path $backups ('0.12.0-'+[Guid]::NewGuid().ToString('N')+'.json')) $checkpoint
+    Save-ReleaseJson (Join-Path $backups ($previous.version+'-'+[Guid]::NewGuid().ToString('N')+'.json')) $checkpoint
     Invoke-ManagedUpdateTransaction $journalPath $checkpoint @{
         Stop={ Stop-Installed }
         CheckIdle={ Assert-NoSigningWork $state }
@@ -161,7 +171,7 @@ try {
         Restore={ Restore-Previous }
     }
     Start-Tray
-    Write-Output 'UPDATED_TO_0_13_0_ENROLLMENT_PRESERVED'
+    Write-Output ('UPDATED_TO_'+$package.version.Replace('.','_')+'_ENROLLMENT_PRESERVED')
 } catch {
     $code=if ($_.Exception.Message -cmatch '^[A-Z][A-Z_]{3,90}$') { $_.Exception.Message } else { 'MANAGED_UPDATE_FAILED' }
     Write-Output $code; exit 1

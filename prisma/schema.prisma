@@ -897,6 +897,7 @@ model Diligencia {
   estado         EstadoDiligencia @default(pendiente)
   fecha          DateTime
   meta           Json?
+  // Legacy payment snapshot retained for migration; current payment state belongs to Recibo.
   estadoCobro    EstadoCobro      @default(NO_PAGADO)
   fechaPago      DateTime?
   createdAt      DateTime         @default(now())
@@ -1022,6 +1023,8 @@ model Recibo {
   numeroRecibo          String?
   numeroReciboYear      Int?
   numeroBoleta          String?
+  estadoCobro           EstadoCobro       @default(NO_PAGADO)
+  fechaPago             DateTime?
   monto                 Float
   medio                 String
   ref                   String?

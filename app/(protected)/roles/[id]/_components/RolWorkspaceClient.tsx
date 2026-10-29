@@ -7,6 +7,7 @@ import RolHeader from './RolHeader'
 import RolTabs from './RolTabs'
 import { useRolData, useRolHeaderData } from '@/lib/hooks/useRolWorkspace'
 import { rememberRecentRole } from '@/lib/client/recentRoles'
+import { useOfficeCacheContext } from '@/lib/cache/officeCacheContext'
 
 type RolTabKey = 'resumen' | 'diligencias' | 'documentos' | 'notas' | 'historial'
 
@@ -15,6 +16,7 @@ interface RolWorkspaceClientProps {
 }
 
 export default function RolWorkspaceClient({ rolId }: RolWorkspaceClientProps) {
+  const { userId, officeId } = useOfficeCacheContext()
   const router = useRouter()
   const pathname = usePathname()
   const searchParams = useSearchParams()
@@ -28,8 +30,8 @@ export default function RolWorkspaceClient({ rolId }: RolWorkspaceClientProps) {
   useEffect(() => setActiveTab(validTab), [validTab])
   useEffect(() => {
     if (!headerData) return
-    rememberRecentRole({ id: rolId, rol: headerData.rol.numero, tribunal: headerData.tribunal?.nombre || 'Sin tribunal', caratula: '' })
-  }, [headerData, rolId])
+    rememberRecentRole({ userId, officeId }, { id: rolId, rol: headerData.rol.numero, tribunal: headerData.tribunal?.nombre || 'Sin tribunal', caratula: '' })
+  }, [headerData, rolId, userId, officeId])
 
   const changeTab = (tab: RolTabKey) => {
     setActiveTab(tab)

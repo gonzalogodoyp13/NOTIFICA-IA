@@ -21,7 +21,6 @@ export async function GET(req: NextRequest) {
       select: {
         id: true,
         createdAt: true,
-        estadoCobro: true,
         tipo: {
           select: {
             id: true,
@@ -121,6 +120,16 @@ export async function GET(req: NextRequest) {
       },
     })
 
+    const receipts = await prisma.recibo.findMany({
+      where: { status: 'ACTIVE', rol: { officeId: user.officeId }, diligenciaId: { in: diligencias.map(item => item.id) } },
+      select: { diligenciaId: true, estadoCobro: true },
+    })
+    const paymentStates = new Map<string, boolean>()
+    for (const receipt of receipts) {
+      if (receipt.diligenciaId) paymentStates.set(receipt.diligenciaId,
+        (paymentStates.get(receipt.diligenciaId) ?? true) && receipt.estadoCobro === 'PAGADO')
+    }
+
     // Map diligencias to EncargoItem format
     const data = diligencias.map(diligencia => {
       // Combine estampos from diligencia.documentos AND notificaciones.documentos
@@ -206,7 +215,7 @@ export async function GET(req: NextRequest) {
         estado,
         fechaRealizado,
         estamposExtraCount,
-        estadoCobro: diligencia.estadoCobro === 'PAGADO' ? ('PAGADO' as const) : ('NO_PAGADO' as const),
+        estadoCobro: paymentStates.get(diligencia.id) === true ? ('PAGADO' as const) : ('NO_PAGADO' as const),
       }
     })
 

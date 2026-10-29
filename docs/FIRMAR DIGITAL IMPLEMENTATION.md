@@ -4,6 +4,16 @@ This file is the central record for all Firmar Digital implementation notes,
 decisions, phase results, and verification evidence. Add future implementation
 notes here as subsequent phases are completed.
 
+**Updater correction, October 6, 2026:** use managed package revision
+`v0.13.0-managed.3` for 0.12.0 upgrades. Revision 1 could incorrectly report
+`TRAY_USER_MISMATCH` when Windows displayed a short account name. Revision 2
+validates the registered task's SID and preserves all account/ownership checks.
+Revision 3 also fixes native service-command quoting under Windows PowerShell 5.1.
+The GONZA laptop has now successfully upgraded to 0.13.0 and connected to staging.
+The agent payload is unchanged. Current hashes and installed upgrade evidence
+are recorded in the [service-switch correction](#managed-updater-service-switch-correction-october-6-2026);
+the October 1 hashes below describe the original revision only.
+
 **Current storage policy, October 1, 2026 (agent 0.13.0):** signed PDFs now use a
 shared, cloud-backed office archive with an on-demand Windows folder on every
 authorized device, including signer-only laptops. The folder shows the last
@@ -16,7 +26,8 @@ find or retrieve documents. See the
 Earlier delivery/mirror sections and the September 28 installed pilot are
 historical evidence; their automatic-delivery behavior is superseded by this
 policy after the updated backend and Windows agents are deployed. The 0.13.0
-release package is prepared locally, not yet published or installed by this work.
+release package is prepared locally and not yet published. The October 6 section
+records the first completed installed upgrade; other-PC acceptance remains pending.
 
 **Deployment policy update, September 24, 2026:** the owner selected unsigned,
 personally managed installation by remote control. A purchased code-signing
@@ -2371,3 +2382,108 @@ PDF hashes, a real authorized token signature appearing on both, retrieval beyon
 Phase 11 hardware/lifecycle/operational checks and operator acceptance before
 production activation. The September 28 automatic-delivery pilot remains valid
 historical evidence but does not close these new acceptance items.
+
+## Managed updater account identity correction (October 6, 2026)
+
+The installed GONZA 0.12.0 tray task exposed `Principal.UserId` as `gonza`, while
+the configured SID translated to `GONZA\gonza`. The task's exported XML contained
+the exact configured SID. Revision 1 compared display strings and incorrectly
+rejected this legitimate installation with `TRAY_USER_MISMATCH` during preflight;
+no upgrade or account change occurred.
+
+`Assert-ManagedTrayUser` now verifies the single principal's identity from the
+registered task XML against `allowedUserSid`, checks that the principal ID matches
+the task, and resolves a qualified account name to its SID if necessary. Invalid
+XML, DTDs, missing/ambiguous principals and genuinely different users remain
+rejected. The check runs during preflight and again before stopping the task.
+Neither the task's account/permissions nor the device enrollment is modified.
+
+Verification: **26** upgrade/identity checks, **11** complete updater-entry
+scenarios with simulated service/task operations and **15** distribution integrity
+checks passed. The corrected identity check also passed against the real installed
+task. After applying the verified correction to the operator's extracted Desktop
+package, a real administrator PowerShell preflight returned
+`PREFLIGHT_PASSED: 0.12.0 -> 0.13.0; no changes made` with exit code 0.
+This confirms preflight, not the subsequent installed upgrade; the installed
+0.12.0 service remains unchanged by this correction.
+
+Revision output: `output/github/notifica-windows-0.13.0-managed.2/`. The reproducible
+`agents/windows/release/revise-managed-updater.ps1` validates the original package,
+reuses its exact payload, replaces only updater code/guides, and generates a new
+pinned manifest. It produces a complete ZIP and a small patch for an already
+extracted revision 1 package. Original revision 1 release files are preserved.
+
+- Release tag: `v0.13.0-managed.2`; prepared locally, not published by this work.
+- Full package: `NOTIFICA-Windows-0.13.0-managed.2.zip`.
+- Full ZIP SHA-256: `90a478ddf93c118599502f9143520af87e6cc98f800864234d12cb97d8fe5114`.
+- New manifest SHA-256: `ad5ec688bca15ef3770b6086e788783b12b4dce1e1be2fcc44da3eb053c3f679`.
+- Small patch: `NOTIFICA-Windows-0.13.0-updater-fix.2.zip`.
+- Patch SHA-256: `eba2ba3db772875034061697b19d38bb530b298d7ac3a977030054b4502269cd`.
+
+The patch replaces five files in the **extracted installer folder**, never in
+Program Files or ProgramData. Keep `payload.zip` and the remaining original
+files. Use the new manifest hash for preflight/update. Machines already running
+0.13.0 do not need an agent reinstall for this updater-only correction. The
+shared-folder/storage behavior and installed-PC pilot requirements are unchanged.
+
+## Managed updater service-switch correction (October 6, 2026)
+
+The revision 2 upgrade reached `RECOVERY_REQUIRED_JOURNAL_PRESERVED`. Its original
+0.12.0 configuration and service path were intact, but the service was stopped
+and the tray disabled. Running the same verified package with `-Recover` returned
+`PREVIOUS_VERSION_RESTORED` and restored the service before further changes.
+
+An elevated, isolated test on Windows PowerShell 5.1 reproduced native `sc.exe`
+argument parsing error **1639** with the updater's quoted executable/config paths.
+This affected both activation and rollback. The temporary service was never
+started and was removed after testing. `Invoke-CimMethod Win32_Service.Change`
+with a typed `PathName` preserved the exact quoted string and returned zero.
+
+The updater now uses that CIM operation for activation and rollback, requires a
+stopped service, verifies ownership beforehand, checks the method's return code,
+and reads back the exact command and service ownership afterward. It preserves
+the existing service account. Revision 3 also retains revision 2's SID fix.
+
+Validation: **26** module checks, **13** complete entry-script scenarios (including
+failed service changes and incorrect readback) and **15** distribution checks
+passed. The complete release ZIP was extracted and its pinned manifest, payload
+and distribution files verified before the real upgrade.
+
+The actual administrator upgrade on GONZA returned
+`UPDATED_TO_0_13_0_ENROLLMENT_PRESERVED` with exit zero. Verified afterward:
+
+- Installed record and live readiness marker: **0.13.0**, matching service PID.
+- Service and enabled tray task: **Running**; exact installed service path and
+  `NT SERVICE\NotificaSigningAgent` account preserved.
+- Enrollment file hash unchanged; all configuration except the three expected
+  runtime paths unchanged. The recovery journal was cleared after success.
+- Origin: `https://notifica-staging.vercel.app/`; live agent **ONLINE**, token
+  **TOKEN_READY**, office-folder error null, remote signing session disabled.
+- Office folder: `C:\NotificaFirmados\Oficina-1`. No new signature was requested.
+
+Output: `output/github/notifica-windows-0.13.0-managed.3/`. The operator's extracted
+Desktop folder `notifica ia agent upd 13` now contains revision 3; its prior updater
+files were retained in `updater-backup-managed.2`. Prior release artifacts remain
+unchanged. Publish this new revision instead of revision 1 or 2:
+
+- Release tag: `v0.13.0-managed.3`; prepared locally, not published.
+- Full ZIP: `NOTIFICA-Windows-0.13.0-managed.3.zip`.
+- Full ZIP SHA-256: `fe0a64640766899d4c9bd1a8ac771c8dbcf921f20ca3ddb2f2f72742fa7f9a68`.
+- Manifest SHA-256: `401ad529e52b74a7dcef7939d2497c47af4c71ead394549e29347e2c43e15a82`.
+- Patch: `NOTIFICA-Windows-0.13.0-updater-fix.3.zip`.
+- Patch SHA-256: `cd5d0fa3aaffdb3a6a4a86514dfca11916514911196039584b0522b9d7088210`.
+
+Use the full ZIP for other 0.12.0 PCs. If a previous attempt has an outstanding
+journal, recover first with its original package and manifest hash before replacing
+the extracted updater files. Do not delete signing work or reinstall enrollment.
+Already-upgraded 0.13.0 PCs need no runtime reinstall for this updater correction.
+
+Sanitized recovery/native-service/installed-upgrade evidence is retained in the
+revision 3 `verification/` directory. The repository startup migration status
+reported 45 migrations up to date; migration deploy timed out acquiring its
+advisory lock on two attempts, and client generation passed. No database schema
+change was needed or made for this Windows updater fix.
+
+This verifies one installed upgrade and live connectivity. A new authorized
+hardware signature, cross-PC document comparison and the remaining operational
+acceptance checks listed above are still separate pilot requirements.

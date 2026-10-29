@@ -12,7 +12,7 @@ import { enrollmentMessage, sessionMessage } from '../../lib/signing/deviceProto
 describe.skipIf(process.env.SIGNING_DATABASE_TESTS !== '1')('device enrollment/authentication with real database', () => {
   let sandbox: Awaited<ReturnType<typeof createSigningTestDatabase>>
   let service: ReturnType<typeof createDeviceService>
-  beforeAll(async () => { sandbox = await createSigningTestDatabase(); service = createDeviceService(sandbox.db) }, 120_000)
+  beforeAll(async () => { sandbox = await createSigningTestDatabase(); service = createDeviceService(sandbox.db, { validator: async () => { throw new Error('UNEXPECTED_VALIDATOR_CALL') } }) }, 120_000)
   afterAll(async () => { if (sandbox) await sandbox.dispose() }, 60_000)
   async function startRateWindow() {
     const [{ now }] = await sandbox.db.$queryRaw<Array<{ now: Date }>>`SELECT clock_timestamp() AS now`
@@ -77,6 +77,25 @@ describe.skipIf(process.env.SIGNING_DATABASE_TESTS !== '1')('device enrollment/a
       await expect(service.queue(f.session.token, 'claim', {})).rejects.toThrow('AGENT_UPDATE_REQUIRED')
       await service.heartbeat(f.session.token, { ...f.report, agentVersion: '0.11.0' })
       expect(await service.queue(f.session.token, 'claim', {})).toBeNull()
+    } finally { vi.unstubAllEnvs() }
+  }, 60000)
+  it('preserves queued work and attempt budget until a validator is configured', async () => {
+    const f = await setup()
+    const version = await f.document()
+    const queue = createSigningService(sandbox.db)
+    await queue.createJob(f.context, { idempotencyKey: randomUUID(), sourceVersionIds: [version.source.id], signerFingerprint: fingerprint })
+    const unavailable = createDeviceService(sandbox.db)
+    vi.stubEnv('SIGNING_VALIDATOR_CONFIG', '')
+    vi.stubEnv('SIGNING_VALIDATOR_URL', '')
+    vi.stubEnv('SIGNING_VALIDATOR_TOKEN', '')
+    try {
+      for (let i = 0; i < 2; i++) await expect(unavailable.queue(f.session.token, 'claim', {})).rejects.toThrow('VALIDATOR_UNAVAILABLE')
+      const item = await sandbox.db.signingItem.findFirstOrThrow({ where: { officeId: f.office.id } })
+      expect(item).toMatchObject({ status: 'QUEUED', attemptCount: 0, leaseOwner: null, leaseToken: null, errorCode: null })
+      expect(await sandbox.db.signingAttempt.count({ where: { itemId: item.id } })).toBe(0)
+      const claim = await service.queue(f.session.token, 'claim', {})
+      expect(claim).toMatchObject({ itemId: item.id })
+      expect((await sandbox.db.signingItem.findUniqueOrThrow({ where: { id: item.id } })).attemptCount).toBe(1)
     } finally { vi.unstubAllEnvs() }
   }, 60000)
   it('fences challenge replay, expires sessions, rejects wrong key and renews only with new proof', async () => {

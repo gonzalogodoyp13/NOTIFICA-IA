@@ -263,36 +263,18 @@ export async function loadDashboardData(params: {
   const receiptDocumentIds = receipts
     .map(receipt => receipt.documentoId)
     .filter((id): id is string => Boolean(id))
-  const receiptDiligenciaIds = receipts
-    .map(receipt => receipt.diligenciaId)
-    .filter((id): id is string => Boolean(id))
-
-  const [receiptDocuments, receiptDiligencias] = await Promise.all([
-    receiptDocumentIds.length > 0
-      ? prisma.documento.findMany({
-          where: { id: { in: receiptDocumentIds }, rol: { officeId } },
-          include: { currentVersion: true },
-        })
-      : Promise.resolve([]),
-    receiptDiligenciaIds.length > 0
-      ? prisma.diligencia.findMany({
-          where: { id: { in: receiptDiligenciaIds }, rol: { officeId } },
-          select: { id: true, estadoCobro: true },
-        })
-      : Promise.resolve([]),
-  ])
-
+  const receiptDocuments = receiptDocumentIds.length > 0
+    ? await prisma.documento.findMany({ where: { id: { in: receiptDocumentIds }, rol: { officeId } }, include: { currentVersion: true } })
+    : []
   const receiptDocumentMap = new Map(receiptDocuments.map(document => [document.id, document]))
-  const receiptDiligenciaMap = new Map(receiptDiligencias.map(diligencia => [diligencia.id, diligencia]))
 
   const unpaidRows = receipts
     .filter(receipt => {
       const businessDate = receipt.fechaRecibo ?? receipt.createdAt
       const document = receipt.documentoId ? receiptDocumentMap.get(receipt.documentoId) : null
-      const diligencia = receipt.diligenciaId ? receiptDiligenciaMap.get(receipt.diligenciaId) : null
       return (
         isWithinDateRange(businessDate, from, toExclusive) &&
-        diligencia?.estadoCobro === 'NO_PAGADO' &&
+        receipt.estadoCobro === 'NO_PAGADO' &&
         !!document &&
         validStoredDocument(document) &&
         (!receipt.documentVersion || !receipt.documentVersion.deletedAt)

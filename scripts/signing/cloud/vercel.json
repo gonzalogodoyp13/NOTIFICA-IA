@@ -1,0 +1,10 @@
+{
+  "regions": ["gru1"],
+  "functions": {
+    "api/validate.py": {
+      "maxDuration": 120,
+      "includeFiles": "{validator_service.py,validate_pdf.py,trust/**}"
+    }
+  },
+  "rewrites": [{"source": "/validate", "destination": "/api/validate"}]
+}
