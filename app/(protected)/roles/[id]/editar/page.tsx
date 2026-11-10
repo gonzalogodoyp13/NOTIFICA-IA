@@ -403,6 +403,10 @@ export default function EditarDemandaPage() {
     }
   }
 
+  if (rolData?.rol.estado === 'terminado' || rolData?.rol.estado === 'archivado') {
+    return <div className="page-frame py-10"><h1 className="page-title">Causa de solo lectura</h1><p>Esta causa está terminada o archivada. Sus datos no se pueden modificar.</p><Link href={`/roles/${rolId}`}>Volver al ROL</Link></div>
+  }
+
   if (loadingData) {
     return (
       <div className="min-h-screen bg-white">

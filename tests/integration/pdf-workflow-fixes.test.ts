@@ -101,13 +101,13 @@ describe('PDF workflow fixes', () => {
     })).toBe('recibo-qa.pdf')
   })
 
-  it('treats Pagina as an explicit page break and repeats sizing for new pages', async () => {
-    expect(extractVariables('$rol$Pagina$monto_ejecutado')).toEqual(['rol', 'monto_ejecutado'])
-    expect(replaceVariables('Uno$Pagina$rol', { rol: 'C-1452-2026' }))
-      .toBe('Uno$PaginaC-1452-2026')
+  it.each(['pagina', 'Pagina', 'PAGINA', 'pAgInA'])('treats $%s as an explicit page break and repeats sizing for new pages', async (marker) => {
+    expect(extractVariables(`$rol$${marker}$monto_ejecutado`)).toEqual(['rol', 'monto_ejecutado'])
+    expect(replaceVariables(`Uno$${marker}$rol`, { rol: 'C-1452-2026' }))
+      .toBe(`Uno$${marker}C-1452-2026`)
 
     const explicit = await PDFDocument.load(Buffer.from(
-      await buildEstampoPdf('Primera pagina$PaginaSegunda pagina', headerData),
+      await buildEstampoPdf(`Primera pagina$${marker}Segunda pagina`, headerData),
       'base64'
     ))
     expect(explicit.getPageCount()).toBe(2)
@@ -117,7 +117,7 @@ describe('PDF workflow fixes', () => {
     ])
 
     const consecutive = await PDFDocument.load(Buffer.from(
-      await buildEstampoPdf('Uno$Pagina$PaginaTres', headerData),
+      await buildEstampoPdf(`Uno$${marker}$${marker}Tres`, headerData),
       'base64'
     ))
     expect(consecutive.getPageCount()).toBe(3)

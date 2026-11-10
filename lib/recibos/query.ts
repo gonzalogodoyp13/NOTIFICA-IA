@@ -48,10 +48,11 @@ const validDocumentWhere = {
 } satisfies Prisma.DocumentoWhereInput
 
 const receiptListInclude = {
+  banco: { select: { nombre: true } },
   rol: { select: { rol: true, tribunal: { select: { nombre: true } }, demanda: { select: {
     caratula: true,
-    abogados: { select: { id: true, nombre: true, email: true, bancos: { select: { banco: { select: { nombre: true } } } } } },
-    procurador: { select: { id: true, nombre: true, email: true, abogados: { select: { abogado: { select: { bancos: { select: { banco: { select: { nombre: true } } } } } } } } } },
+    abogados: { select: { id: true, nombre: true, email: true } },
+    procurador: { select: { id: true, nombre: true, email: true } },
   } } } },
 } satisfies Prisma.ReciboInclude
 
@@ -88,13 +89,7 @@ function label(value?: string | null) { return value?.trim() || EMPTY }
 function unique(values: Array<string | null | undefined>) { return Array.from(new Set(values.map(v => v?.trim()).filter((v): v is string => !!v))) }
 
 function bankLabel(recibo: ReceiptWithRelations) {
-  const abogado = recibo.rol?.demanda?.abogados
-  const procurador = recibo.rol?.demanda?.procurador
-  const values = unique([
-    ...(abogado?.bancos ?? []).map(item => item.banco?.nombre),
-    ...(procurador?.abogados ?? []).flatMap(item => (item.abogado?.bancos ?? []).map(link => link.banco?.nombre)),
-  ])
-  return values.length ? values.join(', ') : EMPTY
+  return label(recibo.banco?.nombre)
 }
 
 function resultLabel(notification: ReceiptNotification | null | undefined, diligence: ReceiptDiligence | null | undefined) {
@@ -196,13 +191,11 @@ export async function getReceiptList(
   const demandConditions: Prisma.DemandaWhereInput[] = []
   if (filters.abogadoIds.length) demandConditions.push({ abogadoId: { in: filters.abogadoIds } })
   if (filters.procuradorIds.length) demandConditions.push({ procuradorId: { in: filters.procuradorIds } })
-  if (filters.bancoIds.length) demandConditions.push({ OR: [
-    { abogados: { is: { bancos: { some: { bancoId: { in: filters.bancoIds } } } } } },
-    { procurador: { is: { abogados: { some: { abogado: { bancos: { some: { bancoId: { in: filters.bancoIds } } } } } } } } },
-  ] })
+
 
   const where: Prisma.ReciboWhereInput = {
     status: 'ACTIVE',
+    ...(filters.bancoIds.length ? { bancoId: { in: filters.bancoIds } } : {}),
     documentoId: { in: validDocumentIds },
     ...(options?.reciboIds?.length ? { id: { in: options.reciboIds } } : options?.excludedIds?.length ? { id: { notIn: options.excludedIds } } : {}),
     ...(filters.estados.length ? { estadoCobro: { in: filters.estados } } : {}),

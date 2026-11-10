@@ -6,9 +6,11 @@ import { formatDateTimeCL } from '@/lib/utils/dateInput'
 
 interface NotaListProps {
   rolId: string
+  rolEstado?: string
 }
 
-export default function NotaList({ rolId }: NotaListProps) {
+export default function NotaList({ rolId, rolEstado }: NotaListProps) {
+  const readOnly = !rolEstado || rolEstado === 'terminado' || rolEstado === 'archivado'
   const { data, isLoading, isError, error } = useNotas(rolId)
   const createNota = useCreateNota(rolId)
 
@@ -17,6 +19,7 @@ export default function NotaList({ rolId }: NotaListProps) {
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
+    if (readOnly) return
     const validation = NotaCreateSchema.safeParse({ contenido: nota })
 
     if (!validation.success) {
@@ -59,7 +62,7 @@ export default function NotaList({ rolId }: NotaListProps) {
         </p>
       )}
 
-      <form onSubmit={handleSubmit} className="mt-6 space-y-3">
+      {readOnly ? <p className="mt-6 text-sm text-slate-600">Las notas están disponibles solo para consulta.</p> : <form onSubmit={handleSubmit} className="mt-6 space-y-3">
         <label className="block text-sm font-medium text-slate-700" htmlFor="nota-contenido">
           Agregar nota
         </label>
@@ -84,7 +87,7 @@ export default function NotaList({ rolId }: NotaListProps) {
             {createNota.isPending ? 'Guardando nota…' : 'Guardar nota'}
           </button>
         </div>
-      </form>
+      </form>}
 
       <div className="mt-6 space-y-3">
         {isLoading &&

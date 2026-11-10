@@ -2,6 +2,8 @@
 
 import { AlertTriangle, Inbox, MailQuestion, RefreshCw } from 'lucide-react'
 
+import ReplyAssociation from './ReplyAssociation'
+
 import { Button } from '@/components/ui/button'
 
 export type UnmatchedReplyItem = {
@@ -11,6 +13,7 @@ export type UnmatchedReplyItem = {
   textPreview: string
   receivedAt: string
   matchStatus: 'unmatched' | 'needs_review'
+  attachments?: { id: string; filename: string }[]
   candidateCount: number
   diagnostics?: { provider: string; mailboxAddress: string; matchMethod: string | null; candidateRecipientIds: unknown }
 }
@@ -125,6 +128,8 @@ export default function UnmatchedRepliesPanel({
                     <div className="mt-4 flex flex-wrap gap-2 text-xs text-slate-600">
                       <span className="rounded-full bg-blue-50 px-2.5 py-1 text-blue-800">{candidates} {candidates === 1 ? 'candidato' : 'candidatos'}</span>
                     </div>
+                    <ReplyAssociation replyId={reply.id} onAssociated={onRefresh} />
+                    {reply.attachments?.map(file => <a key={file.id} className="block text-sm text-blue-700 underline" href={`/api/recibos/send/replies/${reply.id}/attachments/${file.id}`}>{file.filename}</a>)}
                     {reply.diagnostics && <details className="mt-3 border-t border-slate-100 pt-3 text-xs text-slate-600"><summary className="cursor-pointer font-semibold text-blue-800">Detalles técnicos</summary><div className="mt-2 space-y-1 break-all"><div>Proveedor: {reply.diagnostics.provider}</div><div>Buzón: {reply.diagnostics.mailboxAddress || '-'}</div><div>Método de asociación: {reply.diagnostics.matchMethod || '-'}</div></div></details>}
                   </article>
                 )
@@ -154,7 +159,7 @@ export default function UnmatchedRepliesPanel({
                           <td className="max-w-52 px-4 py-4"><div className="break-all font-medium text-slate-900">{reply.senderEmail}</div></td>
                           <td className="max-w-md px-4 py-4"><div className="font-semibold text-slate-900">{reply.subject || 'Sin asunto'}</div><p className="mt-1 line-clamp-3 text-sm leading-5 text-slate-600">{reply.textPreview || 'Sin vista previa disponible.'}</p></td>
                           <td className="max-w-52 px-4 py-4 text-xs text-slate-600">{reply.diagnostics ? <details><summary className="cursor-pointer font-semibold text-blue-800">Detalles técnicos</summary><div className="mt-2 break-all"><div>{reply.diagnostics.provider}</div><div>{reply.diagnostics.mailboxAddress || '-'}</div><div>{reply.diagnostics.matchMethod || '-'}</div></div></details> : <span aria-label="Sin detalles técnicos">—</span>}</td>
-                          <td className="px-4 py-4 text-center"><span className="inline-flex min-w-8 justify-center rounded-full bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-800">{candidates}</span></td>
+                          <td className="px-4 py-4 text-center"><span className="inline-flex min-w-8 justify-center rounded-full bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-800">{candidates}</span><ReplyAssociation replyId={reply.id} onAssociated={onRefresh} />{reply.attachments?.map(file => <a key={file.id} className="block text-sm text-blue-700 underline" href={`/api/recibos/send/replies/${reply.id}/attachments/${file.id}`}>{file.filename}</a>)}</td>
                         </tr>
                       )
                     })}

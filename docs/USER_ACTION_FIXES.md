@@ -37,3 +37,26 @@ The browser tests do not claim live authentication or rendered PDF acceptance. T
 Deploy the new application and payment migration together. Pause payment and receipt-generation writes during the switch, apply the migration with `prisma migrate deploy`, generate the client and activate the new build before resuming writes. Do not leave the old application writing diligence payment fields after the backfill. Do not use `prisma migrate dev`.
 
 The new migration has been tested in isolation, not applied to the shared application schema. Reverting only the application after new receipt payments have been written would expose stale diligence payment state; reconcile those values before any rollback to old payment code.
+
+## Launch follow-up — 2026-11-05 (F01, F02, F04, F05, F10)
+
+All five findings are fixed in the working tree; deployment and live acceptance remain pending. F010 in the request refers to F10 in the audit.
+
+- **F01:** Nueva demanda requires a lawyer in the labeled select. Browser native validation prevents an empty selection; the existing API validation remains authoritative.
+- **F02:** Preserve the active per-receipt payment-date workflow introduced for F03. README now distinguishes assignment, execution, generation and payment dates. Receipt management, export and reconciliation filter by execution date; monthly receipt reporting uses execution date with the existing legacy creation-date fallback. Payment date does not move a receipt between execution periods.
+- **F04:** Both mobile and desktop unmatched queues expose a sent-email search and manual association, with destination details and explicit confirmation. The API checks office and provider, rejects already-associated replies, and writes the association, aggregate counts and actor audit event transactionally. No payment state changes. Attachment links exist in unmatched queues and dispatch details; downloads authorize the reply/attachment before retrieving original Graph/Gmail bytes, force attachment disposition, and disable caching. Gmail retrieval checks message identity and stored attachment checksum; fallback IMAP identifiers must match UID validity. No credentials or provider URLs are sent to the browser.
+- **F05:** Closed case fields and notes are immutable through the editing and both note APIs. A conditional parent-row update inside each transaction serializes these writes with closure. The edit page blocks direct navigation, the overview hides editing, and notes remain readable without a creation form. Status dialogs explicitly retain collection operations and signatures of existing documents, subject to their existing permissions; closing a case does not cancel collections or signing.
+- **F10:** Shared receipt queries use `Recibo.bancoId` / `Recibo.banco` for filtering and labels, so contact associations cannot broaden the selected receipt bank in management, XLSX, dispatch listings or reconciliation. A missing saved bank displays `-`; it is not inferred from mutable contact associations.
+
+### Verification for this follow-up
+
+- Required Prisma startup completed in order: migration status, migration deploy (46 committed migrations; none pending), client generation. No new migration is needed.
+- Integration suite: **371 passed**, 90 opt-in tests skipped. New regressions cover association confirmation, office/provider boundaries, stale writes, counts/audit, attachment authorization/bytes/provider failures, Gmail identity checks, both closed-note APIs, and distinct receipt bank/date fields. Provider calls and database access in these new tests are mocked.
+- Browser regressions: **7 passed**, including explicit association confirmation/cancellation and both terminal note states. These render actual components with mocked transport; they do not establish live-mailbox delivery or database persistence.
+- Production build passed, including lint, TypeScript and all 33 static pages. UTF-8 validation passed.
+
+### Release acceptance and attachment fallback
+
+Deploy the application together, then execute CASE-04, FLOW-07, REPLY-13/14 and the bank/date cases with isolated office fixtures. Confirm exact PDF/XLSX/email bank agreement. Test Graph and Gmail with authorized controlled mailboxes; no live email was sent or downloaded during this implementation.
+
+Downloads require the originally configured mailbox and the original provider message/attachment to remain available. Gmail currently retrieves from INBOX. Files over 20 MB (or Gmail messages over 20 MB), moved/deleted messages, and legacy attachments without provider identifiers require an authorized mailbox operator to locate the original message by sender, subject, received time and message identity and retrieve the attachment there. The app returns an explicit error rather than an empty file. Do not represent provider-retained attachments as an application-owned permanent archive.

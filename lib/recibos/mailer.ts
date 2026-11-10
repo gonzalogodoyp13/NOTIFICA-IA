@@ -11,6 +11,7 @@ export type MailAttachment = {
 }
 
 export type MailMessage = {
+  idempotencyKey?: string
   to: string[]
   subject: string
   text: string

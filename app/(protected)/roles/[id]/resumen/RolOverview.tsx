@@ -64,12 +64,12 @@ export default function RolOverview({ rolData, isRolLoading, isRolError, rolId }
                 <Printer className="h-4 w-4 text-blue-700" />
                 Generar Membrete
               </button>
-              <Link
+              {rolData.rol.estado !== 'terminado' && rolData.rol.estado !== 'archivado' && <Link
                 href={`/roles/${rolId}/editar`}
                 className="inline-flex items-center gap-2 rounded-full bg-blue-700 px-4 py-2 text-sm font-semibold text-white shadow-[0_18px_36px_-20px_rgba(29,78,216,0.75)] hover:bg-blue-800"
               >
                 Editar Demanda
-              </Link>
+              </Link>}
             </>
           )}
           {isRolLoading && (

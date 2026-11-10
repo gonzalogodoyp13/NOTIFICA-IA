@@ -400,15 +400,16 @@ export default function NuevaDemandaPage({
               {/* Abogado */}
               <div>
                 <label htmlFor="abogadoId" className="block text-sm font-medium text-gray-700 mb-2">
-                  Abogado
+                  Abogado *
                 </label>
                 <select
                   id="abogadoId"
+                  required
                   value={formData.abogadoId}
                   onChange={(e) => handleAbogadoChange(e.target.value)}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500"
                 >
-                  <option value="">Seleccionar abogado (opcional)</option>
+                  <option value="">Seleccionar abogado</option>
                   {abogados.map((abogado) => (
                     <option key={abogado.id} value={abogado.id}>
                       {abogado.nombre || `Abogado #${abogado.id}`}

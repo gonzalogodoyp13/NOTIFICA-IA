@@ -30,14 +30,14 @@ function transitionCopy(next: string) {
   if (next === 'terminado') {
     return {
       title: 'Marcar ROL como terminado',
-      description: 'Todas las diligencias deben estar completadas. Después del cambio, el flujo quedará disponible solo para consulta y descarga.',
+      description: 'Todas las diligencias deben estar completadas. Después del cambio no podrás modificar datos de la causa, notas, diligencias ni documentos. Podrás consultar, descargar, gestionar cobros y solicitar firmas de documentos existentes.',
       confirm: 'Marcar como terminado',
     }
   }
   if (next === 'archivado') {
     return {
       title: 'Archivar ROL',
-      description: 'El ROL quedará en modo de solo lectura y no podrá reactivarse. Podrás seguir consultando su historial y documentos.',
+      description: 'El ROL quedará en modo de solo lectura y no podrá reactivarse. No podrás modificar datos de la causa, notas, diligencias ni documentos. Podrás consultar, descargar, gestionar cobros y solicitar firmas de documentos existentes.',
       confirm: 'Archivar ROL',
     }
   }

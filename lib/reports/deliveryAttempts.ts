@@ -247,6 +247,7 @@ export async function executeReportDelivery(input: {
       await prisma.reportDeliveryAttemptRecipient.update({ where: { id: recipient.id }, data: { status: ReportDeliveryRecipientStatus.SENDING } })
       try {
         const sent = await sendWithRetries(input.adapter, {
+          idempotencyKey: `report-recipient/${recipient.id}`,
           to: [recipient.email],
           subject: input.email.subject,
           text: input.email.text,

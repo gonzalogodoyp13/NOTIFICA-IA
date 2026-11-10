@@ -1,7 +1,8 @@
 import 'server-only'
 
 import { prisma } from '@/lib/prisma'
-import { createMailAdapter, type MailAdapter } from '@/lib/recibos/mailer'
+import { type MailAdapter } from '@/lib/recibos/mailer'
+import { createSystemMailAdapter } from '@/lib/email/system-mailer'
 import { asJsonObject } from '@/lib/utils/json'
 import { previousChileMonthString } from './chileTime'
 import { sanitizeDeliveryError } from './dailyDeliveryCore'
@@ -58,7 +59,7 @@ export async function sendMonthlyReportForOffice(input: {
   onProgress?: (completed: number, total: number, phase: string) => Promise<void>
 }) {
   const periodDate = input.periodDate ?? previousChileMonthString()
-  const adapter = input.adapter ?? createMailAdapter()
+  const adapter = input.adapter ?? createSystemMailAdapter()
   let generated: Awaited<ReturnType<typeof generateMonthlyReport>>
   try {
     generated = await generateMonthlyReport({

@@ -1,7 +1,8 @@
 import 'server-only'
 
 import { prisma } from '@/lib/prisma'
-import { createMailAdapter, type MailAdapter } from '@/lib/recibos/mailer'
+import { type MailAdapter } from '@/lib/recibos/mailer'
+import { createSystemMailAdapter } from '@/lib/email/system-mailer'
 import { chileDayBounds, previousChileDateString } from './chileTime'
 import { generateDailyReport } from './dailyReport'
 import { buildAuditReportEmail, DAILY_REPORT_TYPE, sanitizeDeliveryError } from './dailyDeliveryCore'
@@ -34,7 +35,7 @@ export async function sendDailyReportForOffice(input: {
   onProgress?: (completed: number, total: number, phase: string) => Promise<void>
 }) {
   const periodDate = input.periodDate ?? previousChileDateString()
-  const adapter = input.adapter ?? createMailAdapter()
+  const adapter = input.adapter ?? createSystemMailAdapter()
   const bounds = chileDayBounds(periodDate)
   let generated: Awaited<ReturnType<typeof generateDailyReport>>
   try {

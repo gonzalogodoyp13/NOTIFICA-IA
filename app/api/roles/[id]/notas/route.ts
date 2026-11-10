@@ -1,3 +1,5 @@
+import { ApiError } from '@/lib/api/server'
+import { lockWritableRole } from '@/lib/roles/lockWritableRole'
 import { withApiUser } from '@/lib/api/server'
 import { NextRequest, NextResponse } from 'next/server'
 
@@ -45,6 +47,7 @@ export async function GET(
 
     return NextResponse.json({ ok: true, data })
   } catch (error) {
+    if (error instanceof ApiError) throw error
     console.error('Error obteniendo notas:', error)
     return NextResponse.json(
       { ok: false, error: 'Error al obtener las notas del rol' },
@@ -83,6 +86,7 @@ export async function POST(
     }
 
     const nota = await prisma.$transaction(async tx => {
+      await lockWritableRole(tx, rol.id, user.officeId)
       const created = await tx.nota.create({ data: { rolId: rol.id, userId: user.id, contenido: parsed.data.contenido } })
       await recordCriticalEvent(tx, user, {
         eventType: 'note.created', module: 'roles', result: 'success',
@@ -94,6 +98,7 @@ export async function POST(
 
     return NextResponse.json({ ok: true, data: { ...nota, createdAt: nota.createdAt.toISOString() } })
   } catch (error) {
+    if (error instanceof ApiError) throw error
     console.error('Error creando nota:', error)
     return NextResponse.json(
       { ok: false, error: 'Error al crear la nota' },
@@ -142,6 +147,7 @@ export async function DELETE(
     }
 
     await prisma.$transaction(async tx => {
+      await lockWritableRole(tx, nota.rolId, user.officeId)
       await tx.nota.delete({ where: { id: nota.id } })
       await recordCriticalEvent(tx, user, {
         eventType: 'note.deleted', module: 'roles', result: 'success',
@@ -152,6 +158,7 @@ export async function DELETE(
 
     return NextResponse.json({ ok: true })
   } catch (error) {
+    if (error instanceof ApiError) throw error
     console.error('Error eliminando nota:', error)
     return NextResponse.json(
       { ok: false, error: 'Error al eliminar la nota' },

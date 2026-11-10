@@ -10,6 +10,65 @@ function compile(file: string) {
   }).outputText
 }
 
+async function mountAuditControl(page: Page, kind: 'association' | 'notes', status = 'terminado') {
+  await page.route('http://regression.test/', route => route.fulfill({ contentType: 'text/html', body: '<div id="root"></div>' }))
+  await page.goto('http://regression.test/')
+  await page.addScriptTag({ path: path.join(path.dirname(require.resolve('react/package.json')), 'umd/react.development.js') })
+  await page.addScriptTag({ path: path.join(path.dirname(require.resolve('react-dom/package.json')), 'umd/react-dom.development.js') })
+  const source = compile(kind === 'association' ? 'app/(protected)/recibos/components/ReplyAssociation.tsx' : 'app/(protected)/roles/[id]/notas/NotaList.tsx')
+  await page.evaluate(({ source, kind, status }) => {
+    const w = window as any
+    const React = w.React
+    w.associated = 0
+    w.notesCreated = 0
+    const mocks: Record<string, any> = {
+      react: React,
+      '@/components/ui/button': { Button: ({ children, variant, ...props }: any) => React.createElement('button', props, children) },
+      '@/lib/hooks/useRolWorkspace': { useNotas: () => ({ data: [{ id: 'note', contenido: 'Existing note', createdAt: '2026-01-01', userId: 'user' }] }), useCreateNota: () => ({ mutate: () => { w.notesCreated++ }, isPending: false }) },
+      '@/lib/validations/rol-workspace': { NotaCreateSchema: { safeParse: (data: any) => ({ success: true, data }) } },
+      '@/lib/utils/dateInput': { formatDateTimeCL: (value: string) => value },
+    }
+    const module = { exports: {} as any }
+    new Function('require', 'module', 'exports', source)((id: string) => mocks[id], module, module.exports)
+    const props = kind === 'association' ? { replyId: 'reply', onAssociated: () => { w.associated++ } } : { rolId: 'role', rolEstado: status }
+    w.ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(module.exports.default, props))
+  }, { source, kind, status })
+}
+
+test('reply association requires destination and explicit confirmation; Cancel sends no mutation', async ({ page }) => {
+  const writes: unknown[] = []
+  await page.route('**/api/recibos/send/replies/reply/association**', async route => {
+    if (route.request().method() === 'PATCH') {
+      writes.push(route.request().postDataJSON())
+      await route.fulfill({ json: { ok: true, data: { id: 'reply' } } })
+    } else await route.fulfill({ json: { ok: true, data: { items: [{ id: 'recipient', recipientName: 'Lawyer', recipientEmails: ['lawyer@example.test'], subject: 'Receipt list', sentAt: '2026-01-01' }] } } })
+  })
+  await mountAuditControl(page, 'association')
+  await page.getByRole('button', { name: 'Asociar a un envío' }).click()
+  await expect(page.getByRole('button', { name: 'Confirmar asociación' })).toBeDisabled()
+  await page.getByLabel('Envío de destino').selectOption('recipient')
+  await expect(page.getByRole('button', { name: 'Confirmar asociación' })).toBeDisabled()
+  await page.getByRole('checkbox').check()
+  await page.getByRole('button', { name: 'Cancelar', exact: true }).click()
+  expect(writes).toEqual([])
+  await page.getByRole('button', { name: 'Asociar a un envío' }).click()
+  await page.getByLabel('Envío de destino').selectOption('recipient')
+  await page.getByRole('checkbox').check()
+  await page.getByRole('button', { name: 'Confirmar asociación' }).click()
+  await expect.poll(() => page.evaluate(() => (window as any).associated)).toBe(1)
+  expect(writes).toEqual([{ recipientId: 'recipient', confirmed: true }])
+})
+
+for (const status of ['terminado', 'archivado']) {
+  test(`notes remain visible without mutation controls for ${status}`, async ({ page }) => {
+    await mountAuditControl(page, 'notes', status)
+    await expect(page.getByText('Existing note')).toBeVisible()
+    await expect(page.getByRole('textbox')).toHaveCount(0)
+    await expect(page.getByRole('button', { name: 'Guardar nota' })).toHaveCount(0)
+    expect(await page.evaluate(() => (window as any).notesCreated)).toBe(0)
+  })
+}
+
 async function mount(page: Page, kind: 'editor' | 'history') {
   await page.route('http://regression.test/', route => route.fulfill({ contentType: 'text/html', body: '<div id="root"></div>' }))
   await page.goto('http://regression.test/')

@@ -1,3 +1,5 @@
+import { ApiError } from '@/lib/api/server'
+import { lockWritableRole } from '@/lib/roles/lockWritableRole'
 import { withApiUser } from '@/lib/api/server'
 // API route: /api/demandas/[id]
 // PUT: Update an existing Demanda and synchronize RolCausa.rol if ROL changed
@@ -253,6 +255,10 @@ export async function PUT(
     }
 
     const result = await prisma.$transaction(async (tx) => {
+      const parent = await tx.rolCausa.findFirst({ where: { demandaId: params.id, officeId: user.officeId }, select: { id: true } })
+      if (!parent) throw new DemandaUpdateValidationError('La demanda no tiene una causa asociada', 409)
+      await lockWritableRole(tx, parent.id, user.officeId)
+
       const updatedDemanda = await tx.demanda.update({
         where: { id: params.id },
         data: {
@@ -411,6 +417,7 @@ export async function PUT(
       },
     })
   } catch (error: unknown) {
+    if (error instanceof ApiError) throw error
     debugLog('[PUT /api/demandas/[id]] Error updating demanda', {
       error: toSafeErrorMessage(error),
     })

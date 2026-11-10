@@ -115,11 +115,11 @@ These terms are the canonical business dates for diligence, receipt, and documen
 
 - `fechaEncargo`: date entered by the user when creating "Nueva Diligencia" inside a Rol workspace. This is the assignment or request date for the diligencia.
 - `fechaEjecucion`: date when the receptor actually performed the diligencia. This is the visible date that should be used on the recibo PDF.
-- `fechaRecibo`: date and time when the recibo or estampo document is generated. This is for admin filtering and reporting, not the visible receipt date.
-- `fechaPago`: retired. This is not part of the official workflow; future implementation should remove or ignore it safely without breaking legacy behavior.
+- `fechaRecibo`: date and time when the recibo or estampo document is generated. This is the generation timestamp, displayed separately from the execution date.
+- `Recibo.fechaPago`: payment date entered when marking an individual receipt paid; required by the payment dialog and shown in reconciliation. Undo restores the previous receipt payment state and date. Legacy diligence payment fields are not authoritative.
 - `fechaBoleta`: retired. This is not part of the official workflow; future implementation should not add a business date for boleta.
 
-`Recibo.fechaEjecucion` and `Recibo.fechaRecibo` are persisted business dates. Receipt PDFs use `fechaEjecucion` as their visible date, while Recibos admin filters and exports use `fechaRecibo`.
+`Recibo.fechaEjecucion` and `Recibo.fechaRecibo` are persisted business dates. Receipt PDFs use `fechaEjecucion` as their visible date, while Recibos management, exports and reconciliation select by `fechaEjecucion`. Generation and payment dates remain separate displayed columns; neither changes the execution-date filter. Monthly receipt reports also select by execution date, with a technical `createdAt` fallback only for legacy receipts missing execution dates.
 
 `createdAt` is a technical audit timestamp. Do not treat it as a business date except as a temporary legacy fallback when older records are missing explicit business dates.
 

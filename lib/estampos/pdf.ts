@@ -38,7 +38,7 @@ export async function buildEstampoPdf(
 
   drawPageHeader()
 
-  const pageSections = content.split('$Pagina')
+  const pageSections = content.split(/\$pagina/i)
   for (let sectionIndex = 0; sectionIndex < pageSections.length; sectionIndex += 1) {
     if (sectionIndex > 0) addPageWithHeader()
     const lines = wrapText(

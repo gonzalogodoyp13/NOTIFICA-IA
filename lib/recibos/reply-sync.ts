@@ -277,6 +277,7 @@ export async function listUnmatchedReplies(input: {
         matchStatus: true,
         matchMethod: true,
         candidateRecipientIds: true,
+        attachments: { select: { id: true, filename: true } },
       },
     }),
     prisma.recibosDispatchReply.count({ where }),
@@ -289,6 +290,7 @@ export async function listUnmatchedReplies(input: {
       textPreview: item.textPreview,
       receivedAt: item.receivedAt,
       matchStatus: item.matchStatus,
+      attachments: item.attachments,
       candidateCount: Array.isArray(item.candidateRecipientIds) ? item.candidateRecipientIds.length : 0,
       ...(input.includeDiagnostics ? { diagnostics: {
         provider: item.provider,

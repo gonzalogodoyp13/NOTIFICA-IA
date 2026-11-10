@@ -1,3 +1,5 @@
+import { ApiError } from '@/lib/api/server'
+import { lockWritableRole } from '@/lib/roles/lockWritableRole'
 import { withApiUser } from '@/lib/api/server'
 // API route: /api/notas
 // GET: List notes (q search, page)
@@ -77,6 +79,7 @@ export async function GET(req: NextRequest) {
       },
     })
   } catch (error) {
+    if (error instanceof ApiError) throw error
     console.error('Error fetching notas:', error)
     return NextResponse.json(
       { ok: false, error: 'Error al obtener las notas' },
@@ -118,6 +121,7 @@ export async function POST(req: NextRequest) {
 
     // Create Nota
     const nota = await prisma.$transaction(async tx => {
+      await lockWritableRole(tx, rol.id, user.officeId)
       const created = await tx.nota.create({
         data: { rolId: parsed.data.rolId, userId: user.id, contenido: parsed.data.contenido },
       })
@@ -131,6 +135,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ ok: true, data: nota })
   } catch (error) {
+    if (error instanceof ApiError) throw error
     if (error instanceof ZodError) {
       return NextResponse.json(
         { ok: false, error: error.errors },
@@ -192,6 +197,7 @@ export async function DELETE(req: NextRequest) {
     }
 
     await prisma.$transaction(async tx => {
+      await lockWritableRole(tx, nota.rolId, user.officeId)
       await tx.nota.delete({ where: { id } })
       await recordCriticalEvent(tx, user, {
         eventType: 'note.deleted', module: 'roles', result: 'success',
@@ -202,6 +208,7 @@ export async function DELETE(req: NextRequest) {
 
     return NextResponse.json({ ok: true, message: 'Nota eliminada correctamente' })
   } catch (error) {
+    if (error instanceof ApiError) throw error
     console.error('Error deleting nota:', error)
     return NextResponse.json(
       { ok: false, error: 'Error al eliminar la nota' },

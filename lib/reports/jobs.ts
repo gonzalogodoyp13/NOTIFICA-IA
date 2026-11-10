@@ -12,7 +12,7 @@ import {
 import { ApiError } from '@/lib/api/server'
 import { recordBestEffortEvent } from '@/lib/audit/activityEvent'
 import { prisma } from '@/lib/prisma'
-import { createMailAdapter } from '@/lib/recibos/mailer'
+import { createSystemMailAdapter } from '@/lib/email/system-mailer'
 import { asJsonObject } from '@/lib/utils/json'
 import {
   JobListQuerySchema,
@@ -261,7 +261,7 @@ async function customDelivery(job: ReportJob, payload: JobPayload) {
   if (!report) throw new ApiError('NOT_FOUND', 'El reporte personalizado no existe.', 404)
   return executeReportDelivery({
     officeId: job.officeId, userId: job.requestedByUserId, mode: job.origin === 'SCHEDULED' || !!job.scheduleId ? 'scheduled' : 'manual', target: payload.target ?? 'all', previousAttemptId: payload.previousAttemptId,
-    idempotencyKey: `${job.id}:delivery:${job.attemptCount}`, report, adapter: createMailAdapter(),
+    idempotencyKey: `${job.id}:delivery:${job.attemptCount}`, report, adapter: createSystemMailAdapter(),
     email: { subject: `Reporte personalizado · ${report.customDefinition?.name ?? report.periodDate}`, text: `El reporte personalizado ${report.customDefinition?.name ?? ''} para ${report.periodDate} está disponible en el centro de Reportes.` },
     shouldCancel: () => cancellationRequested(job.id), onProgress: (completed, total, phase) => heartbeat(job.id, phase, completed, Math.max(total, 1)),
   })
