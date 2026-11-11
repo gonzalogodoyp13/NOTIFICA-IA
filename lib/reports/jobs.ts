@@ -1,4 +1,5 @@
 import 'server-only'
+import { waitUntil } from '@vercel/functions'
 
 import {
   Prisma,
@@ -98,6 +99,7 @@ export async function enqueueReportJob(input: {
     if (existing.type !== input.type || existing.reportKind !== input.reportKind || existing.requestedPeriodStart.getTime() !== input.periodStart.getTime() || existing.requestedPeriodEnd.getTime() !== input.periodEnd.getTime()) {
       throw new ApiError('IDEMPOTENCY_KEY_REUSED', 'La clave de idempotencia ya fue usada para otro trabajo.', 409)
     }
+    if (input.origin === 'MANUAL') startManualReportJob(existing)
     return existing
   }
   try {
@@ -126,10 +128,13 @@ export async function enqueueReportJob(input: {
       eventType: 'report.job.queued', module: 'reports', result: 'success', recordType: 'ReportJob', recordId: job.id,
       description: 'Trabajo durable de reportes encolado.', metadata: { type: job.type, origin: job.origin, reportKind: job.reportKind, period: job.requestedPeriodLabel },
     })
+    if (input.origin === 'MANUAL') startManualReportJob(job)
     return job
   } catch (error) {
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
-      return prisma.reportJob.findUniqueOrThrow({ where: { officeId_idempotencyKey: { officeId: input.officeId, idempotencyKey: key } } })
+      const existing = await prisma.reportJob.findUniqueOrThrow({ where: { officeId_idempotencyKey: { officeId: input.officeId, idempotencyKey: key } } })
+      if (input.origin === 'MANUAL') startManualReportJob(existing)
+      return existing
     }
     throw error
   }
@@ -216,12 +221,13 @@ export async function retryReportJob(input: { officeId: number; jobId: string; a
   return retry
 }
 
-async function claimNextReportJob() {
+async function claimNextReportJob(scope?: { officeId: number; jobId: string }) {
   return prisma.$transaction(async tx => {
     const rows = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
       WITH candidate AS (
         SELECT "id" FROM "report_jobs"
         WHERE "status" = 'QUEUED'::"ReportJobStatus" AND "availableAt" <= NOW()
+        ${scope ? Prisma.sql`AND "officeId" = ${scope.officeId} AND "id" = ${scope.jobId}` : Prisma.empty}
         ORDER BY "availableAt" ASC, "createdAt" ASC, "id" ASC
         FOR UPDATE SKIP LOCKED
         LIMIT 1
@@ -385,4 +391,31 @@ export async function runReportAutomationTick(input: { now?: Date; maxJobs?: num
     outcomes.push(await processClaimedJob(job))
   }
   return { scheduled, claimed: outcomes.length, outcomes, recovered }
+}
+
+/** Run only the requested job and its generation-to-delivery child. Never drain other offices. */
+export async function runRequestedReportJob(input: { officeId: number; jobId: string }) {
+  const requested = await prisma.reportJob.findFirst({ where: { id: input.jobId, officeId: input.officeId } })
+  if (!requested) throw new ApiError('NOT_FOUND', 'El trabajo no existe.', 404)
+  const outcomes: string[] = []
+  const claimed = await claimNextReportJob(input)
+  if (claimed) outcomes.push(await processClaimedJob(claimed))
+  // If another worker owns the parent, leave its child to that worker/the scheduler.
+  const parent = await prisma.reportJob.findFirst({ where: { id: input.jobId, officeId: input.officeId, status: 'SUCCEEDED', type: 'GENERATE' } })
+  if (parent) {
+    const child = await prisma.reportJob.findUnique({ where: { officeId_idempotencyKey: { officeId: input.officeId, idempotencyKey: `${parent.id}:deliver` } } })
+    if (child) {
+      const delivery = await claimNextReportJob({ officeId: input.officeId, jobId: child.id })
+      if (delivery) outcomes.push(await processClaimedJob(delivery))
+    }
+  }
+  return { claimed: outcomes.length, outcomes }
+}
+
+function startManualReportJob(job: ReportJob) {
+  if (job.status !== 'QUEUED') return
+  waitUntil(runRequestedReportJob({ officeId: job.officeId, jobId: job.id }).catch(() => {
+    // Detailed execution failures are persisted by processClaimedJob. Do not log payloads.
+    console.error('Report background worker failed', { jobId: job.id })
+  }))
 }
