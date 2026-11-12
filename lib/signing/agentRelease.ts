@@ -1,5 +1,6 @@
 import 'server-only'
 import { DeviceError } from './deviceProtocol'
+import { publishedDesktopUpdate } from './desktopUpdate'
 
 export function releaseVersion(value: string) {
   if (!/^(0|[1-9]\d{0,5})\.(0|[1-9]\d{0,5})\.(0|[1-9]\d{0,5})$/.test(value)) return null
@@ -14,4 +15,6 @@ export function agentSupported(version: string | null, minimum = process.env.SIG
 }
 export function requireSupportedAgent(version: string | null) {
   if (!agentSupported(version)) throw new DeviceError('AGENT_UPDATE_REQUIRED', 426)
+  const published = publishedDesktopUpdate()
+  if (published && !agentSupported(version, published.version)) throw new DeviceError('AGENT_UPDATE_REQUIRED', 426)
 }
