@@ -1,3 +1,4 @@
+import { enqueueRequestedStamps, replaceNotificationStamp, rememberStampSigningWait } from '@/lib/signing/stampRequests'
 import { workflowTransaction } from '@/lib/signing/transaction'
 import { withApiUser } from '@/lib/api/server'
 import { NextRequest, NextResponse } from 'next/server'
@@ -249,7 +250,7 @@ export async function POST(
       ejecutadoNombre,
     }
 
-    const pdfBase64 = await buildEstampoPdf(filled, headerData, officeImages)
+    const pdfBase64 = await buildEstampoPdf(filled, headerData, officeImages, { addStamp: data.signDigitally })
     const generationMetadata = buildDocumentGenerationMetadata({
       userId: user.id,
       sourceTemplate: {
@@ -272,6 +273,7 @@ export async function POST(
         pdfId: null,
         version: 1,
         ...generationMetadata,
+        sourceTemplate: { ...generationMetadata.sourceTemplate, signDigitally: data.signDigitally },
       },
     })
     const storedPdf = await uploadPdfToDocumentStorage({
@@ -296,6 +298,9 @@ export async function POST(
           data: { meta: { ...notificacionMeta, estampoDraft: filled } },
         })
       }
+      await replaceNotificationStamp(tx, { officeId: user.officeId, userId: user.id }, updated)
+      await rememberStampSigningWait(tx, user.officeId, updated)
+      await enqueueRequestedStamps(tx, user.officeId)
       const workflow = await syncDiligenceWorkflowState(diligencia.id, tx, { officeId: user.officeId, userId: user.id })
       const queuedEvent = await enqueueExternalEvent(tx, user, {
         eventType: 'stamp.generated', module: 'documents', result: 'success',

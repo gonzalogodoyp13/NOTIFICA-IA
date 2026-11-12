@@ -411,9 +411,11 @@ export default function DiligenciasTable({ rolId, rolEstado }: DiligenciasTableP
                         <div className={`${bodyCellClass} flex h-full flex-col`}>
                           <div className="text-[1.15rem] font-semibold text-slate-900">{notif._ejecutadoNombre}</div>
                           <div className="mt-1 text-[0.98rem] leading-7 text-slate-500">{notif._ejecutadoDireccion}</div>
+                          {notif.signing?.tokenMissing && (
+                            <p role="status" className="mt-2 text-xs text-amber-700">Error al firmar digitalmente. Token no connectado</p>
+                          )}
                           <div className="mt-4 flex flex-wrap items-center gap-2 text-xs text-slate-500">
                             <span>{formatDateTimeCL(notif.createdAt)}</span>
-                            <span title={notif.id} className="font-mono text-[11px] font-semibold text-slate-600">Ref. {notif.id.replace(/-/g, '').slice(0, 8).toUpperCase()}</span>
                             <span className={`rounded-full border px-2 py-1 font-medium ${getWorkflowStatusClass(notif.workflowStatus)}`}>
                               {getWorkflowStatusLabel(notif.workflowStatus)}
                             </span>
@@ -539,6 +541,7 @@ export default function DiligenciasTable({ rolId, rolEstado }: DiligenciasTableP
           diligenciaId={wizardModalOpen.diligenciaId}
           categoria={wizardModalOpen.categoria}
           notificacionId={wizardModalOpen.notificacionId}
+          initialSignDigitally={data?.find(d => d.id === wizardModalOpen.diligenciaId)?.notificaciones?.find(n => n.id === wizardModalOpen.notificacionId)?.signing?.requested ?? false}
           isOpen={true}
           onClose={() => setWizardModalOpen(null)}
           onSuccess={(message) => {

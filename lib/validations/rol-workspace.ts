@@ -87,6 +87,7 @@ export const ReciboGenerateSchema = z
 export type ReciboGenerateInput = z.infer<typeof ReciboGenerateSchema>
 
 export const EstampoGenerateSchema = z.object({
+  signDigitally: z.boolean().default(false),
   estampoId: z.string().min(1, 'estampoId es requerido'),
   variables: z.record(z.string()).optional(),
   contenidoPersonalizado: z.string().optional(),

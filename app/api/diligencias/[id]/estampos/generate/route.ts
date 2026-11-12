@@ -1,3 +1,4 @@
+import { enqueueRequestedStamps, replaceNotificationStamp, rememberStampSigningWait } from '@/lib/signing/stampRequests'
 import { workflowTransaction } from '@/lib/signing/transaction'
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
@@ -19,6 +20,7 @@ import { assertRoleWorkflowWritable, syncDiligenceWorkflowState } from '@/lib/ro
 export const dynamic = 'force-dynamic'
 
 const GenerateEstampoSchema = z.object({
+  signDigitally: z.boolean().default(false),
   estampoBaseId: z.number().int().positive(),
   wizardAnswers: z.record(z.string(), z.string()),
   textoEditado: z.string().optional(),
@@ -33,7 +35,7 @@ export async function POST(
    try {
 
     const body = await req.json()
-    const { estampoBaseId, wizardAnswers, textoEditado, notificacionId } = parseApiInput(GenerateEstampoSchema, body)
+    const { estampoBaseId, wizardAnswers, textoEditado, notificacionId, signDigitally } = parseApiInput(GenerateEstampoSchema, body)
 
     const [context, templateBundle] = await Promise.all([
       loadWizardDiligenciaContext({
@@ -130,7 +132,7 @@ export async function POST(
       ejecutadoNombre: finalVariables.nombre_ejecutado || null,
     }
 
-    const pdfBase64 = await buildEstampoPdf(finalText, headerData, officeImages)
+    const pdfBase64 = await buildEstampoPdf(finalText, headerData, officeImages, { addStamp: signDigitally })
     const generationMetadata = buildDocumentGenerationMetadata({
       userId: user.id,
       sourceTemplate: {
@@ -156,6 +158,7 @@ export async function POST(
         textoEditado: textoEditado || null,
         version: 1,
         ...generationMetadata,
+        sourceTemplate: { ...generationMetadata.sourceTemplate, signDigitally: signDigitally },
       },
     })
     const storedPdf = await uploadPdfToDocumentStorage({
@@ -181,6 +184,9 @@ export async function POST(
         data: { currentVersionId: documentVersion.id },
         include: { currentVersion: true },
       })
+      await replaceNotificationStamp(tx, { officeId: user.officeId, userId: user.id }, updated)
+      await rememberStampSigningWait(tx, user.officeId, updated)
+      await enqueueRequestedStamps(tx, user.officeId)
       const workflow = await syncDiligenceWorkflowState(diligencia.id, tx, { officeId: user.officeId, userId: user.id })
       const queuedEvent = await enqueueExternalEvent(tx, user, {
         eventType: 'stamp.generated',

@@ -1,4 +1,5 @@
 import 'server-only'
+import { enqueueRequestedStamps } from './stampRequests'
 import { randomBytes } from 'node:crypto'
 import { Prisma, type PrismaClient } from '@prisma/client'
 import { z } from 'zod'
@@ -219,6 +220,7 @@ export function createDeviceService(db: PrismaClient = prisma, artifactDependenc
           providerType: report.certificate ? 'PKCS11' : null,
         } })
         if (device.health !== health || healthErrorCode !== device.healthErrorCode) await audit(tx, device.officeId, 'device.health_changed', device.id)
+        if (['TOKEN_READY', 'CERT_EXPIRING'].includes(health)) await enqueueRequestedStamps(tx, device.officeId)
         return { health, serverTime: now, heartbeatAfterSeconds: 30 }
       })
     },

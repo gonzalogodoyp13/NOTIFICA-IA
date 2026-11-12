@@ -1,6 +1,7 @@
 import { deriveNotificationCompleteness } from '@/lib/workflow/completeness'
 import { deriveNotificationWorkflowState } from '@/lib/workflow/notificationStatus'
 import { prisma } from '@/lib/prisma'
+import { notificationSigningStates } from '@/lib/signing/stampRequests'
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === 'object' && !Array.isArray(value)
@@ -91,6 +92,10 @@ export async function loadSerializedNotification(notificacionId: string, diligen
       },
     },
   })
-  return notificacion ? serializeNotification(notificacion, notificacion.diligencia) : null
+  if (!notificacion) return null
+  const result = serializeNotification(notificacion, notificacion.diligencia)
+  const officeId = notificacion.diligencia.rol.officeId
+  const states = await notificationSigningStates(prisma, officeId, result.latestEstampoId ? [result.latestEstampoId] : [])
+  return { ...result, signing: states.get(result.latestEstampoId ?? '') ?? null }
 }
 

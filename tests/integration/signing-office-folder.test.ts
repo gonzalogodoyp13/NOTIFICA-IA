@@ -76,6 +76,19 @@ describe.skipIf(process.env.SIGNING_DATABASE_TESTS !== '1')('shared office folde
     await sandbox.db.user.update({ where: { id: f.user.id }, data: { isActive: true } })
     expect(storage.remove).not.toHaveBeenCalled()
   }, 60000)
+  it('removes replaced estampos from the folder catalog but preserves signed evidence in the archive', async () => {
+    const id = ids[51], input = { signatureId: id.signature, checksumSha256: checksum }
+    await sandbox.db.documento.update({ where: { id: id.doc }, data: { voidedAt: new Date(), voidReason: 'Reemplazado por una nueva versión del estampo' } })
+    try {
+      const first = await service.officeFolder(signer, {})
+      const second = first.nextCursor ? await service.officeFolder(signer, { asOf: first.asOf, cursor: first.nextCursor }) : { documents: [] }
+      expect([...first.documents, ...second.documents].some(d => d.signatureId === id.signature)).toBe(false)
+      await expect(service.officeFolderDownload(signer, input)).rejects.toThrow('NOT_FOUND')
+      expect((await archive.archiveDownload(f.context, input)).bytes).toEqual(bytes)
+    } finally {
+      await sandbox.db.documento.update({ where: { id: id.doc }, data: { voidedAt: null, voidReason: null } })
+    }
+  }, 60000)
   it('enforces office/auth boundaries, byte integrity, revocation during retrieval and private HTTP responses', async () => {
     const input = { signatureId: ids[0].signature, checksumSha256: checksum }
     await expect(service.officeFolderDownload(other, input)).rejects.toThrow('NOT_FOUND')

@@ -95,6 +95,7 @@ export default function EjecutarWizard({
 
   // Step III fields
   const [contenidoEstampo, setContenidoEstampo] = useState('')
+  const [signDigitally, setSignDigitally] = useState(diligencia.notificaciones?.find(n => n.id === notificacionId)?.signing?.requested ?? false)
 
   // UI state
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
@@ -476,6 +477,7 @@ export default function EjecutarWizard({
     const validation = EstampoGenerateSchema.safeParse({
       estampoId: selectedEstampoTipo.estampoId,
       contenidoPersonalizado: contenidoEstampo.trim(),
+      signDigitally,
     })
 
     if (!validation.success) {
@@ -840,6 +842,11 @@ export default function EjecutarWizard({
               <p className="mt-1 text-xs text-slate-500">
                 Puedes modificar el contenido antes de generar el PDF.
               </p>
+              <label className="mt-4 flex cursor-pointer items-center gap-2 text-sm text-slate-700">
+                <input type="checkbox" checked={signDigitally} onChange={event => setSignDigitally(event.target.checked)}
+                  disabled={isMutationPending} className="h-4 w-4 rounded border-slate-300 accent-sky-700" />
+                Firmar digitalmente y agregar timbre
+              </label>
             </div>
           )}
         </fieldset>

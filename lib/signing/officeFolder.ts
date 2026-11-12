@@ -48,7 +48,7 @@ export function createOfficeFolderService(db: PrismaClient, authenticate: Authen
   }
   async function access(tx: Prisma.TransactionClient, officeId: number, input: z.infer<typeof fileSchema>, now?: Date) {
     const row = await tx.documentSignature.findFirst({ where: { ...eligible(officeId), id: input.signatureId,
-      ...(now ? { createdAt: { gte: folderCutoff(now), lte: now } } : {}) }, include })
+      ...(now ? { AND: [{ signedVersion: { documento: { voidedAt: null } } }], createdAt: { gte: folderCutoff(now), lte: now } } : {}) }, include })
     if (!row || !validated(row)) throw new DeviceError('NOT_FOUND', 404)
     if (row.signedChecksum !== input.checksumSha256) throw new DeviceError('CHECKSUM_MISMATCH', 409)
     return row
@@ -73,7 +73,7 @@ export function createOfficeFolderService(db: PrismaClient, authenticate: Authen
       return device(token, async (tx, d, now) => {
         const asOf = input.asOf ? new Date(input.asOf) : now
         if (asOf > now || now.getTime() - asOf.getTime() > 30 * 60_000 || input.cursor && !input.asOf) throw new DeviceError('FOLDER_SNAPSHOT_EXPIRED', 409)
-        const rows = await tx.documentSignature.findMany({ where: { ...eligible(d.officeId),
+        const rows = await tx.documentSignature.findMany({ where: { ...eligible(d.officeId), AND: [{ signedVersion: { documento: { voidedAt: null } } }],
           createdAt: { gte: folderCutoff(now), lte: asOf }, ...(input.cursor ? { OR: [
             { createdAt: { lt: new Date(input.cursor.at) } }, { createdAt: new Date(input.cursor.at), id: { gt: input.cursor.id } } ] } : {}) },
           include, orderBy: [{ createdAt: 'desc' }, { id: 'asc' }], take: 50 })

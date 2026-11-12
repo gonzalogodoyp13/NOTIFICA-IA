@@ -10,7 +10,8 @@ import { drawRolHeader, type HeaderData } from '@/lib/pdf/header'
 export async function buildEstampoPdf(
   content: string,
   headerData: HeaderData,
-  officeImages?: { firma?: Uint8Array; sello?: Uint8Array }
+  officeImages?: { firma?: Uint8Array; sello?: Uint8Array },
+  options: { addStamp?: boolean } = {}
 ): Promise<string> {
   const pdf = await PDFDocument.create()
   let page = pdf.addPage([595, 842]) // A4 size
@@ -76,6 +77,14 @@ export async function buildEstampoPdf(
 
       y -= lineHeight
     }
+  }
+
+  // Add the configured office stamp once, before cryptographic signing binds the PDF.
+  if (options.addStamp && officeImages?.sello && !content.includes('$sello')) {
+    const stamp = await pdf.embedPng(officeImages.sello)
+    const size = stamp.scale(Math.min(180 / stamp.width, 100 / stamp.height, 1))
+    if (y - size.height - 16 < margin) addPageWithHeader()
+    page.drawImage(stamp, { x: page.getWidth() - margin - size.width, y: y - size.height - 16, ...size })
   }
 
   const pdfBytes = await pdf.save()

@@ -182,7 +182,8 @@ export function createSigningService(db: PrismaClient = prisma,
         const leaseToken = randomUUID()
         const claimed = await tx.signingItem.update({ where: { id: item.id }, data: { status: 'CLAIMED', leaseOwner: deviceId,
           leaseToken, leaseExpiresAt: new Date(now.getTime() + durationMs), attemptCount: { increment: 1 }, errorCode: null, safeError: null } })
-        await tx.signingAttempt.create({ data: { officeId, itemId: item.id, deviceId, attemptNumber: claimed.attemptCount, leaseToken, startedAt: now } })
+        const previousAttempt = await tx.signingAttempt.findFirst({ where: { officeId, itemId: item.id }, orderBy: { attemptNumber: 'desc' }, select: { attemptNumber: true } })
+        await tx.signingAttempt.create({ data: { officeId, itemId: item.id, deviceId, attemptNumber: (previousAttempt?.attemptNumber ?? 0) + 1, leaseToken, startedAt: now } })
         await audit(tx, officeId, 'signing.claimed', { jobId: item.jobId, itemId: item.id, deviceId, attemptNumber: claimed.attemptCount })
         await audit(tx, officeId, 'signing.assigned', { jobId: item.jobId, itemId: item.id, deviceId, attemptNumber: claimed.attemptCount, sourceVersionId: item.sourceVersionId, signerFingerprint: item.signerFingerprint })
         await aggregate(tx, officeId, item.jobId, now)
@@ -241,10 +242,19 @@ export function createSigningService(db: PrismaClient = prisma,
       const safe = safeSigningError(error)
       return transaction(lease.officeId, async (tx, now) => {
         const item = await ownedLease(tx, lease, now)
-        const status = safe.operatorRequired ? 'WAITING_FOR_OPERATOR' : safe.retryable && item.attemptCount < item.maxAttempts ? 'RETRY_PENDING' : 'FAILED'
+        const tokenMissing = safe.code === 'TOKEN_MISSING'
+        if (tokenMissing) {
+          const doc = await tx.documento.findUniqueOrThrow({ where: { id: item.documentoId }, select: { sourceTemplate: true } })
+          const template = doc.sourceTemplate as Prisma.JsonObject | null
+          if (template?.signDigitally === true) await tx.documento.update({ where: { id: item.documentoId },
+            data: { sourceTemplate: { ...template, signingTokenMissing: true } } })
+        }
+        const status = tokenMissing ? 'RETRY_PENDING' : safe.operatorRequired ? 'WAITING_FOR_OPERATOR' : safe.retryable && item.attemptCount < item.maxAttempts ? 'RETRY_PENDING' : 'FAILED'
         assertItemTransition(item.status, status)
         await endAttempt(tx, item, status === 'RETRY_PENDING' ? 'RETRYABLE_FAILURE' : status === 'WAITING_FOR_OPERATOR' ? 'OPERATOR_REQUIRED' : 'PERMANENT_FAILURE', now, safe)
         await tx.signingItem.update({ where: { id: item.id }, data: { status, ...clearLease, errorCode: safe.code, safeError: safe.message,
+          // A disconnected token must not exhaust the retry budget. Attempts remain in the audit trail.
+          ...(tokenMissing ? { attemptCount: { decrement: 1 } } : {}),
           availableAt: new Date(now.getTime() + retryDelayMs(item.attemptCount)), completedAt: status === 'FAILED' ? now : null } })
         await audit(tx, lease.officeId, 'signing.failed', { jobId: item.jobId, itemId: item.id, deviceId: lease.deviceId, errorCode: safe.code, status })
         if (status === 'RETRY_PENDING') await audit(tx, lease.officeId, 'signing.retry_scheduled', { jobId: item.jobId, itemId: item.id, deviceId: lease.deviceId, attemptNumber: item.attemptCount, errorCode: safe.code, status })

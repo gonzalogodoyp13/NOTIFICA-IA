@@ -11,6 +11,7 @@ interface EstampoWizardModalProps {
   rolId: string
   diligenciaId: string
   notificacionId: string
+  initialSignDigitally?: boolean
   isOpen: boolean
   onClose: () => void
   onSuccess?: (message: string) => void
@@ -39,6 +40,7 @@ export default function EstampoWizardModal({
   diligenciaId,
   notificacionId,
   isOpen,
+  initialSignDigitally = false,
   onClose,
   onSuccess,
   categoria = 'BUSQUEDA_NEGATIVA', // Default para compatibilidad
@@ -51,6 +53,7 @@ export default function EstampoWizardModal({
   const [selectedEstampoId, setSelectedEstampoId] = useState<number | null>(null)
   const [answers, setAnswers] = useState<Record<string, string>>({})
   const [submitting, setSubmitting] = useState(false)
+  const [signDigitally, setSignDigitally] = useState(initialSignDigitally)
   const [submitError, setSubmitError] = useState<string | null>(null)
   const [showTextEditor, setShowTextEditor] = useState(false)
   const [textoEditado, setTextoEditado] = useState<string | null>(null)
@@ -233,7 +236,8 @@ export default function EstampoWizardModal({
         body: JSON.stringify({
           estampoBaseId: selectedEstampoId,
           wizardAnswers: answers,
-          textoEditado: textoEditado || undefined, // NEW
+          textoEditado: textoEditado || undefined,
+          signDigitally,
           notificacionId,
         }),
         credentials: 'include',
@@ -474,6 +478,11 @@ export default function EstampoWizardModal({
           </div>
         )}
 
+        <label className="mt-4 flex cursor-pointer items-center gap-2 text-sm text-slate-700">
+          <input type="checkbox" checked={signDigitally} onChange={event => setSignDigitally(event.target.checked)}
+            disabled={submitting} className="h-4 w-4 rounded border-slate-300 accent-sky-700" />
+          Firmar digitalmente y agregar timbre
+        </label>
         <footer className="mt-6 flex justify-end gap-3">
           <button
             type="button"

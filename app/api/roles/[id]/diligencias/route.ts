@@ -5,6 +5,7 @@ import { Prisma } from '@prisma/client'
 
 import { ApiError, apiFailure, parseApiInput } from '@/lib/api/server'
 import { prisma } from '@/lib/prisma'
+import { notificationSigningStates } from '@/lib/signing/stampRequests'
 import { DiligenciaCreateSchema } from '@/lib/validations/rol-workspace'
 import { serializeNotification } from '@/lib/workflow/notificationView'
 import { recordCriticalEvent } from '@/lib/audit/activityEvent'
@@ -126,7 +127,11 @@ export async function GET(
       orderBy: { createdAt: 'desc' },
     })
 
-    return NextResponse.json({ ok: true, data: diligencias.map(mapDiligencia) })
+    const data = diligencias.map(mapDiligencia)
+    const states = await notificationSigningStates(prisma, user.officeId,
+      data.flatMap(d => d.notificaciones.flatMap((n: { latestEstampoId: string | null }) => n.latestEstampoId ? [n.latestEstampoId] : [])))
+    for (const d of data) d.notificaciones = d.notificaciones.map((n: { latestEstampoId: string | null }) => ({ ...n, signing: states.get(n.latestEstampoId ?? '') ?? null }))
+    return NextResponse.json({ ok: true, data })
   } catch (error) {
     console.error('Error obteniendo diligencias del rol:', error)
     return NextResponse.json(

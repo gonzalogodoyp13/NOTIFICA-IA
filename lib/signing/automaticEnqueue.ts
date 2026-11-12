@@ -57,6 +57,9 @@ export async function enqueueCompletedDiligence(tx: Prisma.TransactionClient, co
   const snapshots: Array<{ id: string; checksumSha256: string }> = []
   const eligibleIds: string[] = []
   for (const doc of documents) {
+    // Explicit generation choices are handled by the durable stamp request queue.
+    const template = doc.sourceTemplate as Record<string, unknown> | null
+    if (typeof template?.signDigitally === 'boolean') continue
     const version = doc.currentVersion
     // Do not expose a foreign version ID from a malformed legacy pointer.
     const sourceVersionId = version?.officeId === context.officeId && version.documentoId === doc.id ? version.id : null

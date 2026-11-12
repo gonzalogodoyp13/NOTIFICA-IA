@@ -20,6 +20,7 @@ const DiligenciaTipoSchema = z.object({
 })
 
 const NotificacionItemSchema = z.object({
+  signing: z.object({ requested: z.boolean().optional(), pending: z.boolean(), tokenMissing: z.boolean() }).nullable().optional(),
   id: z.string(),
   diligenciaId: z.string(),
   meta: z.unknown().nullable().optional(),
@@ -493,6 +494,7 @@ export function useDiligencias(rolId: string) {
   return useQuery({
     queryKey: diligenciasKey(rolId),
     queryFn: () => fetcher(`/api/roles/${rolId}/diligencias`, z.array(DiligenciaItemSchema)),
+    refetchInterval: query => query.state.data?.some(d => d.notificaciones?.some(n => n.signing?.pending)) ? 5000 : false,
     enabled: !!rolId,
     retry: false,
   })
