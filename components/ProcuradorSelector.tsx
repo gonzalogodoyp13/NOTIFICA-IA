@@ -2,7 +2,8 @@
 // Fetches procuradores from API and provides a dropdown for selection
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useId, useState } from 'react'
+import { SearchableSelect } from '@/components/ui/searchable-select'
 
 interface Procurador {
   id: number
@@ -33,6 +34,7 @@ export function ProcuradorSelector({
   abogadoId,
   className,
 }: ProcuradorSelectorProps) {
+  const selectorId = useId()
   const [procuradores, setProcuradores] = useState<Procurador[]>([])
   const scope = `${abogadoId ?? ''}:${bancoId ?? ''}`
   const [loadedScope, setLoadedScope] = useState<string | null>(null)
@@ -79,13 +81,15 @@ export function ProcuradorSelector({
   return (
     <div className={className}>
       {label && (
-        <label className="block text-sm font-medium text-gray-700 mb-2">
+        <label htmlFor={selectorId} className="block text-sm font-medium text-gray-700 mb-2">
           {label}
         </label>
       )}
-      <select
+      <SearchableSelect
+        id={selectorId}
+        aria-label={label || placeholder}
         value={value?.toString() || ''}
-        onChange={(e) => onChange(e.target.value ? parseInt(e.target.value) : null)}
+        onValueChange={(value) => onChange(value ? parseInt(value) : null)}
         disabled={disabled || loading || loadedScope !== scope}
         className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed"
       >
@@ -95,7 +99,7 @@ export function ProcuradorSelector({
             {procurador.nombre}
           </option>
         ))}
-      </select>
+      </SearchableSelect>
       {error && (
         <p className="mt-1 text-sm text-red-600">{error}</p>
       )}

@@ -10,6 +10,52 @@ function compile(file: string) {
   }).outputText
 }
 
+test('searchable dropdown filters accents, selects with keyboard, and preserves selection on dismissal', async ({ page }) => {
+  await page.route('http://regression.test/', route => route.fulfill({ contentType: 'text/html', body: '<div id="root"></div>' }))
+  await page.goto('http://regression.test/')
+  await page.addScriptTag({ path: path.join(path.dirname(require.resolve('react/package.json')), 'umd/react.development.js') })
+  await page.addScriptTag({ path: path.join(path.dirname(require.resolve('react-dom/package.json')), 'umd/react-dom.development.js') })
+  await page.evaluate(source => {
+    const w = window as any
+    const React = w.React
+    const module = { exports: {} as any }
+    new Function('require', 'module', 'exports', source)((id: string) => id === 'react' ? React : { ChevronDown: () => null }, module, module.exports)
+    function Harness() {
+      const [value, setValue] = React.useState('')
+      return React.createElement('form', { onSubmit: (event: any) => { event.preventDefault(); w.submitted = value } },
+        React.createElement(module.exports.SearchableSelect, { value, onValueChange: setValue, required: true, 'aria-label': 'Abogado' },
+          React.createElement('option', { value: '' }, 'Seleccionar abogado'),
+          React.createElement('optgroup', { label: 'Abogados' },
+            React.createElement('option', { value: '1' }, 'José Pérez'),
+            React.createElement('option', { value: '2', disabled: true }, 'José histórico'),
+            React.createElement('option', { value: '3' }, 'Ana López'))),
+        React.createElement('output', null, value),
+        React.createElement('button', { type: 'submit' }, 'Guardar'))
+    }
+    w.ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(Harness))
+  }, compile('components/ui/searchable-select.tsx'))
+  const input = page.getByRole('combobox', { name: 'Abogado' })
+  await input.fill('jose')
+  await expect(page.getByRole('option')).toHaveCount(2)
+  await expect(page.getByRole('option', { name: 'José histórico' })).toHaveAttribute('aria-disabled', 'true')
+  await input.press('ArrowDown')
+  await input.press('Enter')
+  await expect(input).toHaveValue('José Pérez')
+  await expect(page.locator('output')).toHaveText('1')
+  await input.click()
+  await input.fill('no matches')
+  await expect(page.getByRole('status').filter({ hasText: 'Sin resultados' })).toBeVisible()
+  await input.press('Escape')
+  await expect(input).toHaveValue('José Pérez')
+  await page.getByRole('button', { name: 'Guardar' }).click()
+  expect(await page.evaluate(() => (window as any).submitted)).toBe('1')
+  await input.click()
+  await page.getByRole('option', { name: 'Seleccionar abogado', exact: true }).click()
+  await expect(page.locator('output')).toHaveText('')
+  await input.fill('unlisted name')
+  expect(await input.evaluate((node: HTMLInputElement) => node.checkValidity())).toBe(false)
+})
+
 async function mountAuditControl(page: Page, kind: 'association' | 'notes', status = 'terminado') {
   await page.route('http://regression.test/', route => route.fulfill({ contentType: 'text/html', body: '<div id="root"></div>' }))
   await page.goto('http://regression.test/')

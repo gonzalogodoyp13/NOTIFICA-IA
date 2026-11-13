@@ -1,3 +1,5 @@
+"use client"
+
 import * as React from "react"
 
 import { cn } from "@/lib/utils"
@@ -6,7 +8,7 @@ export interface InputProps
   extends React.InputHTMLAttributes<HTMLInputElement> {}
 
 const Input = React.forwardRef<HTMLInputElement, InputProps>(
-  ({ className, type, ...props }, ref) => {
+  ({ className, type, onClick, ...props }, ref) => {
     return (
       <input
         type={type}
@@ -16,6 +18,17 @@ const Input = React.forwardRef<HTMLInputElement, InputProps>(
         )}
         ref={ref}
         {...props}
+        onClick={event => {
+          onClick?.(event)
+          if (event.defaultPrevented || event.currentTarget.disabled || event.currentTarget.readOnly) return
+          if (type === "date" || type === "datetime-local" || type === "month" || type === "week") {
+            try {
+              event.currentTarget.showPicker?.()
+            } catch {
+              // Keep manual entry available when the browser cannot open its picker.
+            }
+          }
+        }}
       />
     )
   }

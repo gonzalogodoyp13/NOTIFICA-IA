@@ -8,6 +8,7 @@ import Topbar from '@/components/Topbar'
 import Link from 'next/link'
 import { cleanCuantiaInput } from '@/lib/utils/cuantia'
 import { readApiError } from '@/lib/api/client'
+import { SearchableSelect } from '@/components/ui/searchable-select'
 import { ProcuradorSelector } from '@/components/ProcuradorSelector'
 
 interface Banco {
@@ -290,11 +291,11 @@ export default function NuevaDemandaPage({
                 <label htmlFor="bancoId" className="block text-sm font-medium text-gray-700 mb-2">
                   Banco *
                 </label>
-                <select
+                <SearchableSelect
                   id="bancoId"
                   required
                   value={bancoId}
-                  onChange={(e) => handleBancoChange(e.target.value)}
+                  onValueChange={(value) => handleBancoChange(value)}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500"
                 >
                   <option value="">Seleccionar banco</option>
@@ -303,7 +304,7 @@ export default function NuevaDemandaPage({
                       {banco.nombre}
                     </option>
                   ))}
-                </select>
+                </SearchableSelect>
                 {bancoId && abogados.length === 0 && (
                   <p className="mt-1 text-xs text-amber-600">
                     Este banco no tiene abogados asignados
@@ -381,11 +382,11 @@ export default function NuevaDemandaPage({
                 <label htmlFor="tribunalId" className="block text-sm font-medium text-gray-700 mb-2">
                   Tribunal *
                 </label>
-                <select
+                <SearchableSelect
                   id="tribunalId"
                   required
                   value={formData.tribunalId}
-                  onChange={(e) => setFormData({ ...formData, tribunalId: e.target.value })}
+                  onValueChange={(value) => setFormData({ ...formData, tribunalId: value })}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500"
                 >
                   <option value="">Seleccionar tribunal</option>
@@ -394,7 +395,7 @@ export default function NuevaDemandaPage({
                       {tribunal.nombre}
                     </option>
                   ))}
-                </select>
+                </SearchableSelect>
               </div>
 
               {/* Abogado */}
@@ -402,11 +403,11 @@ export default function NuevaDemandaPage({
                 <label htmlFor="abogadoId" className="block text-sm font-medium text-gray-700 mb-2">
                   Abogado *
                 </label>
-                <select
+                <SearchableSelect
                   id="abogadoId"
                   required
                   value={formData.abogadoId}
-                  onChange={(e) => handleAbogadoChange(e.target.value)}
+                  onValueChange={(value) => handleAbogadoChange(value)}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500"
                 >
                   <option value="">Seleccionar abogado</option>
@@ -415,7 +416,7 @@ export default function NuevaDemandaPage({
                       {abogado.nombre || `Abogado #${abogado.id}`}
                     </option>
                   ))}
-                </select>
+                </SearchableSelect>
               </div>
 
               {/* Procurador */}
@@ -432,10 +433,10 @@ export default function NuevaDemandaPage({
                 <label htmlFor="materiaId" className="block text-sm font-medium text-gray-700 mb-2">
                   Materia
                 </label>
-                <select
+                <SearchableSelect
                   id="materiaId"
                   value={formData.materiaId}
-                  onChange={(e) => setFormData({ ...formData, materiaId: e.target.value })}
+                  onValueChange={(value) => setFormData({ ...formData, materiaId: value })}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500"
                 >
                   <option value="">Seleccionar materia (opcional)</option>
@@ -444,7 +445,7 @@ export default function NuevaDemandaPage({
                       {materia.nombre}
                     </option>
                   ))}
-                </select>
+                </SearchableSelect>
               </div>
 
               {/* Cuantía */}

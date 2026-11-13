@@ -477,7 +477,6 @@ export default function DiligenciasTable({ rolId, rolEstado }: DiligenciasTableP
                               </div>
                               <div className="rounded-[20px] border border-sky-200 bg-[linear-gradient(180deg,#ffffff_0%,#f2f8ff_100%)] p-4">
                                 <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-sky-700/70">Recibo</div>
-                                <p className="mt-2 text-sm leading-6 text-slate-600">El recibo ya forma parte del flujo. Puedes verlo o volver al paso correspondiente.</p>
                                 <div className="mt-4 flex flex-wrap gap-2">
                                   {!isReadOnly && renderActionButton('Editar recibo', event => { event.stopPropagation(); openWizardForNotificacion(diligencia, notif.id, 2) }, secondaryButtonClass)}
                                   {notif.latestReciboId && renderActionButton('Ver recibo', event => handleViewDocumento(event, notif.latestReciboId!), successButtonClass)}

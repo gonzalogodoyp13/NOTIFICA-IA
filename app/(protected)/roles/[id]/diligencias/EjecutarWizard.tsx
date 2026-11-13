@@ -19,6 +19,7 @@ import {
 import { EstampoGenerateSchema, ReciboGenerateSchema } from '@/lib/validations/rol-workspace'
 import { cleanCuantiaInput } from '@/lib/utils/cuantia'
 import { dmyDateToIso, formatDmyDateInput, isIsoDateInFuture, isoDateToDmy, localDateToDmy, localDateToIso } from '@/lib/utils/dateInput'
+import { SearchableSelect } from '@/components/ui/searchable-select'
 import { type EstampoTipo } from '@/lib/estampos/selection'
 import { ModalPortal } from '@/components/ui/modal-portal'
 
@@ -554,7 +555,7 @@ export default function EjecutarWizard({
   return (
     <ModalPortal>
     <div className="absolute inset-0 flex items-center justify-center bg-black/40 px-4 py-4">
-      <div className="max-h-[calc(100dvh-2rem)] w-full max-w-lg overflow-y-auto rounded-lg bg-white p-6 shadow-lg">
+      <div className={`max-h-[calc(100dvh-2rem)] w-full ${step === 3 ? 'max-w-4xl' : 'max-w-lg'} overflow-y-auto rounded-lg bg-white p-6 shadow-lg`}>
         <header className="flex items-center justify-between">
           <div>
             <h2 className="text-lg font-semibold text-slate-800">
@@ -624,6 +625,7 @@ export default function EjecutarWizard({
                       maxLength={10}
                       className="min-w-0 flex-1 rounded-l border border-r-0 border-slate-300 p-2 outline-none focus:border-sky-400 focus:ring-1 focus:ring-sky-300"
                       value={fechaEjecucion}
+                      onClick={openExecutionDatePicker}
                       onChange={e => setFechaEjecucion(formatDmyDateInput(e.target.value))}
                       aria-invalid={fieldError?.field === 'fecha-ejecucion'}
                     />
@@ -644,7 +646,7 @@ export default function EjecutarWizard({
                       tabIndex={-1}
                       aria-hidden="true"
                       max={localDateToIso()}
-                      className="pointer-events-none absolute h-px w-px opacity-0"
+                      className="pointer-events-none absolute left-0 top-full mt-1 h-px w-full opacity-0"
                       value={dmyDateToIso(fechaEjecucion) ?? ''}
                       onChange={event => {
                         setFechaEjecucion(isoDateToDmy(event.target.value))
@@ -683,7 +685,7 @@ export default function EjecutarWizard({
                 {workflowLoading ? (
                   <p className="mt-2 text-xs text-slate-400">Cargando estampos…</p>
                 ) : (
-                  <select
+                  <SearchableSelect
                     id="tipo-estampo"
                     className="mt-1 w-full rounded border border-slate-300 p-2"
                     value={
@@ -693,8 +695,7 @@ export default function EjecutarWizard({
                           ? `custom:${selectedEstampoTipo.estampoId}`
                           : ''
                     }
-                    onChange={e => {
-                      const value = e.target.value
+                    onValueChange={value => {
                       setMontoManual(false)
                       setAmountSource('tariff')
                       setFieldError(null)
@@ -744,7 +745,7 @@ export default function EjecutarWizard({
                           ) : null)}
                       </optgroup>
                     )}
-                  </select>
+                  </SearchableSelect>
                 )}
                 {fieldError?.field === 'tipo-estampo' && <p className="mt-1 text-xs text-rose-600">{fieldError.message}</p>}
               </div>
@@ -833,7 +834,7 @@ export default function EjecutarWizard({
               </label>
               <textarea
                 id="contenido-estampo"
-                className="mt-1 h-48 w-full rounded border border-slate-300 p-2 font-mono text-xs"
+                className="mt-1 h-[min(45dvh,26rem)] min-h-64 w-full resize-y rounded border border-slate-300 p-4 font-mono text-base leading-7"
                 placeholder="Contenido del estampo…"
                 value={contenidoEstampo}
                 onChange={e => setContenidoEstampo(e.target.value)}

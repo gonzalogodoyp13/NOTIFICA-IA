@@ -224,6 +224,7 @@ export default function NuevaDiligenciaWizard({ rolId, onClose, onCreated }: Nue
                     maxLength={10}
                     className="min-w-0 flex-1 rounded-l border border-r-0 border-slate-300 p-2 text-sm outline-none focus:border-sky-400 focus:ring-1 focus:ring-sky-300"
                     value={fechaText}
+                    onClick={openDatePicker}
                     onChange={event => setFecha(event.target.value)}
                   />
                   <button type="button" aria-label="Abrir calendario" onClick={openDatePicker} className="flex w-11 items-center justify-center rounded-r border border-slate-300 bg-white text-slate-600 hover:bg-sky-50">
@@ -235,7 +236,7 @@ export default function NuevaDiligenciaWizard({ rolId, onClose, onCreated }: Nue
                     tabIndex={-1}
                     aria-hidden="true"
                     max={localDateToIso()}
-                    className="pointer-events-none absolute h-px w-px opacity-0"
+                    className="pointer-events-none absolute left-0 top-full mt-1 h-px w-full opacity-0"
                     value={form.fecha}
                     onChange={event => setFecha(isoDateToDmy(event.target.value))}
                   />

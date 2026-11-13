@@ -49,6 +49,7 @@ export default function EstampoWizardModal({
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [estampos, setEstampos] = useState<EstampoItem[]>([])
+  const [estampoSearch, setEstampoSearch] = useState('')
   const [initialVariables, setInitialVariables] = useState<Record<string, string>>({})
   const [selectedEstampoId, setSelectedEstampoId] = useState<number | null>(null)
   const [answers, setAnswers] = useState<Record<string, string>>({})
@@ -59,6 +60,11 @@ export default function EstampoWizardModal({
   const [textoEditado, setTextoEditado] = useState<string | null>(null)
   const [textDraft, setTextDraft] = useState('')
   const [previewingText, setPreviewingText] = useState(false)
+
+  const normalizeSearch = (value: string) => value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+  const filteredEstampos = estampos.filter(estampo =>
+    normalizeSearch(`${estampo.nombreVisible} ${estampo.descripcion ?? ''}`).includes(normalizeSearch(estampoSearch))
+  )
 
   // Load wizard data when modal opens
   useEffect(() => {
@@ -318,8 +324,17 @@ export default function EstampoWizardModal({
               <label className="block font-medium text-slate-700 mb-2">
                 Seleccionar tipo de estampo *
               </label>
+              <input
+                type="search"
+                aria-label="Filtrar tipos de estampo"
+                placeholder="Escribe para filtrar estampos…"
+                value={estampoSearch}
+                onChange={event => setEstampoSearch(event.target.value)}
+                className="mb-2 w-full rounded border border-slate-300 px-3 py-2"
+              />
               <div className="space-y-2">
-                {estampos.map(estampo => (
+                {filteredEstampos.length === 0 && <p role="status" className="py-3 text-slate-500">Sin resultados</p>}
+                {filteredEstampos.map(estampo => (
                   <label
                     key={estampo.id}
                     className="flex items-start gap-3 p-3 rounded border border-slate-200 hover:bg-slate-50 cursor-pointer"
