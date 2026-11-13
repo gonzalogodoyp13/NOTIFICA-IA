@@ -1,0 +1,26 @@
+.compact > section {
+  font-size: 13px;
+}
+
+.compact > section :global(.page-title) {
+  font-size: clamp(1.5rem, 2.5vw, 1.875rem);
+}
+
+.compact > section :global(.text-sm) {
+  font-size: 13px;
+}
+
+.compact > section :global(.page-subtitle) {
+  font-size: 13px;
+}
+
+.compact > section button,
+.compact > section input:not([type="checkbox"]),
+.compact > section select {
+  font-size: 13px;
+}
+
+.compact > section button:global(.h-11),
+.compact > section input:global(.h-10) {
+  height: 2.25rem;
+}

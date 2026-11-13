@@ -13,6 +13,7 @@ import UnmatchedRepliesPanel, {
   type UnmatchedReplyPagination,
   type UnmatchedReplyStatus,
 } from './components/UnmatchedRepliesPanel'
+import styles from './recibos.module.css'
 import ReceiptResults, { type ReceiptRow } from './components/ReceiptResults'
 
 const PAGE_SIZE = 25
@@ -696,15 +697,15 @@ export default function RecibosPage() {
     finally { setSending(false); void loadHistory() }
   }
 
-  return <div className="app-shell"><div className="page-stack mx-auto max-w-[1800px] px-4 sm:px-6 lg:px-8 2xl:px-10">
+  return <div className="app-shell"><div className={`${styles.compact} page-stack mx-auto max-w-[1800px] px-4 sm:px-5 lg:px-6 2xl:px-8`}>
     <section className="page-section overflow-visible">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div><div className="page-kicker">Recibos</div><h1 className="page-title">Gestión de Recibos</h1><p className="page-subtitle">Define los criterios de búsqueda antes de cargar resultados.</p><div className="mt-4 flex gap-2"><Link href="/recibos" className="rounded-full bg-slate-900 px-4 py-2 text-sm font-semibold text-white">Gestión</Link><Link href="/recibos/reconciliacion" className="rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700">Conciliación</Link></div></div>
         <div className="flex flex-wrap gap-2"><Button variant="outline" onClick={clear}>Limpiar filtros</Button><Button variant="outline" onClick={openHistory}><History className="mr-2 h-4 w-4" />Gestión de envíos{unmatchedPendingTotal > 0 && <span aria-label={`${unmatchedPendingTotal} respuestas pendientes`} className="ml-2 inline-flex min-w-5 justify-center rounded-full bg-amber-100 px-1.5 py-0.5 text-[11px] font-bold text-amber-900">{unmatchedPendingTotal > 99 ? '99+' : unmatchedPendingTotal}</span>}</Button><Button variant="outline" onClick={openSendCenter} disabled={!effectiveCount || sendLoading}><Send className="mr-2 h-4 w-4" />Enviar listado ({effectiveCount})</Button></div>
       </div>
-      <div className="mt-6 rounded-2xl border border-slate-200 bg-slate-50/70 p-4 sm:p-5">
+      <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50/70 p-3 sm:p-4">
         <div className="mb-4 flex items-center gap-2 text-sm font-semibold text-slate-800"><Filter className="h-4 w-4 text-blue-700" />Criterios de búsqueda</div>
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
           <MultiSelect label="Estado" options={[{ id: 'PAGADO', nombre: 'Pagado' }, { id: 'NO_PAGADO', nombre: 'Sin pagar' }]} selected={filters.estados} onChange={v => update('estados', v)} />
           <MultiSelect label="Abogado" options={options.abogados} selected={filters.abogadoIds} onChange={v => update('abogadoIds', v)} />
           <MultiSelect label="Procurador" options={options.procuradores} selected={filters.procuradorIds} onChange={v => update('procuradorIds', v)} />
