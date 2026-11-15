@@ -1,3 +1,4 @@
+import ExcelJS from 'exceljs'
 import { describe, expect, it } from 'vitest'
 
 import { buildRecibosWorkbook } from '../../lib/recibos/xlsx'
@@ -36,7 +37,31 @@ describe('receipt export workbook validation', () => {
       },
     ], 'QA export')
 
+    const parsed = new ExcelJS.Workbook()
+    await parsed.xlsx.load(workbook as unknown as Parameters<typeof parsed.xlsx.load>[0])
+    const sheet = parsed.getWorksheet('Recibos')!
+    expect((sheet.getRow(4).values as unknown[]).slice(1)).toEqual([
+      'ROL', 'Tribunal', 'Carátula', 'Gestión', 'Estampo', 'Monto', 'N° Boleta',
+      'Fecha ejecución', 'Estado', 'N° Recibo', 'Abogado', 'Procurador', 'Banco', 'Fecha recibo',
+    ])
+    expect((sheet.getRow(5).values as unknown[]).slice(1)).toEqual([
+      'QA-P9-EXPORT', 'QA Tribunal', 'QA Caratula', 'Notificacion', 'QA Template', 25000,
+      'B-QA-001', new Date('2026-06-10T14:00:00.000Z'), 'Pagado', 'QA-REC-001',
+      'QA Abogado', 'QA Procurador', 'QA Banco', new Date('2026-06-10T14:20:00.000Z'),
+    ])
+    expect(sheet.getCell('F6').value).toEqual({ formula: 'SUM(F5:F5)', result: 25000 })
+    expect(sheet.getCell('F5').numFmt).toBe('$#,##0;[Red]-$#,##0')
+    expect(sheet.getCell('H5').numFmt).toBe('dd-mm-yyyy')
+    expect(sheet.getCell('N5').numFmt).toBe('dd-mm-yyyy')
+    expect(sheet.autoFilter).toBe('A4:N4')
+
     await expect(validateRecibosWorkbook(Buffer.from(workbook), 'QA-P9-EXPORT')).resolves.toBeUndefined()
+  })
+  it('exports an empty list with a zero total instead of a circular formula', async () => {
+    const bytes = await buildRecibosWorkbook([], '')
+    const parsed = new ExcelJS.Workbook()
+    await parsed.xlsx.load(bytes as unknown as Parameters<typeof parsed.xlsx.load>[0])
+    expect(parsed.getWorksheet('Recibos')!.getCell('F5').value).toBe(0)
   })
 })
 
