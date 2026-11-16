@@ -8,6 +8,7 @@ import { classifyActivityAction } from '@/lib/audit/classification'
 import { recordBestEffortEvent } from '@/lib/audit/activityEvent'
 import { prisma } from '@/lib/prisma'
 import { dailyEventDetail } from './dailyWorkbook'
+import { reportEventLabel } from './eventLabels'
 import { chileDayBounds, formatChileDateTime } from './chileTime'
 import {
   CUSTOM_REPORT_COLUMN_LABELS,
@@ -41,7 +42,7 @@ function eventValue(event: EventWithUser, column: CustomColumn) {
   if (column === 'actor') return event.actorType === 'SYSTEM' ? 'Sistema' : event.user?.email ?? 'Administrador no disponible'
   if (column === 'module') return event.module
   if (column === 'category') return actionCategory(event)
-  if (column === 'eventType') return event.eventType
+  if (column === 'eventType') return reportEventLabel(event.eventType)
   if (column === 'result') return event.result
   if (column === 'recordType') return event.recordType ?? ''
   if (column === 'recordId') return event.recordId ?? ''

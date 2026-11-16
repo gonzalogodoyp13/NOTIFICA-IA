@@ -3,6 +3,7 @@ import type { ActivityEvent, User } from '@prisma/client'
 
 import { formatChileDateTime } from './chileTime'
 import { classifyActivityAction } from '@/lib/audit/classification'
+import { reportEventLabel } from './eventLabels'
 
 type EventWithUser = ActivityEvent & { user: Pick<User, 'email'> | null }
 
@@ -70,7 +71,6 @@ export function dailyEventDetail(event: Pick<ActivityEvent, 'metadata' | 'eventT
   push('ROL', event.rol)
   push('Nombre', event.shortName)
   push('Registro', event.recordType)
-  push('ID interno', event.recordId)
   push('Cantidad', meta.count ?? meta.resultCount ?? meta.recipientCount)
   push('Pagina', meta.page)
   push('Tamano pagina', meta.pageSize)
@@ -97,7 +97,7 @@ export function dailyEventDetail(event: Pick<ActivityEvent, 'metadata' | 'eventT
   if (Array.isArray(meta.receiptIds)) parts.push(`Recibos afectados: ${meta.receiptIds.length}`)
   if (Array.isArray(meta.maskedEmails)) parts.push(`Correos enmascarados: ${meta.maskedEmails.slice(0, 3).join(', ')}`)
 
-  return parts.join(' | ') || event.eventType
+  return parts.join(' | ') || reportEventLabel(event.eventType)
 }
 
 function styleHeader(row: ExcelJS.Row) {
@@ -120,7 +120,7 @@ function configureSheet(sheet: ExcelJS.Worksheet, widths: number[], headerRowNum
 
 function addEventSheet(workbook: ExcelJS.Workbook, name: string, events: EventWithUser[]) {
   const sheet = workbook.addWorksheet(name)
-  const headers = ['Fecha y hora', 'Usuario', 'Modulo', 'Evento', 'Resultado', 'Tipo registro', 'ID registro', 'ROL', 'Nombre corto', 'Descripcion', 'Detalle']
+  const headers = ['Fecha y hora', 'Usuario', 'Modulo', 'Evento', 'Resultado', 'Tipo registro', 'ROL', 'Nombre corto', 'Descripcion', 'Detalle']
   const header = sheet.addRow(headers)
   styleHeader(header)
   for (const event of events) {
@@ -128,10 +128,9 @@ function addEventSheet(workbook: ExcelJS.Workbook, name: string, events: EventWi
       event.occurredAt,
       event.user?.email ?? 'Sistema',
       MODULE_LABELS[event.module] ?? event.module,
-      event.eventType,
+      reportEventLabel(event.eventType),
       RESULT_LABELS[event.result] ?? event.result,
       event.recordType ?? '',
-      event.recordId ?? '',
       event.rol ?? '',
       event.shortName ?? '',
       event.description,
@@ -140,7 +139,7 @@ function addEventSheet(workbook: ExcelJS.Workbook, name: string, events: EventWi
   }
   if (!events.length) sheet.addRow(['Sin actividad'])
   sheet.getColumn(1).numFmt = 'dd-mm-yyyy hh:mm:ss'
-  configureSheet(sheet, [22, 34, 24, 28, 14, 22, 28, 18, 28, 44, 64], 1)
+  configureSheet(sheet, [22, 34, 24, 38, 14, 22, 18, 28, 44, 64], 1)
 }
 
 function addSummary(workbook: ExcelJS.Workbook, input: DailyReportWorkbookInput) {

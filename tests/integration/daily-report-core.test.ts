@@ -4,6 +4,8 @@ import { describe, expect, it } from 'vitest'
 import { chileDayBounds } from '../../lib/reports/chileTime'
 import { buildDailyAuditWorkbook, dailyEventDetail } from '../../lib/reports/dailyWorkbook'
 import { classifyActivityAction } from '../../lib/audit/classification'
+import { reportEventLabel } from '../../lib/reports/eventLabels'
+import { ACTIVITY_EVENT_CATALOG } from '../../lib/audit/catalog'
 
 function event(overrides: Record<string, unknown> = {}) {
   return {
@@ -46,6 +48,16 @@ describe('daily report Chile date bounds', () => {
 })
 
 describe('daily report workbook', () => {
+  it('labels every catalog event and settings resource in Spanish', () => {
+    for (const type of Object.keys(ACTIVITY_EVENT_CATALOG)) {
+      expect(reportEventLabel(type), type).not.toBe('Actividad registrada')
+      expect(reportEventLabel(type)).not.toContain('.')
+    }
+    expect(reportEventLabel('settings.Abogado.created')).toBe('Abogado creado')
+    expect(reportEventLabel('stamp.generated')).toBe('Estampo creado')
+    expect(reportEventLabel('settings.Comuna.deleted')).toBe('Comuna eliminada')
+    expect(reportEventLabel('future.unknown')).toBe('Actividad registrada')
+  })
   it('classifies canonical, legacy and historical action names without dropping unknown activity', () => {
     for (const verb of ['create', 'created', 'generate', 'generated']) {
       expect(classifyActivityAction(`notification.${verb}`)).toBe('CREATE')
@@ -76,9 +88,14 @@ describe('daily report workbook', () => {
     })
     const workbook = new ExcelJS.Workbook()
     await workbook.xlsx.load(buffer as any)
-    expect(workbook.getWorksheet('Creaciones')?.getCell('D2').value).toBe('notification.created')
-    expect(workbook.getWorksheet('Modificaciones')?.getCell('D2').value).toBe('notification.updated')
-    expect(workbook.getWorksheet('Eliminaciones')?.getCell('D2').value).toBe('notification.deleted')
+    expect(workbook.getWorksheet('Creaciones')?.getCell('D2').value).toBe('Notificación creada')
+    expect(workbook.getWorksheet('Modificaciones')?.getCell('D2').value).toBe('Notificación actualizada')
+    expect(workbook.getWorksheet('Eliminaciones')?.getCell('D2').value).toBe('Notificación eliminada')
+    expect(workbook.getWorksheet('Actividad')?.getCell('G1').value).toBe('ROL')
+    expect(workbook.getWorksheet('Actividad')?.getCell('G2').value).toBe('C-0001-2026')
+    expect(workbook.getWorksheet('Actividad')?.columnCount).toBe(10)
+    expect(JSON.stringify(workbook.model)).not.toContain('ID registro')
+    expect(JSON.stringify(workbook.model)).not.toContain('role-1')
     expect(workbook.getWorksheet('Actividad')?.rowCount).toBe(5)
   })
 
@@ -135,7 +152,7 @@ describe('daily report workbook', () => {
 
   it('renders friendly details instead of JSON', () => {
     expect(dailyEventDetail(event({ metadata: { resultCount: 2, page: 1, pageSize: 50 } }))).toBe(
-      'ROL: C-0001-2026 | Nombre: Caratula QA | Registro: RolCausa | ID interno: role-1 | Cantidad: 2 | Pagina: 1 | Tamano pagina: 50'
+      'ROL: C-0001-2026 | Nombre: Caratula QA | Registro: RolCausa | Cantidad: 2 | Pagina: 1 | Tamano pagina: 50'
     )
   })
 })
