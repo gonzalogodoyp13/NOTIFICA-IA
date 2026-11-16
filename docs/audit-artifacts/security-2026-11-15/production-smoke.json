@@ -1,0 +1,35 @@
+[
+  {
+    "path": "/api/ping",
+    "status": 200,
+    "redirect": null,
+    "cache": "private, no-store",
+    "csp": true,
+    "health": true
+  },
+  {
+    "path": "/login",
+    "status": 200,
+    "redirect": null,
+    "cache": "private, no-cache, no-store, max-age=0, must-revalidate",
+    "csp": true
+  },
+  {
+    "path": "/mfa",
+    "status": 307,
+    "redirect": "/login",
+    "cache": "private, no-cache, no-store, max-age=0, must-revalidate",
+    "csp": true
+  },
+  {
+    "path": "/api/comunas",
+    "status": 401,
+    "redirect": null,
+    "cache": "private, no-store",
+    "csp": true
+  },
+  {
+    "path": "cross-origin POST",
+    "status": 403
+  }
+]

@@ -2,6 +2,23 @@
 
 This follows `SECURITY_AUDIT_2026-11-15.md`, which preserves the original findings. This is not certification that all twenty security areas are clear.
 
+## Production release completed
+
+On 15 November 2026 (America/Los_Angeles), deployed and promoted the tested production build to https://www.notificaia.cl.
+
+- Deployment: `dpl_657d3Dt67wW3mpUGnPcrZdyonspj` (`notifica-staging-f7mmtec6g-notifica-ia.vercel.app`).
+- Deployed source commit: `ff1d42989a515a95e5faefb6e4ffe5ee4d7f6847`, on local branch `codex/security-hardening-20261115`.
+- Previous deployment retained for emergency rollback: `dpl_5M8KHyd3t7UsAxqGTSeaswfn6sni`. Rolling back also restores the older application/security behavior and its previous connection configuration.
+- Created a separate login, `notifica_app_20261115`, inheriting the NOLOGIN `notifica_runtime` role. Both remain without superuser, database/role creation, replication or RLS-bypass privileges. The generated credential was sent to Vercel's production Secret settings without displaying it or writing it into source files.
+- Production `DATABASE_URL` now uses this login through the transaction pool; production `DIRECT_URL` uses the same restricted login through the session pool. Owner migration credentials remain outside deployed application settings, in the operator's existing local configuration. Do not run migrations with the production runtime credential.
+- Verified both actual login connections, Prisma reads, rolled-back synthetic CRUD, and denial of access to authentication records before staging. The staged deployment's database-backed download request returned 302 and Supabase showed a backend connection under the new login.
+- Staged with `--prod --skip-domain`; promoted only after build, health, login, unauthenticated API, CSRF and security-header checks passed.
+- Repeated checks on the public domain: health/login 200, MFA redirects logged-out users to login (307), private API 401, foreign-origin mutation 403, private/no-store and CSP present, database-backed software download 302.
+- No error/fatal runtime log entries were returned for this deployment in the immediate post-release check. This is a short observation window, not ongoing monitoring.
+- Revoked the automation protection-bypass secret created by the CLI for staging tests. Deployment Protection remains enabled. Upload preview confirmed 485 application files (approximately 2.8 MB), excluding local secrets, audit artifacts and Windows-agent tools/work.
+
+Public smoke evidence: `docs/audit-artifacts/security-2026-11-15/production-smoke.json`.
+
 ## Implemented in the working tree
 
 - Upgraded Next.js to 15.5.29 and React to 19, migrated asynchronous route parameters/cookies, upgraded vulnerable mail and validation packages, and applied scoped transitive dependency overrides. The full dependency audit now reports zero known vulnerabilities, including development dependencies.
@@ -36,8 +53,8 @@ This follows `SECURITY_AUDIT_2026-11-15.md`, which preserves the original findin
 
 ## Remaining release and operational gates
 
-1. The application changes have not been committed, pushed or deployed. Run deployment smoke tests before calling the fixes live. Administrators must complete their own authenticator enrollment; no user credentials or MFA secrets were created by this work.
-2. The app still uses the existing owner connection. Automatic approval review initially rejected the broad persistent role grants; the user then explicitly approved creating and testing the role. That migration and permission verification are now complete. Provisioning a runtime login credential and switching the deployed connection remain pending. The role's application-wide policies do not provide database-level office isolation; server ownership checks remain essential. Keep migration credentials separate from runtime credentials.
+1. Application changes are committed locally and deployed; authenticated administrator enrollment remains a user action. Administrators must complete their own authenticator enrollment. No application-user password or MFA secret was created by this work.
+2. The production runtime credential cutover is complete as described above. Automatic approval review initially rejected the broad persistent role grants; the user explicitly approved creating/testing the role and then deploying/cutting over. The role's application-wide policies do not provide database-level office isolation; server ownership checks remain essential. Keep migration credentials separate from runtime credentials.
 3. Test two real authenticated accounts in different offices against the deployed UI/API, including downloads, search, exports and role revocation. Mocked identity tests and isolated database tests do not replace this check.
 4. Verify preview deployments use isolated data and secrets. Setting a production origin does not establish preview isolation.
 5. Perform an isolated backup restore and deliver a real security alert to the designated operator. Neither is established by source review or passing tests.
