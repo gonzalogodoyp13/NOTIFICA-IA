@@ -2,7 +2,7 @@
 // Full form to create a new Demanda with all related data
 'use client'
 
-import { useEffect, useState, useMemo } from 'react'
+import { useEffect, useState, useMemo, use } from 'react';
 import { useRouter } from 'next/navigation'
 import Topbar from '@/components/Topbar'
 import Link from 'next/link'
@@ -42,11 +42,12 @@ interface Comuna {
   nombre: string
 }
 
-export default function NuevaDemandaPage({
-  searchParams,
-}: {
-  searchParams?: { rol?: string }
-}) {
+export default function NuevaDemandaPage(
+  props: {
+    searchParams: Promise<{ rol?: string }>
+  }
+) {
+  const searchParams = use(props.searchParams);
   const router = useRouter()
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)

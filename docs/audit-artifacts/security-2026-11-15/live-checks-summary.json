@@ -1,0 +1,22 @@
+{
+  "date": "2026-11-15",
+  "project": "gaibmtuyywxsgkvjtysk",
+  "source": "Read-only Supabase MCP SQL queries and security advisor",
+  "publicTables": 65,
+  "publicTablesWithoutRls": 0,
+  "publicTablesWithAnonOrAuthenticatedCrudGrants": 0,
+  "buckets": [
+    { "id": "documents", "public": false, "file_size_limit": 52428800, "allowed_mime_types": ["application/pdf"] },
+    { "id": "pdf-assets", "public": false, "file_size_limit": 10485760, "allowed_mime_types": ["image/png"] },
+    { "id": "reports", "public": false, "file_size_limit": 52428800, "allowed_mime_types": ["application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"] }
+  ],
+  "storageObjectPolicies": 0,
+  "activeOfficeAdministrators": 2,
+  "administratorsWithVerifiedMfa": 0,
+  "leakedPasswordProtection": false,
+  "localRuntimeDatabaseRole": "postgres",
+  "postgresBypassesRls": true,
+  "protect_signing_upload": { "securityDefiner": false, "fixedSearchPath": false, "anonExecute": true, "authenticatedExecute": true },
+  "migrationCount": 46,
+  "pendingMigrations": 0
+}

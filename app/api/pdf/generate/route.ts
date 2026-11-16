@@ -53,7 +53,7 @@ export async function POST(req: NextRequest) {
       },
     });
   } catch (error) {
-    console.error("Error generating PDF:", error);
+    console.error('API operation failed');
     return NextResponse.json(
       { ok: false, error: "Error generating PDF" },
       { status: 500 }

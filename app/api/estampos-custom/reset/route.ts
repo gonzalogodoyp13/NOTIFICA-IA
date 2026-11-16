@@ -61,7 +61,7 @@ export async function POST(req: NextRequest) {
       message: 'Versión personalizada restablecida a versión oficial',
     })
   } catch (error) {
-    console.error('Error en POST /api/estampos-custom/reset:', error)
+    console.error('API operation failed')
     return NextResponse.json(
       { ok: false, error: 'Error al restablecer el estampo' },
       { status: 500 }

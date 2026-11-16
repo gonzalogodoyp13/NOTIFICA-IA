@@ -7,7 +7,8 @@ import { customRunBounds, getCustomDefinition } from '@/lib/reports/customReport
 import { validateReportIdempotencyKey } from '@/lib/reports/deliveryAttempts'
 import { enqueueReportJob, serializeReportJob } from '@/lib/reports/jobs'
 
-export async function POST(request: NextRequest, { params }: { params: { definitionId: string } }) {
+export async function POST(request: NextRequest, props: { params: Promise<{ definitionId: string }> }) {
+  const params = await props.params;
   return withApiUser(request, 'reports.custom_definitions.run', async user => {
     assertReportAdmin(user)
     const value = parseApiInput(ManualCustomRunSchema, await request.json().catch(() => ({})))

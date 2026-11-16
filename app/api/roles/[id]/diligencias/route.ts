@@ -36,10 +36,8 @@ function mapDiligencia(diligencia: any) {
   }
 }
 
-export async function GET(
-  _req: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function GET(_req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   return withApiUser(_req, 'get.roles.id.diligencias', async user => {
   try {
 
@@ -133,7 +131,7 @@ export async function GET(
     for (const d of data) d.notificaciones = d.notificaciones.map((n: { latestEstampoId: string | null }) => ({ ...n, signing: states.get(n.latestEstampoId ?? '') ?? null }))
     return NextResponse.json({ ok: true, data })
   } catch (error) {
-    console.error('Error obteniendo diligencias del rol:', error)
+    console.error('API operation failed')
     return NextResponse.json(
       { ok: false, error: 'Error al obtener las diligencias del rol' },
       { status: 500 }
@@ -143,10 +141,8 @@ export async function GET(
   })
 }
 
-export async function POST(
-  req: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function POST(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   return withApiUser(req, 'post.roles.id.diligencias', async user => {
   try {
 

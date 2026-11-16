@@ -9,10 +9,8 @@ import { invalidateOfficeCaches } from '@/lib/cache/officeCache'
 
 export const dynamic = 'force-dynamic'
 
-export async function PUT(
-  req: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function PUT(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   return withApiUser(req, 'put.estampos.id', async user => {
   try {
 
@@ -44,7 +42,7 @@ export async function PUT(
     const parsed = EstampoSchema.safeParse(body);
 
     if (!parsed.success) {
-      const errorMessage = parsed.error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ');
+      const errorMessage = parsed.error.issues.map(e => `${e.path.join('.')}: ${e.message}`).join(', ');
       return NextResponse.json(
         { ok: false, message: errorMessage, error: errorMessage },
         { status: 400 }
@@ -66,8 +64,8 @@ export async function PUT(
 
     return NextResponse.json({ ok: true, data: estampo, cacheRevision });
   } catch (error) {
-    console.error("Error actualizando estampo:", error);
-    const errorMessage = error instanceof Error ? error.message : "Error al actualizar el estampo";
+    console.error('API operation failed');
+    const errorMessage = "Error al actualizar el estampo";
     return NextResponse.json(
       { ok: false, message: errorMessage, error: errorMessage },
       { status: 500 }
@@ -77,10 +75,8 @@ export async function PUT(
   })
 }
 
-export async function DELETE(
-  req: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function DELETE(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   return withApiUser(req, 'delete.estampos.id', async user => {
   try {
 
@@ -117,8 +113,8 @@ export async function DELETE(
 
     return NextResponse.json({ ok: true, message: "Estampo eliminado correctamente", cacheRevision });
   } catch (error) {
-    console.error("Error eliminando estampo:", error);
-    const errorMessage = error instanceof Error ? error.message : "Error al eliminar el estampo";
+    console.error('API operation failed');
+    const errorMessage = "Error al eliminar el estampo";
     return NextResponse.json(
       { ok: false, message: errorMessage, error: errorMessage },
       { status: 500 }

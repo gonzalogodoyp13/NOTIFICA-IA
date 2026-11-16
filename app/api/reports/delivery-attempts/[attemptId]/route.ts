@@ -6,7 +6,8 @@ import { getDeliveryAttemptDetail } from '@/lib/reports/history'
 
 export const dynamic = 'force-dynamic'
 
-export async function GET(request: NextRequest, { params }: { params: { attemptId: string } }) {
+export async function GET(request: NextRequest, props: { params: Promise<{ attemptId: string }> }) {
+  const params = await props.params;
   return withApiUser(request, 'reports.delivery_attempts.detail', async user => {
     assertReportAdmin(user)
     const attempt = await getDeliveryAttemptDetail(user.officeId, params.attemptId)

@@ -9,10 +9,8 @@ import { recordSettingsEvent } from '@/lib/audit/businessEvents'
 
 export const dynamic = 'force-dynamic'
 
-export async function PUT(
-  req: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function PUT(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   return withApiUser(req, 'put.bancos.id', async user => {
   try {
 
@@ -43,7 +41,7 @@ export async function PUT(
     const parsed = BancoSchema.safeParse(body)
 
     if (!parsed.success) {
-      const errorMessage = parsed.error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')
+      const errorMessage = parsed.error.issues.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')
       return NextResponse.json(
         { ok: false, message: errorMessage, error: errorMessage },
         { status: 400 }
@@ -58,8 +56,8 @@ export async function PUT(
 
     return NextResponse.json({ ok: true, data: banco })
   } catch (error) {
-    console.error('Error updating banco:', error)
-    const errorMessage = error instanceof Error ? error.message : 'Error al actualizar el banco'
+    console.error('API operation failed')
+    const errorMessage = 'Error al actualizar el banco'
     return NextResponse.json(
       { ok: false, message: errorMessage, error: errorMessage },
       { status: 500 }
@@ -69,10 +67,8 @@ export async function PUT(
   })
 }
 
-export async function DELETE(
-  req: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function DELETE(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   return withApiUser(req, 'delete.bancos.id', async user => {
   try {
 
@@ -106,8 +102,8 @@ export async function DELETE(
 
     return NextResponse.json({ ok: true, message: 'Banco eliminado correctamente' })
   } catch (error) {
-    console.error('Error deleting banco:', error)
-    const errorMessage = error instanceof Error ? error.message : 'Error al eliminar el banco'
+    console.error('API operation failed')
+    const errorMessage = 'Error al eliminar el banco'
     return NextResponse.json(
       { ok: false, message: errorMessage, error: errorMessage },
       { status: 500 }

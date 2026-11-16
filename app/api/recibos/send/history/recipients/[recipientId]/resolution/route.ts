@@ -6,7 +6,8 @@ import { prisma } from '@/lib/prisma'
 import { requiresResolutionNote } from '@/lib/recibos/smart-control-core'
 import { DispatchResolutionSchema } from '@/lib/validations/recibos'
 
-export async function PATCH(req: NextRequest, { params }: { params: { recipientId: string } }) {
+export async function PATCH(req: NextRequest, props: { params: Promise<{ recipientId: string }> }) {
+  const params = await props.params;
   return withApiUser(req, 'resolve receipt dispatch', async user => {
     const input = parseApiInput(DispatchResolutionSchema, await req.json())
     const recipient = await prisma.recibosDispatchRecipient.findFirst({

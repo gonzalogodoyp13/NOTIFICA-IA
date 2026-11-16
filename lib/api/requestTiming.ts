@@ -25,6 +25,8 @@ export function finishTimedResponse(input: {
 }) {
   const durations = input.timing.durations()
   applyTimingHeaders(input.response, input.requestId, durations)
+  input.response.headers.set('Cache-Control', 'private, no-store')
+  input.response.headers.set('X-Content-Type-Options', 'nosniff')
 
   console.info('[API_TIMING]', JSON.stringify(operationalTimingRecord({
     operation: input.operation,

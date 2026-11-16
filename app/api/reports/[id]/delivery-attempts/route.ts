@@ -6,7 +6,8 @@ import { listReportDeliveryAttempts } from '@/lib/reports/deliveryAttempts'
 
 export const dynamic = 'force-dynamic'
 
-export async function GET(request: NextRequest, { params }: { params: { id: string } }) {
+export async function GET(request: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   return withApiUser(request, 'reports.delivery_attempts.list', async user => {
     assertReportAdmin(user)
     const attempts = await listReportDeliveryAttempts(user.officeId, params.id)

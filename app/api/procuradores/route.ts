@@ -120,8 +120,8 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({ ok: true, data: procuradores.map(mapProcuradorListItem) })
   } catch (error) {
-    console.error('Error fetching procuradores:', error)
-    const errorMessage = error instanceof Error ? error.message : 'Error al obtener los procuradores'
+    console.error('API operation failed')
+    const errorMessage = 'Error al obtener los procuradores'
     return NextResponse.json(
       { ok: false, message: errorMessage, error: errorMessage },
       { status: 500 }
@@ -139,7 +139,7 @@ export async function POST(req: NextRequest) {
     const parsed = ProcuradorSchema.safeParse(body)
 
     if (!parsed.success) {
-      const errorMessage = parsed.error.errors.map((e) => `${e.path.join('.')}: ${e.message}`).join(', ')
+      const errorMessage = parsed.error.issues.map((e) => `${e.path.join('.')}: ${e.message}`).join(', ')
       return NextResponse.json(
         { ok: false, message: errorMessage, error: errorMessage },
         { status: 400 }
@@ -158,7 +158,7 @@ export async function POST(req: NextRequest) {
       await validateAbogadoIds(user.officeId, abogadoIds)
       await validateProcuradorBanks(prisma, user.officeId, abogadoIds, bancoIds)
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Abogados invalidos'
+      const errorMessage = 'Abogados invalidos'
       return NextResponse.json(
         { ok: false, message: errorMessage, error: errorMessage },
         { status: 400 }
@@ -245,8 +245,8 @@ export async function POST(req: NextRequest) {
       reusedExisting: result.reusedExisting,
     })
   } catch (error) {
-    console.error('Error creating procurador:', error)
-    const errorMessage = error instanceof Error ? error.message : 'Error al crear el procurador'
+    console.error('API operation failed')
+    const errorMessage = 'Error al crear el procurador'
     return NextResponse.json(
       { ok: false, message: errorMessage, error: errorMessage },
       { status: 500 }

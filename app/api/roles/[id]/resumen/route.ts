@@ -5,10 +5,8 @@ import { loadRoleSummaryData } from '@/lib/roles/workspace'
 
 export const dynamic = 'force-dynamic'
 
-export async function GET(
-  _req: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function GET(_req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   return withApiUser(_req, 'get.roles.id.resumen', async user => {
   try {
 
@@ -23,9 +21,9 @@ export async function GET(
 
     return NextResponse.json({ ok: true, data })
   } catch (error: any) {
-    console.error(`[GET /api/roles/${params.id}/resumen] Error:`, error)
+    console.error('API operation failed')
     return NextResponse.json(
-      { ok: false, error: `Error al obtener el resumen del rol: ${error?.message || 'Error desconocido'}` },
+      { ok: false, error: 'No se pudo completar la operacion.' },
       { status: 500 }
     )
   }

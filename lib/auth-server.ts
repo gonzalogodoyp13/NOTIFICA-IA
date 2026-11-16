@@ -9,10 +9,10 @@ import { createServerSupabaseClient } from './supabaseServer'
 
 export { AuthResolutionError, type AuthFailureCode, type AuthUser }
 
-export async function resolveAuthenticatedUser(): Promise<AuthUser> {
+export async function resolveProvisionedUser(): Promise<AuthUser> {
   return resolveCanonicalUser({
     getAuthUser: async () => {
-    const supabase = createServerSupabaseClient()
+    const supabase = await createServerSupabaseClient()
     const { data, error } = await supabase.auth.getUser()
       return { user: data.user ? { id: data.user.id } : null, error }
     },
@@ -35,6 +35,17 @@ export async function resolveAuthenticatedUser(): Promise<AuthUser> {
       return { ...localUser, officeCacheRevision: office.cacheRevision }
     },
   })
+}
+
+export async function resolveAuthenticatedUser(): Promise<AuthUser> {
+  const user = await resolveProvisionedUser()
+  if (user.isOfficeAdmin) {
+    const supabase = await createServerSupabaseClient()
+    const { data, error } = await supabase.auth.getClaims()
+    if (error || data?.claims.sub !== user.authUserId) throw new AuthResolutionError('UNAUTHORIZED', 'Sesion no valida', 401)
+    if (data.claims.aal !== 'aal2') throw new AuthResolutionError('MFA_REQUIRED', 'Verifica tu acceso con la aplicacion de autenticacion.', 403)
+  }
+  return user
 }
 
 export const getCachedAuthenticatedUser = cache(resolveAuthenticatedUser)

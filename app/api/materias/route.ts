@@ -21,8 +21,8 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({ ok: true, data: materias })
   } catch (error) {
-    console.error('Error fetching materias:', error)
-    const errorMessage = error instanceof Error ? error.message : 'Error al obtener las materias'
+    console.error('API operation failed')
+    const errorMessage = 'Error al obtener las materias'
     return NextResponse.json(
       { ok: false, message: errorMessage, error: errorMessage },
       { status: 500 }
@@ -40,7 +40,7 @@ export async function POST(req: NextRequest) {
     const parsed = MateriaSchema.safeParse(body)
 
     if (!parsed.success) {
-      const errorMessage = parsed.error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')
+      const errorMessage = parsed.error.issues.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')
       return NextResponse.json(
         { ok: false, message: errorMessage, error: errorMessage },
         { status: 400 }
@@ -55,8 +55,8 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ ok: true, data: materia })
   } catch (error) {
-    console.error('Error creating materia:', error)
-    const errorMessage = error instanceof Error ? error.message : 'Error al crear la materia'
+    console.error('API operation failed')
+    const errorMessage = 'Error al crear la materia'
     return NextResponse.json(
       { ok: false, message: errorMessage, error: errorMessage },
       { status: 500 }

@@ -47,7 +47,8 @@ async function auditDownload(input: {
   })
 }
 
-export async function GET(request: NextRequest, { params }: { params: { id: string } }) {
+export async function GET(request: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   return withApiUser(request, 'reports.download', async user => {
     const requestedVersionId = request.nextUrl.searchParams.get('versionId')
     if (!canAccessReports(user)) {
@@ -115,5 +116,5 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
       const status = error.reason === 'not_found' ? 404 : error.reason === 'unavailable' ? 409 : 503
       throw new ApiError(error.reason === 'not_found' ? 'NOT_FOUND' : error.reason === 'unavailable' ? 'CONFLICT' : 'SERVICE_UNAVAILABLE', error.message, status)
     }
-  })
+  });
 }

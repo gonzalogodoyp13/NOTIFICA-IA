@@ -23,7 +23,7 @@ export default function NotaList({ rolId, rolEstado }: NotaListProps) {
     const validation = NotaCreateSchema.safeParse({ contenido: nota })
 
     if (!validation.success) {
-      setFormError(validation.error.errors[0]?.message ?? 'La nota ingresada no es válida')
+      setFormError(validation.error.issues[0]?.message ?? 'La nota ingresada no es válida')
       return
     }
 

@@ -6,10 +6,8 @@ import { prisma } from '@/lib/prisma'
 
 export const dynamic = 'force-dynamic'
 
-export async function GET(
-  _req: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function GET(_req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   return withApiUser(_req, 'get.roles.id.documentos', async user => {
   try {
 
@@ -91,7 +89,7 @@ export async function GET(
 
     return NextResponse.json({ ok: true, data })
   } catch (error) {
-    console.error('Error obteniendo documentos del rol:', error)
+    console.error('API operation failed')
     return NextResponse.json(
       { ok: false, error: 'Error al obtener los documentos del rol' },
       { status: 500 }

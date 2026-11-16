@@ -128,8 +128,8 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({ ok: true, data: abogados.map(mapAbogado) })
   } catch (error) {
-    console.error('Error fetching abogados:', error)
-    const errorMessage = error instanceof Error ? error.message : 'Error al obtener los abogados'
+    console.error('API operation failed')
+    const errorMessage = 'Error al obtener los abogados'
     return NextResponse.json(
       { ok: false, message: errorMessage, error: errorMessage },
       { status: 500 }
@@ -147,7 +147,7 @@ export async function POST(req: NextRequest) {
     const parsed = AbogadoSchema.safeParse(body)
 
     if (!parsed.success) {
-      const errorMessage = parsed.error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')
+      const errorMessage = parsed.error.issues.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')
       return NextResponse.json(
         { ok: false, message: errorMessage, error: errorMessage },
         { status: 400 }
@@ -226,9 +226,9 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ ok: true, data: abogadoWithRelations ? mapAbogado(abogadoWithRelations) : null })
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'Error al crear el abogado'
+    const errorMessage = 'Error al crear el abogado'
     const status = errorMessage.includes('no encontrados') ? 400 : 500
-    console.error('Error creating abogado:', error)
+    console.error('API operation failed')
     return NextResponse.json(
       { ok: false, message: errorMessage, error: errorMessage },
       { status }

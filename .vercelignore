@@ -1,0 +1,16 @@
+.env
+.env.*
+.auth
+.git
+.next
+.next-security
+node_modules
+tmp
+output
+codex-backups
+docs
+tests
+agents
+supabase
+*.log
+*.tsbuildinfo

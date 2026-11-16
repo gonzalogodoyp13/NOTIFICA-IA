@@ -4,6 +4,7 @@ import { ImapFlow } from 'imapflow'
 import { simpleParser } from 'mailparser'
 
 import { graphAccessToken } from '@/lib/recibos/mailer'
+import { graphFetch } from '@/lib/security/graph'
 import type { NormalizedReply, ReplyAttachmentMetadata } from '@/lib/recibos/reply-tracking-core'
 
 export type ReplyPollCheckpoint = {
@@ -46,7 +47,7 @@ function headerMap(headers: Array<{ name?: string; value?: string }> | undefined
 }
 
 async function graphJson(url: string, accessToken: string) {
-  const response = await fetch(url, {
+  const response = await graphFetch(url, {
     headers: {
       Authorization: `Bearer ${accessToken}`,
       Prefer: 'IdType="ImmutableId"',
@@ -54,7 +55,7 @@ async function graphJson(url: string, accessToken: string) {
   })
   const payload = await response.json().catch(() => null)
   if (!response.ok) {
-    const error = new Error(payload?.error?.message || 'Microsoft Graph rechazo la consulta de respuestas.') as Error & { status?: number }
+    const error = new Error('Microsoft Graph rechazo la consulta de respuestas.') as Error & { status?: number }
     error.status = response.status
     throw error
   }

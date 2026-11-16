@@ -11,7 +11,7 @@ export async function POST(req: NextRequest) {
   try {
     const parsed = Schema.safeParse(await req.json()); if (!parsed.success) throw new Error(parsed.error.issues[0]?.message ?? 'Datos invalidos.')
     return NextResponse.json({ ok: true, data: await buildReceiptBulkPreview(user.officeId, parsed.data) })
-  } catch (error) { return NextResponse.json({ ok: false, error: error instanceof Error ? error.message : 'Error al preparar la vista previa' }, { status: 400 }) }
+  } catch (error) { return NextResponse.json({ ok: false, error: 'Error al preparar la vista previa' }, { status: 400 }) }
 
   })
 }

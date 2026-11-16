@@ -49,7 +49,11 @@ const PNG_SIGNATURE = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]
 const TRANSPARENT_PNG_BASE64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII='
 
 export function isPngBytes(value: Uint8Array) {
-  return value.byteLength >= PNG_SIGNATURE.length && PNG_SIGNATURE.every((byte, index) => value[index] === byte)
+  if (value.byteLength < 33 || !PNG_SIGNATURE.every((byte, index) => value[index] === byte)) return false
+  const view = new DataView(value.buffer, value.byteOffset, value.byteLength)
+  if (view.getUint32(8) !== 13 || String.fromCharCode(value[12], value[13], value[14], value[15]) !== 'IHDR') return false
+  const width = view.getUint32(16), height = view.getUint32(20)
+  return width > 0 && height > 0 && width <= 8192 && height <= 8192 && width * height <= 16_000_000
 }
 
 export async function loadRawOfficePdfConfig(context: OfficePdfCacheContext): Promise<RawOfficePdfConfig> {

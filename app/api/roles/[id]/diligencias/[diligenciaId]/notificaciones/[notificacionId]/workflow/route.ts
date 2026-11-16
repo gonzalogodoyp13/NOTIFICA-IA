@@ -7,8 +7,9 @@ export const dynamic = 'force-dynamic'
 
 export async function GET(
   req: NextRequest,
-  { params }: { params: { id: string; diligenciaId: string; notificacionId: string } }
+  props: { params: Promise<{ id: string; diligenciaId: string; notificacionId: string }> }
 ) {
+  const params = await props.params;
   return withApiUser(req, 'notification.workflow.read', async user => {
     try {
       const workflow = await loadReceiptWorkflow({

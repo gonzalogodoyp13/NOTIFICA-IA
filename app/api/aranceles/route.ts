@@ -124,8 +124,8 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({ ok: true, data: mapped })
   } catch (error) {
-    console.error('Error fetching aranceles:', error)
-    const errorMessage = error instanceof Error ? error.message : 'Error al obtener los aranceles'
+    console.error('API operation failed')
+    const errorMessage = 'Error al obtener los aranceles'
     return NextResponse.json(
       { ok: false, message: errorMessage, error: errorMessage },
       { status: 500 }
@@ -156,7 +156,7 @@ export async function POST(req: NextRequest) {
     })
 
     if (!parsed.success) {
-      const errorMessage = parsed.error.errors.map((e) => `${e.path.join('.')}: ${e.message}`).join(', ')
+      const errorMessage = parsed.error.issues.map((e) => `${e.path.join('.')}: ${e.message}`).join(', ')
       return NextResponse.json(
         { ok: false, message: errorMessage, error: errorMessage },
         { status: 400 }
@@ -305,8 +305,8 @@ export async function POST(req: NextRequest) {
       throw error
     }
   } catch (error) {
-    console.error('Error creating arancel:', error)
-    const errorMessage = error instanceof Error ? error.message : 'Error al crear el arancel'
+    console.error('API operation failed')
+    const errorMessage = 'Error al crear el arancel'
     return NextResponse.json(
       { ok: false, message: errorMessage, error: errorMessage },
       { status: 500 }

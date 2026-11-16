@@ -5,7 +5,8 @@ import { assertReportAdmin } from '@/lib/reports/access'
 import { validateReportIdempotencyKey } from '@/lib/reports/deliveryAttempts'
 import { retryReportJob, serializeReportJob } from '@/lib/reports/jobs'
 
-export async function POST(request: NextRequest, { params }: { params: { jobId: string } }) {
+export async function POST(request: NextRequest, props: { params: Promise<{ jobId: string }> }) {
+  const params = await props.params;
   return withApiUser(request, 'reports.jobs.retry', async user => {
     assertReportAdmin(user)
     const idempotencyKey = validateReportIdempotencyKey(request.headers.get('Idempotency-Key'))

@@ -35,10 +35,8 @@ type IncomingEjecutado = {
   comunaId: number | null
 }
 
-export async function PUT(
-  req: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function PUT(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   return withApiUser(req, 'put.demandas.id', async user => {
   try {
 
@@ -430,7 +428,7 @@ export async function PUT(
     }
 
     return NextResponse.json(
-      { ok: false, error: error instanceof Error ? error.message : 'Error al actualizar la demanda' },
+      { ok: false, error: 'Error al actualizar la demanda' },
       { status: 500 }
     )
   }

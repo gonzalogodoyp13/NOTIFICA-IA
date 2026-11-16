@@ -1,7 +1,7 @@
 'use client'
 
 import { AlertTriangle, KeyRound, Landmark, ShieldCheck } from 'lucide-react'
-import { useState } from 'react'
+import { useState, use } from 'react';
 import { useRouter } from 'next/navigation'
 import { signIn } from '@/lib/auth-client'
 
@@ -12,7 +12,8 @@ const AUTH_MESSAGES: Record<string, string> = {
   invalid_session: 'Tu sesión no es válida o expiró. Inicia sesión nuevamente.',
 }
 
-export default function LoginPage({ searchParams }: { searchParams?: { error?: string } }) {
+export default function LoginPage(props: { searchParams: Promise<{ error?: string }> }) {
+  const searchParams = use(props.searchParams);
   const router = useRouter()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')

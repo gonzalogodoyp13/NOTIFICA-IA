@@ -58,8 +58,8 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json(arancel ? { ok: true, data: arancel } : { ok: true, data: null })
   } catch (error) {
-    console.error('Error en lookup de arancel:', error)
-    const errorMessage = error instanceof Error ? error.message : 'Error al buscar arancel'
+    console.error('API operation failed')
+    const errorMessage = 'Error al buscar arancel'
     return NextResponse.json(
       { ok: false, message: errorMessage, error: errorMessage },
       { status: 500 }

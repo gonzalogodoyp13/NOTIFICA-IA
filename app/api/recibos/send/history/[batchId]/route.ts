@@ -5,7 +5,8 @@ import { getRecibosDispatchHistoryDetail } from '@/lib/recibos/dispatch-history'
 
 export const dynamic = 'force-dynamic'
 
-export async function GET(req: NextRequest, { params }: { params: { batchId: string } }) {
+export async function GET(req: NextRequest, props: { params: Promise<{ batchId: string }> }) {
+  const params = await props.params;
   return withApiUser(req, 'get receipt send history detail', async user => {
     const detail = await getRecibosDispatchHistoryDetail(user.officeId, params.batchId, user.isOfficeAdmin)
     if (!detail) throw new ApiError('NOT_FOUND', 'El historial solicitado no existe.', 404)

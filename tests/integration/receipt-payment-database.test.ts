@@ -94,7 +94,12 @@ describe.skipIf(!run)('receipt payment isolation in PostgreSQL', () => {
     const book = new ExcelJS.Workbook()
     await book.xlsx.load(await buildRecibosWorkbook(list.rows, '') as any)
     const exported = new Map<string, unknown>()
-    book.worksheets[0].eachRow((row, index) => { if (index > 4) exported.set(String(row.getCell(1).value), row.getCell(12).value) })
+    const sheet = book.worksheets[0]
+    const headers = new Map<string, number>()
+    sheet.getRow(4).eachCell((cell, column) => headers.set(String(cell.value), column))
+    expect(headers.has('N° Recibo')).toBe(true)
+    expect(headers.has('Estado')).toBe(true)
+    sheet.eachRow((row, index) => { if (index > 4) exported.set(String(row.getCell(headers.get('N° Recibo')!).value), row.getCell(headers.get('Estado')!).value) })
     expect(exported.get('a')).toBe('Pagado')
     expect(exported.get('b')).toBe('Sin pagar')
   }, 30_000)

@@ -14,10 +14,8 @@ const PreviewEstampoSchema = z.object({
   notificacionId: z.string().min(1).optional(),
 })
 
-export async function POST(
-  req: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function POST(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   return withApiUser(req, 'post.diligencias.id.estampos.preview', async user => {
   try {
 
@@ -96,7 +94,7 @@ export async function POST(
       },
     })
   } catch (error) {
-    console.error('Error en POST /estampos/preview:', error)
+    console.error('API operation failed')
     return NextResponse.json(
       { ok: false, error: 'Error al generar vista previa' },
       { status: 500 }

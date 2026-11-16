@@ -6,6 +6,7 @@ export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 export const maxDuration = 180
 const handleDeviceRequest = createDeviceHandler()
-export async function POST(req: NextRequest, { params }: { params: { action: string } }) {
+export async function POST(req: NextRequest, props: { params: Promise<{ action: string }> }) {
+  const params = await props.params;
   return withRequestTiming(req, 'signing.device', () => handleDeviceRequest(req, params.action))
 }

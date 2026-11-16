@@ -5,11 +5,13 @@ import { redirect } from 'next/navigation'
 import { NextRequest } from 'next/server'
 import { requireApiUser } from '@/lib/api/server'
 import { recordBestEffortEvent } from '@/lib/audit/activityEvent'
+import { requireSameOrigin } from '@/lib/security/request'
 
 // Force dynamic rendering since we use cookies for authentication
 export const dynamic = 'force-dynamic'
 
 export async function POST(req: NextRequest) {
+  try { requireSameOrigin(req) } catch { return new Response(null, { status: 403 }) }
   try {
     const user = await requireApiUser(req)
     if (user) {
@@ -28,7 +30,7 @@ export async function POST(req: NextRequest) {
   }
 
   // Sign out the user
-  const supabase = createServerSupabaseClient()
+  const supabase = await createServerSupabaseClient()
   await supabase.auth.signOut()
   redirect('/login')
 }

@@ -31,7 +31,7 @@ describe.skipIf(process.env.SIGNING_DATABASE_TESTS !== '1')('Phase 10 real datab
       await f.queue.start(lease, true)
       await f.queue.fail(lease, code)
       const item = await sandbox.db.signingItem.findUniqueOrThrow({ where: { id: lease.itemId } })
-      const infrastructure = ['NETWORK', 'STORAGE', 'TSA_UNAVAILABLE', 'REVOCATION_UNAVAILABLE', 'VALIDATOR_UNAVAILABLE'].includes(code)
+      const infrastructure = ['NETWORK', 'STORAGE', 'TSA_UNAVAILABLE', 'REVOCATION_UNAVAILABLE', 'VALIDATOR_UNAVAILABLE', 'TOKEN_MISSING'].includes(code)
       expect(item.status).toBe(infrastructure ? 'RETRY_PENDING' : ['CERT_EXPIRED', 'CERT_REVOKED', 'VALIDATION_FAILED', 'CHECKSUM_MISMATCH'].includes(code) ? 'FAILED' : 'WAITING_FOR_OPERATOR')
       // Prevent a due injected infrastructure item from being claimed twice in this matrix.
       if (infrastructure) await sandbox.db.signingItem.update({ where: { id: item.id }, data: { availableAt: new Date(Date.now() + 3600000) } })

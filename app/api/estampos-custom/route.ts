@@ -25,7 +25,7 @@ export async function POST(req: NextRequest) {
     const body = await req.json()
     return handleCreateOrUpdate(req, body, user)
   } catch (error) {
-    console.error('Error en POST /api/estampos-custom:', error)
+    console.error('API operation failed')
     return NextResponse.json(
       { ok: false, error: 'Error al procesar la solicitud' },
       { status: 500 }

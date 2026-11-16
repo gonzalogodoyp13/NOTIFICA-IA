@@ -31,7 +31,7 @@ type Props = {
   loading: boolean
   allPageSelected: boolean
   somePageSelected: boolean
-  selectAllRef: RefObject<HTMLInputElement>
+  selectAllRef: RefObject<HTMLInputElement | null>
   onTogglePage: () => void
   isSelected: (id: string) => boolean
   onToggleRow: (id: string) => void

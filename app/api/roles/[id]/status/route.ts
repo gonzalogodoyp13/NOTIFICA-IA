@@ -29,10 +29,8 @@ async function canMarkAsTerminado(rolId: string) {
   return diligencias.every(d => d.estado === 'completada')
 }
 
-export async function PUT(
-  req: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function PUT(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   return withApiUser(req, 'put.roles.id.status', async user => {
   try {
 
@@ -117,7 +115,7 @@ export async function PUT(
 
     return NextResponse.json({ ok: true, data: updatedRol })
   } catch (error) {
-    console.error('Error actualizando estado de rol:', error)
+    console.error('API operation failed')
     return NextResponse.json(
       { ok: false, error: 'Error al actualizar el estado del rol' },
       { status: 500 }

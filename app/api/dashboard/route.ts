@@ -66,7 +66,7 @@ export async function GET(req: NextRequest) {
       )
     }
 
-    console.error('[GET /api/dashboard] Error:', error)
+    console.error('API operation failed')
     return NextResponse.json(
       { ok: false, error: 'No se pudo cargar el panel operativo.' },
       { status: 500 }

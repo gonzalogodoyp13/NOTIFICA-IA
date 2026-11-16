@@ -64,8 +64,8 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({ ok: true, data: diligencias })
   } catch (error) {
-    console.error('Error fetching diligencias:', error)
-    const errorMessage = error instanceof Error ? error.message : 'Error al obtener las diligencias'
+    console.error('API operation failed')
+    const errorMessage = 'Error al obtener las diligencias'
     return NextResponse.json(
       { ok: false, message: errorMessage, error: errorMessage },
       { status: 500 }
@@ -83,7 +83,7 @@ export async function POST(req: NextRequest) {
     const parsed = zDiligencia.safeParse(body)
 
     if (!parsed.success) {
-      const errorMessage = parsed.error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')
+      const errorMessage = parsed.error.issues.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')
       return NextResponse.json(
         { ok: false, message: errorMessage, error: errorMessage },
         { status: 400 }
@@ -149,14 +149,14 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true, data: diligencia })
   } catch (error) {
     if (error instanceof ZodError) {
-      const errorMessage = error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')
+      const errorMessage = error.issues.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')
       return NextResponse.json(
         { ok: false, message: errorMessage, error: errorMessage },
         { status: 400 }
       )
     }
-    console.error('Error creating diligencia:', error)
-    const errorMessage = error instanceof Error ? error.message : 'Error al crear la diligencia'
+    console.error('API operation failed')
+    const errorMessage = 'Error al crear la diligencia'
     return NextResponse.json(
       { ok: false, message: errorMessage, error: errorMessage },
       { status: 500 }
@@ -183,7 +183,7 @@ export async function PUT(req: NextRequest) {
     const parsed = zDiligenciaUpdate.safeParse(updateData)
 
     if (!parsed.success) {
-      const errorMessage = parsed.error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')
+      const errorMessage = parsed.error.issues.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')
       return NextResponse.json(
         { ok: false, message: errorMessage, error: errorMessage },
         { status: 400 }
@@ -234,14 +234,14 @@ export async function PUT(req: NextRequest) {
     return NextResponse.json({ ok: true, data: updated })
   } catch (error) {
     if (error instanceof ZodError) {
-      const errorMessage = error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')
+      const errorMessage = error.issues.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')
       return NextResponse.json(
         { ok: false, message: errorMessage, error: errorMessage },
         { status: 400 }
       )
     }
-    console.error('Error updating diligencia:', error)
-    const errorMessage = error instanceof Error ? error.message : 'Error al actualizar la diligencia'
+    console.error('API operation failed')
+    const errorMessage = 'Error al actualizar la diligencia'
     return NextResponse.json(
       { ok: false, message: errorMessage, error: errorMessage },
       { status: 500 }
@@ -303,8 +303,8 @@ export async function DELETE(req: NextRequest) {
 
     return NextResponse.json({ ok: true, message: 'Diligencia eliminada correctamente' })
   } catch (error) {
-    console.error('Error deleting diligencia:', error)
-    const errorMessage = error instanceof Error ? error.message : 'Error al eliminar la diligencia'
+    console.error('API operation failed')
+    const errorMessage = 'Error al eliminar la diligencia'
     return NextResponse.json(
       { ok: false, message: errorMessage, error: errorMessage },
       { status: 500 }

@@ -5,7 +5,8 @@ import { recordOperationalActivity } from '@/lib/audit/operationalActivity'
 import { prisma } from '@/lib/prisma'
 import { ReplyClassificationSchema } from '@/lib/validations/recibos'
 
-export async function PATCH(req: NextRequest, { params }: { params: { replyId: string } }) {
+export async function PATCH(req: NextRequest, props: { params: Promise<{ replyId: string }> }) {
+  const params = await props.params;
   return withApiUser(req, 'classify receipt reply', async user => {
     const input = parseApiInput(ReplyClassificationSchema, await req.json())
     const reply = await prisma.recibosDispatchReply.findFirst({ where: { id: params.replyId, officeId: user.officeId }, select: { id: true, recipientId: true } })

@@ -9,10 +9,8 @@ import { asJsonObject, getString } from '@/lib/utils/json'
 
 export const dynamic = 'force-dynamic'
 
-export async function GET(
-  req: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function GET(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   return withApiUser(req, 'get.documentos.id.download', async user => {
   try {
 
@@ -150,13 +148,13 @@ export async function GET(
       },
     })
   } catch (error) {
-    console.error('Error descargando documento:', error)
+    console.error('API operation failed')
     return NextResponse.json(
       { ok: false, error: 'Error al descargar el documento' },
       { status: 500 }
     )
   }
 
-  })
+  });
 }
 

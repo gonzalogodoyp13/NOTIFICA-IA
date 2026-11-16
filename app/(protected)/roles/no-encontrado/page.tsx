@@ -2,11 +2,12 @@ import Link from 'next/link'
 import { ArrowRight, FileQuestion } from 'lucide-react'
 import { redirect } from 'next/navigation'
 
-export default function RolNoEncontradoPage({
-  searchParams,
-}: {
-  searchParams?: { rol?: string }
-}) {
+export default async function RolNoEncontradoPage(
+  props: {
+    searchParams: Promise<{ rol?: string }>
+  }
+) {
+  const searchParams = await props.searchParams;
   const rol = searchParams?.rol?.trim()
   if (!rol) redirect('/roles')
 

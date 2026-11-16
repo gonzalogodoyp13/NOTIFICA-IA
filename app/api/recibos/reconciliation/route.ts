@@ -13,7 +13,7 @@ export async function GET(req: NextRequest) {
     const selectedCategories = req.nextUrl.searchParams.getAll('category').filter(value => categories.has(value)) as ReconciliationCategory[]
     const rawGroup = req.nextUrl.searchParams.get('groupBy') ?? 'category'; const groupBy = (groups.has(rawGroup) ? rawGroup : 'category') as ReconciliationGroupBy
     return NextResponse.json({ ok: true, data: await getReconciliation({ officeId: user.officeId, filters, categories: selectedCategories, groupBy, page: filters.page, pageSize: filters.pageSize }) })
-  } catch (error) { return NextResponse.json({ ok: false, error: error instanceof Error ? error.message : 'Error al conciliar recibos' }, { status: 400 }) }
+  } catch (error) { return NextResponse.json({ ok: false, error: 'Error al conciliar recibos' }, { status: 400 }) }
 
   })
 }

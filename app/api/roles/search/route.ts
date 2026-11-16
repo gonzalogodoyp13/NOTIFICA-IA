@@ -87,7 +87,7 @@ export async function GET(req: NextRequest) {
       },
     })
   } catch (error) {
-    console.error('[GET /api/roles/search] Error:', error)
+    console.error('API operation failed')
     return NextResponse.json(
       { ok: false, error: 'Error al buscar el rol' },
       { status: 500 }

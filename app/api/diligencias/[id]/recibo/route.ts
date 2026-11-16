@@ -7,10 +7,8 @@ import { ReciboGenerateSchema } from '@/lib/validations/rol-workspace'
 
 export const dynamic = 'force-dynamic'
 
-export async function POST(
-  req: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function POST(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   return withApiUser(req, 'receipt.generate', async user => {
     try {
       const idempotencyKey = req.headers.get('idempotency-key')?.trim() ?? ''

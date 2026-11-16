@@ -233,8 +233,8 @@ export async function GET(req: NextRequest) {
       kpis,
     })
   } catch (error) {
-    console.error('Error fetching encargos:', error)
-    const errorMessage = error instanceof Error ? error.message : 'Error al obtener los encargos'
+    console.error('API operation failed')
+    const errorMessage = 'Error al obtener los encargos'
     return NextResponse.json(
       { ok: false, message: errorMessage, error: errorMessage },
       { status: 500 }

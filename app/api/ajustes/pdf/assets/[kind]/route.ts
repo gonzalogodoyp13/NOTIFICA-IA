@@ -6,7 +6,8 @@ import { loadOfficePdfAsset, type OfficePdfAssetKind } from '@/lib/pdf/officeCon
 export const dynamic = 'force-dynamic'
 const kinds = new Set<OfficePdfAssetKind>(['firma', 'sello', 'reciboStamp'])
 
-export async function GET(req: NextRequest, { params }: { params: { kind: string } }) {
+export async function GET(req: NextRequest, props: { params: Promise<{ kind: string }> }) {
+  const params = await props.params;
   return withApiUser(req, 'settings.pdf.preview', async user => {
     try {
       if (!user.isOfficeAdmin) throw new ApiError('FORBIDDEN', 'Solo administradores pueden ver estos recursos', 403)

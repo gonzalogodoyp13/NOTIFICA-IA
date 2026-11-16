@@ -21,7 +21,7 @@ export async function GET(req: NextRequest) {
       },
     })
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Error al obtener los recibos'
+    const message = 'Error al obtener los recibos'
 
     return NextResponse.json(
       { ok: false, error: message },

@@ -13,7 +13,8 @@ const CompleteSchema = z.object({
   fechaRealizacion: z.string().optional().refine(value => !value || !Number.isNaN(Date.parse(value)), { message: 'Fecha inválida' }),
 })
 
-export async function PUT(req: NextRequest, { params }: { params: { id: string } }) {
+export async function PUT(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   return withApiUser(req, 'put.diligencias.id.complete', async user => {
     try {
       const parsed = CompleteSchema.safeParse(await req.json())
@@ -50,7 +51,7 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
       return NextResponse.json({ ok: true, data: completed.updated, signing: completed.signing })
     } catch (error) {
       if (error instanceof ApiError) return apiFailure(error)
-      console.error('Error completando diligencia:', error)
+      console.error('API operation failed')
       return NextResponse.json({ ok: false, error: 'Error al completar la diligencia' }, { status: 500 })
     }
   })

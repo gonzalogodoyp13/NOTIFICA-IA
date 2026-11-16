@@ -4,7 +4,8 @@ import { ApiError, apiSuccess, parseApiInput, withApiUser } from '@/lib/api/serv
 import { prisma } from '@/lib/prisma'
 import { recordCriticalEvent } from '@/lib/audit/activityEvent'
 
-export async function GET(req: NextRequest, { params }: { params: { replyId: string } }) {
+export async function GET(req: NextRequest, props: { params: Promise<{ replyId: string }> }) {
+  const params = await props.params;
   return withApiUser(req, 'receipt reply association options', async user => {
     const reply = await prisma.recibosDispatchReply.findFirst({ where: { id: params.replyId, officeId: user.officeId } })
     if (!reply) throw new ApiError('NOT_FOUND', 'La respuesta no existe.', 404)
@@ -18,7 +19,8 @@ export async function GET(req: NextRequest, { params }: { params: { replyId: str
   })
 }
 
-export async function PATCH(req: NextRequest, { params }: { params: { replyId: string } }) {
+export async function PATCH(req: NextRequest, props: { params: Promise<{ replyId: string }> }) {
+  const params = await props.params;
   return withApiUser(req, 'associate receipt reply', async user => {
     const input = parseApiInput(z.object({ recipientId: z.string().min(1), confirmed: z.literal(true) }).strict(), await req.json())
     await prisma.$transaction(async tx => {

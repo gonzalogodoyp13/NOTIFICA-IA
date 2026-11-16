@@ -7,10 +7,14 @@
 
 # testing
 /coverage
+/codex-backups/
+*.log
+/tmp/
 /.auth
 
 # next.js
 /.next/
+/.next-security/
 /out/
 
 # production
@@ -50,3 +54,4 @@ next-env.d.ts
 /output/signing-live-status.json
 
 /output/windows-signer-installer/
+.env*

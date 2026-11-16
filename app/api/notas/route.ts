@@ -80,7 +80,7 @@ export async function GET(req: NextRequest) {
     })
   } catch (error) {
     if (error instanceof ApiError) throw error
-    console.error('Error fetching notas:', error)
+    console.error('API operation failed')
     return NextResponse.json(
       { ok: false, error: 'Error al obtener las notas' },
       { status: 500 }
@@ -99,7 +99,7 @@ export async function POST(req: NextRequest) {
 
     if (!parsed.success) {
       return NextResponse.json(
-        { ok: false, error: parsed.error.errors },
+        { ok: false, error: parsed.error.issues },
         { status: 400 }
       )
     }
@@ -138,11 +138,11 @@ export async function POST(req: NextRequest) {
     if (error instanceof ApiError) throw error
     if (error instanceof ZodError) {
       return NextResponse.json(
-        { ok: false, error: error.errors },
+        { ok: false, error: error.issues },
         { status: 400 }
       )
     }
-    console.error('Error creating nota:', error)
+    console.error('API operation failed')
     return NextResponse.json(
       { ok: false, error: 'Error al crear la nota' },
       { status: 500 }
@@ -209,7 +209,7 @@ export async function DELETE(req: NextRequest) {
     return NextResponse.json({ ok: true, message: 'Nota eliminada correctamente' })
   } catch (error) {
     if (error instanceof ApiError) throw error
-    console.error('Error deleting nota:', error)
+    console.error('API operation failed')
     return NextResponse.json(
       { ok: false, error: 'Error al eliminar la nota' },
       { status: 500 }

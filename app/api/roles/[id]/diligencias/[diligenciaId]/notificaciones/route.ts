@@ -11,8 +11,9 @@ export const dynamic = 'force-dynamic'
 
 export async function POST(
   req: NextRequest,
-  { params }: { params: { id: string; diligenciaId: string } }
+  props: { params: Promise<{ id: string; diligenciaId: string }> }
 ) {
+  const params = await props.params;
   return withApiUser(req, 'notification.create', async user => {
    try {
 
@@ -163,7 +164,7 @@ export async function POST(
     })
   } catch (error) {
     if (!(error instanceof ApiError)) {
-      console.error('Error creando notificación:', error)
+      console.error('API operation failed')
     }
     return handleApiError(error, { operation: 'notification.create', request: req })
   }

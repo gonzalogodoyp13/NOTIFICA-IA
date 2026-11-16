@@ -12,10 +12,8 @@ import { invalidateOfficeCaches } from '@/lib/cache/officeCache'
 
 export const dynamic = 'force-dynamic'
 
-export async function GET(
-  req: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function GET(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   return withApiUser(req, 'get.aranceles.id', async user => {
   try {
 
@@ -54,8 +52,8 @@ export async function GET(
 
     return NextResponse.json({ ok: true, data: arancel })
   } catch (error) {
-    console.error('Error fetching arancel:', error)
-    const errorMessage = error instanceof Error ? error.message : 'Error al obtener el arancel'
+    console.error('API operation failed')
+    const errorMessage = 'Error al obtener el arancel'
     return NextResponse.json(
       { ok: false, message: errorMessage, error: errorMessage },
       { status: 500 }
@@ -65,10 +63,8 @@ export async function GET(
   })
 }
 
-export async function PUT(
-  req: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function PUT(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   return withApiUser(req, 'put.aranceles.id', async user => {
   try {
 
@@ -182,8 +178,8 @@ export async function PUT(
       throw error
     }
   } catch (error) {
-    console.error('Error updating arancel:', error)
-    const errorMessage = error instanceof Error ? error.message : 'Error al actualizar el arancel'
+    console.error('API operation failed')
+    const errorMessage = 'Error al actualizar el arancel'
     return NextResponse.json(
       { ok: false, message: errorMessage, error: errorMessage },
       { status: 500 }
@@ -193,10 +189,8 @@ export async function PUT(
   })
 }
 
-export async function DELETE(
-  req: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function DELETE(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   return withApiUser(req, 'delete.aranceles.id', async user => {
   try {
 
@@ -237,8 +231,8 @@ export async function DELETE(
 
     return NextResponse.json({ ok: true, message: 'Arancel eliminado correctamente', cacheRevision })
   } catch (error) {
-    console.error('Error deleting arancel:', error)
-    const errorMessage = error instanceof Error ? error.message : 'Error al eliminar el arancel'
+    console.error('API operation failed')
+    const errorMessage = 'Error al eliminar el arancel'
     return NextResponse.json(
       { ok: false, message: errorMessage, error: errorMessage },
       { status: 500 }

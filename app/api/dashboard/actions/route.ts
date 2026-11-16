@@ -43,7 +43,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ ok: true, data })
   } catch (error) {
     if (error instanceof z.ZodError) return NextResponse.json({ ok: false, error: 'Parametros invalidos.' }, { status: 400 })
-    console.error('[GET /api/dashboard/actions]', error)
+    console.error('API operation failed')
     return NextResponse.json({ ok: false, error: 'No se pudo cargar la cola.' }, { status: 500 })
   }
 

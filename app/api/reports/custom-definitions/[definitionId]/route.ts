@@ -7,7 +7,8 @@ import { getCustomDefinition, updateCustomDefinition } from '@/lib/reports/custo
 
 export const dynamic = 'force-dynamic'
 
-export async function GET(request: NextRequest, { params }: { params: { definitionId: string } }) {
+export async function GET(request: NextRequest, props: { params: Promise<{ definitionId: string }> }) {
+  const params = await props.params;
   return withApiUser(request, 'reports.custom_definitions.detail', async user => {
     assertReportAdmin(user)
     const definition = await getCustomDefinition(user.officeId, params.definitionId)
@@ -16,7 +17,8 @@ export async function GET(request: NextRequest, { params }: { params: { definiti
   })
 }
 
-export async function PATCH(request: NextRequest, { params }: { params: { definitionId: string } }) {
+export async function PATCH(request: NextRequest, props: { params: Promise<{ definitionId: string }> }) {
+  const params = await props.params;
   return withApiUser(request, 'reports.custom_definitions.update', async user => {
     assertReportAdmin(user)
     const value = parseApiInput(CustomDefinitionInputSchema, await request.json().catch(() => ({})))

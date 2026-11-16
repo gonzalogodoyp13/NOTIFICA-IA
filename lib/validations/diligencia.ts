@@ -6,11 +6,11 @@ export const zDiligencia = z.object({
   tipoId: z.string().min(1, "tipoId es requerido"),
   fecha: z.coerce.date().max(new Date(), "Fecha no puede ser futura"),
   estado: z.enum(["pendiente", "completada", "fallida"]).default("pendiente"),
-  meta: z.record(z.any()).optional(),
+  meta: z.record(z.string(), z.any()).optional(),
 });
 
 export const zDiligenciaUpdate = z.object({
   estado: z.enum(["pendiente", "completada", "fallida"]).optional(),
-  meta: z.record(z.any()).optional(),
+  meta: z.record(z.string(), z.any()).optional(),
 });
 

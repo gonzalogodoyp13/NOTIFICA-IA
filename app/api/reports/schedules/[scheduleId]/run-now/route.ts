@@ -6,7 +6,8 @@ import { validateReportIdempotencyKey } from '@/lib/reports/deliveryAttempts'
 import { serializeReportJob } from '@/lib/reports/jobs'
 import { runScheduleNow } from '@/lib/reports/schedules'
 
-export async function POST(request: NextRequest, { params }: { params: { scheduleId: string } }) {
+export async function POST(request: NextRequest, props: { params: Promise<{ scheduleId: string }> }) {
+  const params = await props.params;
   return withApiUser(request, 'reports.schedules.run_now', async user => {
     assertReportAdmin(user)
     const idempotencyKey = validateReportIdempotencyKey(request.headers.get('Idempotency-Key'))

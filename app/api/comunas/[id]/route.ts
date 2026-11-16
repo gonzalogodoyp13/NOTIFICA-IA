@@ -9,10 +9,8 @@ import { recordSettingsEvent } from '@/lib/audit/businessEvents'
 
 export const dynamic = 'force-dynamic'
 
-export async function PUT(
-  req: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function PUT(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   return withApiUser(req, 'put.comunas.id', async user => {
   try {
 
@@ -60,8 +58,8 @@ export async function PUT(
 
     return NextResponse.json({ ok: true, data: comuna })
   } catch (error) {
-    console.error('Error updating comuna:', error)
-    const errorMessage = error instanceof Error ? error.message : 'Error al actualizar la comuna'
+    console.error('API operation failed')
+    const errorMessage = 'Error al actualizar la comuna'
     return NextResponse.json(
       { ok: false, message: errorMessage, error: errorMessage },
       { status: 500 }
@@ -71,10 +69,8 @@ export async function PUT(
   })
 }
 
-export async function DELETE(
-  req: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function DELETE(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   return withApiUser(req, 'delete.comunas.id', async user => {
   try {
 
@@ -108,8 +104,8 @@ export async function DELETE(
 
     return NextResponse.json({ ok: true, message: 'Comuna eliminada correctamente' })
   } catch (error) {
-    console.error('Error deleting comuna:', error)
-    const errorMessage = error instanceof Error ? error.message : 'Error al eliminar la comuna'
+    console.error('API operation failed')
+    const errorMessage = 'Error al eliminar la comuna'
     return NextResponse.json(
       { ok: false, message: errorMessage, error: errorMessage },
       { status: 500 }

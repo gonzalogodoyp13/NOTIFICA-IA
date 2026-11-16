@@ -52,7 +52,7 @@ describe.skipIf(process.env.SIGNING_DATABASE_TESTS !== '1')('Phase 3 completion:
     vi.stubEnv('SIGNING_AUTO_ENQUEUE_ENABLED', 'true')
     vi.stubEnv('SIGNING_AUTO_ENQUEUE_OFFICES', JSON.stringify({ [f.office.id]: { signerFingerprint: fingerprint } }))
     const request = (body: unknown = {}) => PUT(new NextRequest('http://localhost/api/diligencias/' + diligence.id + '/complete',
-      { method: 'PUT', body: JSON.stringify(body) }), { params: { id: diligence.id } })
+      { method: 'PUT', body: JSON.stringify(body) }), { params: Promise.resolve({ id: diligence.id }) })
     const sync = () => workflowTransaction(sandbox.db, f.context, tx => syncDiligenceWorkflowState(diligence.id, tx, f.context))
     return { ...f, diligence, notification, stamp, request, sync }
   }

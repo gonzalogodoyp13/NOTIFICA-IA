@@ -22,7 +22,7 @@ const storedEventSchema = z.object({
   rol: z.string().nullable().optional(),
   shortName: z.string().nullable().optional(),
   description: z.string().nullable().optional(),
-  metadata: z.record(z.unknown()).nullable().optional(),
+  metadata: z.record(z.string(), z.unknown()).nullable().optional(),
   eventVersion: z.number().int().positive().optional(),
   deduplicationKey: z.string().min(1).max(240),
   occurredAt: z.string().datetime().optional(),

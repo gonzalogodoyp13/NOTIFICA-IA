@@ -4,7 +4,8 @@ import { apiSuccess, parseApiInput, withApiUser } from '@/lib/api/server'
 import { assertReportAdmin } from '@/lib/reports/access'
 import { ScheduleUpdateSchema, updateReportSchedule } from '@/lib/reports/schedules'
 
-export async function PATCH(request: NextRequest, { params }: { params: { scheduleId: string } }) {
+export async function PATCH(request: NextRequest, props: { params: Promise<{ scheduleId: string }> }) {
+  const params = await props.params;
   return withApiUser(request, 'reports.schedules.update', async user => {
     assertReportAdmin(user)
     const value = parseApiInput(ScheduleUpdateSchema, await request.json().catch(() => ({})))

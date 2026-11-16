@@ -27,10 +27,8 @@ const GenerateEstampoSchema = z.object({
   notificacionId: z.string().optional().nullable(),
 })
 
-export async function POST(
-  req: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function POST(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   return withApiUser(req, 'stamp.generate', async user => {
    try {
 
@@ -211,7 +209,7 @@ export async function POST(
       return { documento: updated, outboxId: queuedEvent.id, signing: workflow.signing }
     })
     await processActivityOutbox(1, documentoWithVersion.outboxId).catch(error => {
-      console.error('[stamp] Immediate activity outbox drain failed:', error)
+      console.error('API operation failed')
     })
     const completedDocumento = documentoWithVersion.documento
     const serializedNotificacion = notificacionId

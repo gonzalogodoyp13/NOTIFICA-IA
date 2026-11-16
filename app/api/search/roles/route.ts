@@ -146,7 +146,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ ok: true, data: payload })
   } catch (error) {
     if (error instanceof z.ZodError) return NextResponse.json({ ok: false, error: 'Parametros invalidos.' }, { status: 400 })
-    console.error('[GET /api/search/roles]', error)
+    console.error('API operation failed')
     return NextResponse.json({ ok: false, error: 'No se pudo completar la busqueda.' }, { status: 500 })
   }
 

@@ -5,7 +5,7 @@ export const dynamic = 'force-dynamic'
 
 export async function POST(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  _context: { params: Promise<{ id: string }> }
 ) {
   return withApiUser(req, 'procurador.bank.link.retired', async () => NextResponse.json(
     {

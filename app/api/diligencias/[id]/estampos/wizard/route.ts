@@ -5,10 +5,8 @@ import { buildWizardInitialVariables, loadWizardCatalog, loadWizardDiligenciaCon
 
 export const dynamic = 'force-dynamic'
 
-export async function GET(
-  req: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function GET(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   return withApiUser(req, 'get.diligencias.id.estampos.wizard', async user => {
   try {
 
@@ -65,7 +63,7 @@ export async function GET(
       },
     })
   } catch (error) {
-    console.error('Error en GET /estampos/wizard:', error)
+    console.error('API operation failed')
     return NextResponse.json(
       { ok: false, error: 'Error al obtener estampos para el wizard' },
       { status: 500 }

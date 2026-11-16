@@ -11,6 +11,8 @@ import { recordActivityEvent, recordBestEffortEvent } from '@/lib/audit/activity
 import { requestEventWasRecorded, runWithAuditRequestState } from '@/lib/audit/requestState'
 import { debugLog, toSafeErrorMessage } from '@/lib/debugLog'
 import { createServerSupabaseClient } from '@/lib/supabaseServer'
+import { boundRequestBody, requireSameOrigin, RequestSecurityError } from '@/lib/security/request'
+import { enforceRequestQuota } from '@/lib/security/rateLimit'
 
 export type ApiErrorCode =
   | 'UNAUTHORIZED'
@@ -29,6 +31,12 @@ export type ApiErrorCode =
   | 'RECEIPT_GENERATION_FAILED'
   | 'DATABASE_ERROR'
   | 'INTERNAL_ERROR'
+  | 'RATE_LIMITED'
+  | 'REQUEST_TOO_LARGE'
+  | 'REQUEST_TIMEOUT'
+  | 'UNSUPPORTED_MEDIA_TYPE'
+  | 'ORIGIN_NOT_CONFIGURED'
+  | 'MFA_REQUIRED'
 
 export type ApiSuccess<T> = { ok: true; data: T }
 export type ApiFailure = {
@@ -90,7 +98,7 @@ function zodFields(error: z.ZodError): Record<string, string[]> {
   return fields
 }
 
-export function parseApiInput<T>(schema: z.ZodType<T, z.ZodTypeDef, unknown>, input: unknown): T {
+export function parseApiInput<T>(schema: z.ZodType<T>, input: unknown): T {
   const parsed = schema.safeParse(input)
   if (!parsed.success) {
     throw new ApiError(
@@ -140,6 +148,12 @@ export async function handleApiError(
   error: unknown,
   context: { operation: string; request?: NextRequest; user?: ApiUser | null }
 ) {
+  if (error instanceof RequestSecurityError) {
+    const response = apiFailure(new ApiError(error.code as ApiErrorCode,
+      error.status === 429 ? 'Demasiadas solicitudes. Intenta nuevamente en unos minutos.' : 'No se pudo autorizar la solicitud.', error.status))
+    if (error.retryAfter) response.headers.set('Retry-After', String(error.retryAfter))
+    return response
+  }
   const known = error instanceof ApiError ? error : translateAuthError(error) ?? translatePrismaError(error)
   if (known) {
     if (context.user && known.code !== 'UNAUTHORIZED' && !requestEventWasRecorded()) {
@@ -192,9 +206,15 @@ export async function withApiUser(
   const timing = createRequestTiming()
   const requestId = requestIdFor(request)
   try {
+    requireSameOrigin(request)
     user = await timing.measureAuth(() => requireApiUser(request))
+    await enforceRequestQuota(request.nextUrl.pathname, request.method, user)
+    await boundRequestBody(request)
     const response = await runWithAuditRequestState(async () => {
-      const result = await timing.measureHandler(() => handler(user!))
+      let result = await timing.measureHandler(() => handler(user!))
+      // Legacy handlers may serialize raw database errors. Fail closed at the
+      // shared boundary as well as sanitizing the individual catch blocks.
+      if (result.status >= 500) result = apiFailure(new ApiError('INTERNAL_ERROR', 'No se pudo completar la operación.', result.status))
       const isReadLikeOperation = /(?:^|[. ])(?:preview|lookup)(?:$|[. ])/i.test(operation)
       const isMutation = !['GET', 'HEAD', 'OPTIONS'].includes(request.method)
       if (!requestEventWasRecorded() && ((!isReadLikeOperation && isMutation) || result.status === 403)) {
@@ -224,7 +244,7 @@ export async function withApiUser(
           metadata: { errorCode: error.code, path: request.nextUrl.pathname },
         })
       }
-      await createServerSupabaseClient().auth.signOut({ scope: 'local' }).catch(() => undefined)
+      await (await createServerSupabaseClient()).auth.signOut({ scope: 'local' }).catch(() => undefined)
     }
     const response = await handleApiError(error, { operation, request, user })
     return finishTimedResponse({ request, operation, requestId: user?.requestId ?? requestId, timing, response })

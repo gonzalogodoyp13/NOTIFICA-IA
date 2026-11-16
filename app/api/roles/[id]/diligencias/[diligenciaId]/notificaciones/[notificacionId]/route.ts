@@ -14,7 +14,7 @@ import { assertRoleWorkflowWritable, syncDiligenceWorkflowState } from '@/lib/ro
 export const dynamic = 'force-dynamic'
 
 const NotificationProgressSchema = z.object({
-  meta: z.record(z.unknown()),
+  meta: z.record(z.string(), z.unknown()),
   bancoId: z.number().int().positive().optional(),
 })
 
@@ -26,10 +26,9 @@ function hasExecutionDate(meta: Record<string, unknown>) {
 
 export async function PATCH(
   req: NextRequest,
-  {
-    params,
-  }: { params: { id: string; diligenciaId: string; notificacionId: string } }
+  props: { params: Promise<{ id: string; diligenciaId: string; notificacionId: string }> }
 ) {
+  const params = await props.params;
   return withApiUser(req, 'notification.update', async user => {
    try {
 
@@ -176,10 +175,9 @@ export async function PATCH(
 
 export async function DELETE(
   req: NextRequest,
-  {
-    params,
-  }: { params: { id: string; diligenciaId: string; notificacionId: string } }
+  props: { params: Promise<{ id: string; diligenciaId: string; notificacionId: string }> }
 ) {
+  const params = await props.params;
   return withApiUser(req, 'notification.delete', async user => {
    try {
 

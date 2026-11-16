@@ -9,10 +9,8 @@ import { NotaCreateSchema } from '@/lib/validations/rol-workspace'
 
 export const dynamic = 'force-dynamic'
 
-export async function GET(
-  _req: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function GET(_req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   return withApiUser(_req, 'get.roles.id.notas', async user => {
   try {
 
@@ -48,7 +46,7 @@ export async function GET(
     return NextResponse.json({ ok: true, data })
   } catch (error) {
     if (error instanceof ApiError) throw error
-    console.error('Error obteniendo notas:', error)
+    console.error('API operation failed')
     return NextResponse.json(
       { ok: false, error: 'Error al obtener las notas del rol' },
       { status: 500 }
@@ -58,10 +56,8 @@ export async function GET(
   })
 }
 
-export async function POST(
-  req: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function POST(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   return withApiUser(req, 'post.roles.id.notas', async user => {
   try {
 
@@ -99,7 +95,7 @@ export async function POST(
     return NextResponse.json({ ok: true, data: { ...nota, createdAt: nota.createdAt.toISOString() } })
   } catch (error) {
     if (error instanceof ApiError) throw error
-    console.error('Error creando nota:', error)
+    console.error('API operation failed')
     return NextResponse.json(
       { ok: false, error: 'Error al crear la nota' },
       { status: 500 }
@@ -109,10 +105,8 @@ export async function POST(
   })
 }
 
-export async function DELETE(
-  req: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function DELETE(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   return withApiUser(req, 'delete.roles.id.notas', async user => {
   try {
 
@@ -159,7 +153,7 @@ export async function DELETE(
     return NextResponse.json({ ok: true })
   } catch (error) {
     if (error instanceof ApiError) throw error
-    console.error('Error eliminando nota:', error)
+    console.error('API operation failed')
     return NextResponse.json(
       { ok: false, error: 'Error al eliminar la nota' },
       { status: 500 }

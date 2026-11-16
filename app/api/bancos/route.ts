@@ -21,8 +21,8 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({ ok: true, data: bancos })
   } catch (error) {
-    console.error('Error fetching bancos:', error)
-    const errorMessage = error instanceof Error ? error.message : 'Error al obtener los bancos'
+    console.error('API operation failed')
+    const errorMessage = 'Error al obtener los bancos'
     return NextResponse.json(
       { ok: false, message: errorMessage, error: errorMessage },
       { status: 500 }
@@ -40,7 +40,7 @@ export async function POST(req: NextRequest) {
     const parsed = BancoSchema.safeParse(body)
 
     if (!parsed.success) {
-      const errorMessage = parsed.error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')
+      const errorMessage = parsed.error.issues.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')
       return NextResponse.json(
         { ok: false, message: errorMessage, error: errorMessage },
         { status: 400 }
@@ -55,8 +55,8 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ ok: true, data: banco })
   } catch (error) {
-    console.error('Error creating banco:', error)
-    const errorMessage = error instanceof Error ? error.message : 'Error al crear el banco'
+    console.error('API operation failed')
+    const errorMessage = 'Error al crear el banco'
     return NextResponse.json(
       { ok: false, message: errorMessage, error: errorMessage },
       { status: 500 }

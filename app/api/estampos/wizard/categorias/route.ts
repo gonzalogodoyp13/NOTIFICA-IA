@@ -18,7 +18,7 @@ export async function GET(req: NextRequest) {
         .sort((left, right) => left.label.localeCompare(right.label))
       return NextResponse.json({ ok: true, data })
     } catch (error) {
-      console.error('Error obteniendo categorias wizard:', error)
+      console.error('API operation failed')
       return NextResponse.json({ ok: false, error: 'Error al obtener las categorias wizard' }, { status: 500 })
     }
   })

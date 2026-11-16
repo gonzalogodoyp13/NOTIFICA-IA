@@ -53,10 +53,8 @@ function mapAbogado(abogado: {
   }
 }
 
-export async function PUT(
-  req: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function PUT(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   return withApiUser(req, 'put.abogados.id', async user => {
   try {
 
@@ -86,7 +84,7 @@ export async function PUT(
     const parsed = AbogadoSchema.safeParse(body)
 
     if (!parsed.success) {
-      const errorMessage = parsed.error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')
+      const errorMessage = parsed.error.issues.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')
       return NextResponse.json(
         { ok: false, message: errorMessage, error: errorMessage },
         { status: 400 }
@@ -217,8 +215,8 @@ export async function PUT(
 
     return NextResponse.json({ ok: true, data: mapAbogado(abogado) })
   } catch (error) {
-    console.error('Error updating abogado:', error)
-    const errorMessage = error instanceof Error ? error.message : 'Error al actualizar el abogado'
+    console.error('API operation failed')
+    const errorMessage = 'Error al actualizar el abogado'
     return NextResponse.json(
       { ok: false, message: errorMessage, error: errorMessage },
       { status: 500 }
@@ -228,10 +226,8 @@ export async function PUT(
   })
 }
 
-export async function DELETE(
-  req: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function DELETE(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   return withApiUser(req, 'delete.abogados.id', async user => {
   try {
 
@@ -264,8 +260,8 @@ export async function DELETE(
 
     return NextResponse.json({ ok: true, message: 'Abogado eliminado correctamente' })
   } catch (error) {
-    console.error('Error deleting abogado:', error)
-    const errorMessage = error instanceof Error ? error.message : 'Error al eliminar el abogado'
+    console.error('API operation failed')
+    const errorMessage = 'Error al eliminar el abogado'
     return NextResponse.json(
       { ok: false, message: errorMessage, error: errorMessage },
       { status: 500 }

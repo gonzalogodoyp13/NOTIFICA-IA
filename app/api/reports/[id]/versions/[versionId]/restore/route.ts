@@ -6,7 +6,11 @@ import { ReportVersionError, restoreMonthlyReportVersion } from '@/lib/reports/v
 
 export const dynamic = 'force-dynamic'
 
-export async function POST(request: NextRequest, { params }: { params: { id: string; versionId: string } }) {
+export async function POST(
+  request: NextRequest,
+  props: { params: Promise<{ id: string; versionId: string }> }
+) {
+  const params = await props.params;
   return withApiUser(request, 'reports.versions.restore', async user => {
     assertReportAdmin(user)
     try {

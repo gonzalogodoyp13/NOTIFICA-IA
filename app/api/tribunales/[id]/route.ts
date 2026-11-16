@@ -7,7 +7,8 @@ import { recordSettingsEvent } from '@/lib/audit/businessEvents'
 
 export const dynamic = 'force-dynamic'
 
-export async function PUT(req: NextRequest, { params }: { params: { id: string } }) {
+export async function PUT(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   return withApiUser(req, 'update tribunal', async user => {
     const existing = await prisma.tribunal.findFirst({ where: { id: params.id, officeId: user.officeId } })
     if (!existing) throw new ApiError('NOT_FOUND', 'Tribunal no encontrado', 404)
@@ -21,7 +22,8 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
   })
 }
 
-export async function DELETE(req: NextRequest, { params }: { params: { id: string } }) {
+export async function DELETE(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   return withApiUser(req, 'delete tribunal', async user => {
     const existing = await prisma.tribunal.findFirst({
       where: { id: params.id, officeId: user.officeId },

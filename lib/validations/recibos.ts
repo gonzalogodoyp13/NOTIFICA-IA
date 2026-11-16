@@ -11,7 +11,7 @@ const optionalDate = z
   .trim()
   .optional()
   .transform(value => value || undefined)
-  .refine(value => !value || /^\d{4}-\d{2}-\d{2}$/.test(value), { message: 'Fecha invalida' })
+  .refine(value => !value || /^\d{4}-\d{2}-\d{2}$/.test(value), { message: 'Fecha invalida' }).optional()
 
 const optionalNumber = z.preprocess(
   value => (value === '' || value === null || value === undefined ? undefined : value),
@@ -25,10 +25,10 @@ export const ReceiptFilterSchema = z
     abogadoIds: intArray,
     estados: z.array(z.enum(['PAGADO', 'NO_PAGADO'])).optional().default([]),
     estampoTemplates: stringArray,
-    rol: z.string().trim().max(100).optional().transform(value => value || undefined),
+    rol: z.string().trim().max(100).optional().transform(value => value || undefined).optional(),
     fechaEjecucionDesde: optionalDate,
     fechaEjecucionHasta: optionalDate,
-    numeroBoleta: z.string().trim().max(100).optional().transform(value => value || undefined),
+    numeroBoleta: z.string().trim().max(100).optional().transform(value => value || undefined).optional(),
     boletaMatch: z.enum(['contains', 'exact']).default('contains'),
     montoMin: optionalNumber,
     montoMax: optionalNumber,

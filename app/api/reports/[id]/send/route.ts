@@ -10,7 +10,8 @@ const Schema = z.object({ target: z.enum(['all', 'failed']).default('all'), prev
   if (value.target === 'failed' && !value.previousAttemptId) context.addIssue({ code: z.ZodIssueCode.custom, path: ['previousAttemptId'], message: 'Se requiere el intento anterior.' })
 })
 
-export async function POST(request: NextRequest, { params }: { params: { id: string } }) {
+export async function POST(request: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   return withApiUser(request, 'reports.delivery.enqueue', async user => {
     assertReportAdmin(user)
     const value = parseApiInput(Schema, await request.json().catch(() => ({})))

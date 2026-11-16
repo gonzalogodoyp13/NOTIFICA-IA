@@ -7,7 +7,8 @@ import { contentDispositionForPdf } from '@/lib/documents/downloadFileName'
 import { recordActivityEvent } from '@/lib/audit/activityEvent'
 
 export const dynamic = 'force-dynamic'
-export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
+export async function GET(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   return withApiUser(req, 'get.signing.archive.download', async user => {
     try {
       const service = createOfficeFolderService(prisma, async () => { throw new Error('DEVICE_ENDPOINT_REQUIRED') })

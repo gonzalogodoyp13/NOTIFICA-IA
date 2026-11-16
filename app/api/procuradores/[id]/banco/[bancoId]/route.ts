@@ -5,7 +5,7 @@ export const dynamic = 'force-dynamic'
 
 export async function DELETE(
   req: NextRequest,
-  { params }: { params: { id: string; bancoId: string } }
+  _context: { params: Promise<{ id: string; bancoId: string }> }
 ) {
   return withApiUser(req, 'procurador.bank.delete.retired', async () => NextResponse.json(
     {

@@ -1,9 +1,10 @@
 import RolWorkspaceClient from './_components/RolWorkspaceClient'
 
 interface RolWorkspacePageProps {
-  params: { id: string }
+  params: Promise<{ id: string }>
 }
 
-export default function RolWorkspacePage({ params }: RolWorkspacePageProps) {
+export default async function RolWorkspacePage(props: RolWorkspacePageProps) {
+  const params = await props.params;
   return <RolWorkspaceClient rolId={params.id} />
 }

@@ -21,8 +21,8 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({ ok: true, data: estampos });
   } catch (error) {
-    console.error("Error fetching estampos:", error);
-    const errorMessage = error instanceof Error ? error.message : "Error al obtener los estampos";
+    console.error('API operation failed');
+    const errorMessage = "Error al obtener los estampos";
     return NextResponse.json(
       { ok: false, message: errorMessage, error: errorMessage },
       { status: 500 }
@@ -40,7 +40,7 @@ export async function POST(req: NextRequest) {
     const parsed = EstampoSchema.safeParse(body);
 
     if (!parsed.success) {
-      const errorMessage = parsed.error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ');
+      const errorMessage = parsed.error.issues.map(e => `${e.path.join('.')}: ${e.message}`).join(', ');
       return NextResponse.json(
         { ok: false, message: errorMessage, error: errorMessage },
         { status: 400 }
@@ -63,8 +63,8 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ ok: true, data: estampo, cacheRevision });
   } catch (error) {
-    console.error("Error creando estampo:", error);
-    const errorMessage = error instanceof Error ? error.message : "Error al crear el estampo";
+    console.error('API operation failed');
+    const errorMessage = "Error al crear el estampo";
     return NextResponse.json(
       { ok: false, message: errorMessage, error: errorMessage },
       { status: 500 }

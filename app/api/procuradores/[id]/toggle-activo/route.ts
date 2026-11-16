@@ -8,10 +8,8 @@ import { recordSettingsEvent } from '@/lib/audit/businessEvents'
 
 export const dynamic = 'force-dynamic'
 
-export async function PATCH(
-  req: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function PATCH(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   return withApiUser(req, 'patch.procuradores.id.toggle-activo', async user => {
   try {
 
@@ -69,8 +67,8 @@ export async function PATCH(
       },
     })
   } catch (error) {
-    console.error('Error toggling activo:', error)
-    const errorMessage = error instanceof Error ? error.message : 'Error al cambiar estado activo'
+    console.error('API operation failed')
+    const errorMessage = 'Error al cambiar estado activo'
     return NextResponse.json(
       { ok: false, message: errorMessage, error: errorMessage },
       { status: 500 }

@@ -46,10 +46,8 @@ function normalizeAbogadoIds(abogadoIds?: number[]) {
   )
 }
 
-export async function GET(
-  req: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function GET(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   return withApiUser(req, 'get.procuradores.id', async user => {
   try {
 
@@ -78,8 +76,8 @@ export async function GET(
 
     return NextResponse.json({ ok: true, data: mapProcuradorListItem(procurador) })
   } catch (error) {
-    console.error('Error fetching procurador:', error)
-    const errorMessage = error instanceof Error ? error.message : 'Error al obtener el procurador'
+    console.error('API operation failed')
+    const errorMessage = 'Error al obtener el procurador'
     return NextResponse.json(
       { ok: false, message: errorMessage, error: errorMessage },
       { status: 500 }
@@ -89,10 +87,8 @@ export async function GET(
   })
 }
 
-export async function PATCH(
-  req: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function PATCH(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   return withApiUser(req, 'patch.procuradores.id', async user => {
   try {
 
@@ -122,7 +118,7 @@ export async function PATCH(
     const parsed = ProcuradorUpdateSchema.safeParse(body)
 
     if (!parsed.success) {
-      const errorMessage = parsed.error.errors.map((e) => `${e.path.join('.')}: ${e.message}`).join(', ')
+      const errorMessage = parsed.error.issues.map((e) => `${e.path.join('.')}: ${e.message}`).join(', ')
       return NextResponse.json(
         { ok: false, message: errorMessage, error: errorMessage },
         { status: 400 }
@@ -221,8 +217,8 @@ export async function PATCH(
 
     return NextResponse.json({ ok: true, data: mapProcuradorListItem(procurador) })
   } catch (error) {
-    console.error('Error updating procurador:', error)
-    const errorMessage = error instanceof Error ? error.message : 'Error al actualizar el procurador'
+    console.error('API operation failed')
+    const errorMessage = 'Error al actualizar el procurador'
     return NextResponse.json(
       { ok: false, message: errorMessage, error: errorMessage },
       { status: 500 }

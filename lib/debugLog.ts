@@ -1,6 +1,7 @@
 type LogMeta = Record<string, unknown>
 
 export function isDebugLoggingEnabled() {
+  if (process.env.NODE_ENV === 'production') return false
   if (process.env.DEBUG_LOGS === 'false') {
     return false
   }
@@ -26,5 +27,5 @@ export function debugLog(message: string, meta?: LogMeta) {
 }
 
 export function toSafeErrorMessage(error: unknown) {
-  return error instanceof Error ? error.message : String(error)
+  return error instanceof Error ? error.name : 'UnknownError'
 }

@@ -9,10 +9,8 @@ import { MembreteGenerateSchema } from '@/lib/validations/rol-workspace'
 
 export const dynamic = 'force-dynamic'
 
-export async function POST(
-  req: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function POST(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   return withApiUser(req, 'post.roles.id.membrete', async user => {
   try {
 
@@ -138,7 +136,7 @@ export async function POST(
       },
     })
   } catch (error) {
-    console.error('Error generando membrete:', error)
+    console.error('API operation failed')
     return NextResponse.json(
       { ok: false, error: 'Error al generar el membrete' },
       { status: 500 }

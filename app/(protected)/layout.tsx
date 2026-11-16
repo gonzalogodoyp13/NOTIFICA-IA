@@ -18,6 +18,7 @@ export default async function ProtectedLayout({
     user = await getCachedAuthenticatedUser()
   } catch (error) {
     if (error instanceof AuthResolutionError) {
+      if (error.code === 'MFA_REQUIRED') redirect('/mfa')
       if (error.code === 'ACCOUNT_DISABLED') redirect('/auth/disabled')
       if (error.code === 'USER_NOT_PROVISIONED') redirect('/login?error=user_not_provisioned')
       if (error.code === 'SERVICE_UNAVAILABLE') redirect('/login?error=service_unavailable')

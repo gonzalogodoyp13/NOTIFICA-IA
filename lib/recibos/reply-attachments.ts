@@ -3,6 +3,7 @@ import { ImapFlow } from 'imapflow'
 import { simpleParser } from 'mailparser'
 import { ApiError } from '@/lib/api/server'
 import { graphAccessToken } from '@/lib/recibos/mailer'
+import { graphFetch } from '@/lib/security/graph'
 
 type Source = { provider: string; mailboxAddress: string; providerMessageId: string; internetMessageId: string | null }
 const MAX_BYTES = 20 * 1024 * 1024
@@ -14,7 +15,7 @@ export async function downloadReplyAttachment(reply: Source, attachment: { provi
     const mailbox = process.env.MS_GRAPH_SENDER_EMAIL?.trim() || process.env.MAIL_FROM_EMAIL?.trim()
     if (mailbox?.toLowerCase() !== reply.mailboxAddress.toLowerCase()) throw new ApiError('SERVICE_UNAVAILABLE', 'El buzón original ya no está configurado.', 409)
     const token = await graphAccessToken()
-    const response = await fetch(`https://graph.microsoft.com/v1.0/users/${encodeURIComponent(mailbox)}/messages/${encodeURIComponent(reply.providerMessageId)}/attachments/${encodeURIComponent(attachment.providerAttachmentId)}/$value`, { headers: { Authorization: `Bearer ${token}`, Prefer: 'IdType="ImmutableId"' }, cache: 'no-store' })
+    const response = await graphFetch(`https://graph.microsoft.com/v1.0/users/${encodeURIComponent(mailbox)}/messages/${encodeURIComponent(reply.providerMessageId)}/attachments/${encodeURIComponent(attachment.providerAttachmentId)}/$value`, { headers: { Authorization: `Bearer ${token}`, Prefer: 'IdType="ImmutableId"' } })
     if (!response.ok) throw new ApiError('SERVICE_UNAVAILABLE', 'No se pudo recuperar el adjunto del buzón original.', 502)
     const reader = response.body?.getReader()
     if (!reader) throw new ApiError('SERVICE_UNAVAILABLE', 'El adjunto no está disponible.', 502)

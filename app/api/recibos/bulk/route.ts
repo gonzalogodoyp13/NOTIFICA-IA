@@ -19,7 +19,7 @@ export async function POST(req: NextRequest) {
     const { stateHash, ...input } = parsed.data
     return NextResponse.json({ ok: true, data: await executeReceiptBulkOperation({ officeId: user.officeId, userId: user.id, input, stateHash }) })
   } catch (error) {
-    return NextResponse.json({ ok: false, error: error instanceof Error ? error.message : 'Error al actualizar recibos' }, { status: 400 })
+    return NextResponse.json({ ok: false, error: 'Error al actualizar recibos' }, { status: 400 })
   }
 
   })

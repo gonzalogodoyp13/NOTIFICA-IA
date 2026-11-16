@@ -22,7 +22,7 @@ export const DiligenciaCreateSchema = z.object({
   ejecutadoId: z.string().min(1, 'ejecutadoId es requerido').optional(),
   direccionId: z.string().min(1, 'direccionId es requerido').optional(),
   costo: z.number().min(0, 'El costo debe ser mayor o igual a 0').optional(),
-  meta: z.record(z.unknown()).optional(),
+  meta: z.record(z.string(), z.unknown()).optional(),
 })
 
 export const DiligenciaUpdateSchema = DiligenciaCreateSchema.partial().extend({
@@ -89,7 +89,7 @@ export type ReciboGenerateInput = z.infer<typeof ReciboGenerateSchema>
 export const EstampoGenerateSchema = z.object({
   signDigitally: z.boolean().default(false),
   estampoId: z.string().min(1, 'estampoId es requerido'),
-  variables: z.record(z.string()).optional(),
+  variables: z.record(z.string(), z.string()).optional(),
   contenidoPersonalizado: z.string().optional(),
 })
 

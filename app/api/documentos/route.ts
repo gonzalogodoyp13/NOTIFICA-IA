@@ -67,7 +67,7 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({ ok: true, data: documentos })
   } catch (error) {
-    console.error('Error fetching documentos:', error)
+    console.error('API operation failed')
     return NextResponse.json(
       { ok: false, error: 'Error al obtener los documentos' },
       { status: 500 }
@@ -86,7 +86,7 @@ export async function POST(req: NextRequest) {
 
     if (!parsed.success) {
       return NextResponse.json(
-        { ok: false, error: parsed.error.errors },
+        { ok: false, error: parsed.error.issues },
         { status: 400 }
       )
     }
@@ -176,11 +176,11 @@ export async function POST(req: NextRequest) {
     if (error instanceof ApiError) return apiFailure(error)
     if (error instanceof ZodError) {
       return NextResponse.json(
-        { ok: false, error: error.errors },
+        { ok: false, error: error.issues },
         { status: 400 }
       )
     }
-    console.error('Error creating documento:', error)
+    console.error('API operation failed')
     return NextResponse.json(
       { ok: false, error: 'Error al crear el documento' },
       { status: 500 }
@@ -208,7 +208,7 @@ export async function PUT(req: NextRequest) {
 
     if (!parsed.success) {
       return NextResponse.json(
-        { ok: false, error: parsed.error.errors },
+        { ok: false, error: parsed.error.issues },
         { status: 400 }
       )
     }
@@ -259,11 +259,11 @@ export async function PUT(req: NextRequest) {
     if (error instanceof ApiError) return apiFailure(error)
     if (error instanceof ZodError) {
       return NextResponse.json(
-        { ok: false, error: error.errors },
+        { ok: false, error: error.issues },
         { status: 400 }
       )
     }
-    console.error('Error updating documento:', error)
+    console.error('API operation failed')
     return NextResponse.json(
       { ok: false, error: 'Error al actualizar el documento' },
       { status: 500 }
@@ -339,7 +339,7 @@ export async function DELETE(req: NextRequest) {
     return NextResponse.json({ ok: true, message: 'Documento eliminado correctamente' })
   } catch (error) {
     if (error instanceof ApiError) return apiFailure(error)
-    console.error('Error deleting documento:', error)
+    console.error('API operation failed')
     return NextResponse.json(
       { ok: false, error: 'Error al eliminar el documento' },
       { status: 500 }

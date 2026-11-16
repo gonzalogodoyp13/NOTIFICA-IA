@@ -14,10 +14,8 @@ import { assertRoleWorkflowWritable, syncDiligenceWorkflowState } from '@/lib/ro
 export const dynamic = 'force-dynamic'
 
 
-export async function PUT(
-  req: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function PUT(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   return withApiUser(req, 'put.diligencias.id.schedule', async user => {
   try {
 
@@ -123,7 +121,7 @@ export async function PUT(
     return NextResponse.json({ ok: true, data: updated })
   } catch (error) {
     if (error instanceof ApiError) return apiFailure(error)
-    console.error('Error programando diligencia:', error)
+    console.error('API operation failed')
     return NextResponse.json(
       { ok: false, error: 'Error al programar la diligencia' },
       { status: 500 }

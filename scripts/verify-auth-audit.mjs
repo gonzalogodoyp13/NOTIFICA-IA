@@ -44,6 +44,7 @@ for (const file of checkedFiles) {
   if (file.startsWith(path.join('app', 'api')) && file.endsWith('route.ts')) {
     const hasHandler = /export async function (?:GET|POST|PUT|PATCH|DELETE)/.test(source)
     const allowedWithoutUser = file.includes(path.join('api', 'internal'))
+      || ['update-manifest', 'update-download'].some(name => file === path.join('app', 'api', 'signing', 'device', name, 'route.ts') && source.includes('withRequestTiming'))
       || file === path.join('app', 'api', 'ping', 'route.ts')
       || (file === path.join('app', 'api', 'signing', 'device', '[action]', 'route.ts')
         && source.includes('createDeviceHandler')

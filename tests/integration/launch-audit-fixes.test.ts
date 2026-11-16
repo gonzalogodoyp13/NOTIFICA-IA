@@ -25,7 +25,7 @@ beforeEach(() => {
   vi.resetAllMocks()
   mocks.db.$transaction.mockImplementation((callback: Function) => callback(mocks.db))
 })
-const params = { params: { replyId: 'reply' } }
+const params = { params: Promise.resolve({ replyId: 'reply' }) }
 const request = (body = { recipientId: 'recipient', confirmed: true }) => new NextRequest('http://localhost/api', { method: 'PATCH', body: JSON.stringify(body) })
 
 describe('manual reply association', () => {
@@ -66,14 +66,14 @@ describe('manual reply association', () => {
 describe('reply attachment access', () => {
   it('does not contact the provider for another office attachment', async () => {
     mocks.db.recibosDispatchReplyAttachment.findFirst.mockResolvedValue(null)
-    await expect(download(new NextRequest('http://localhost/api'), { params: { replyId: 'reply', attachmentId: 'file' } })).rejects.toMatchObject({ status: 404 })
+    await expect(download(new NextRequest('http://localhost/api'), { params: Promise.resolve({ replyId: 'reply', attachmentId: 'file' }) })).rejects.toMatchObject({ status: 404 })
     expect(mocks.db.recibosDispatchReplyAttachment.findFirst.mock.calls[0][0].where).toEqual({ id: 'file', replyId: 'reply', reply: { officeId: 1 } })
     expect(mocks.download).not.toHaveBeenCalled()
   })
   it('returns original bytes as a private attachment, never inline content', async () => {
     mocks.db.recibosDispatchReplyAttachment.findFirst.mockResolvedValue({ filename: 'comprobante.pdf', reply: {} })
     mocks.download.mockResolvedValue(Buffer.from('original'))
-    const result = await download(new NextRequest('http://localhost/api'), { params: { replyId: 'reply', attachmentId: 'file' } })
+    const result = await download(new NextRequest('http://localhost/api'), { params: Promise.resolve({ replyId: 'reply', attachmentId: 'file' }) })
     expect(await result.text()).toBe('original')
     expect(result.headers.get('Content-Disposition')).toContain('attachment;')
     expect(result.headers.get('Cache-Control')).toBe('private, no-store')
@@ -86,9 +86,9 @@ describe('closed case note protection', () => {
     mocks.db.rolCausa.updateMany.mockResolvedValue({ count: 0 })
     mocks.db.nota.findFirst.mockResolvedValue({ id: 'note', rolId: 'role', userId: 'user' })
     const create = () => new NextRequest('http://localhost/api', { method: 'POST', body: JSON.stringify({ rolId: 'role', contenido: 'New note' }) })
-    await expect(addNote(create(), { params: { id: 'role' } })).rejects.toMatchObject({ status: 409 })
+    await expect(addNote(create(), { params: Promise.resolve({ id: 'role' }) })).rejects.toMatchObject({ status: 409 })
     await expect(legacyAddNote(create())).rejects.toMatchObject({ status: 409 })
-    await expect(deleteNote(new NextRequest('http://localhost/api?noteId=note'), { params: { id: 'role' } })).rejects.toMatchObject({ status: 409 })
+    await expect(deleteNote(new NextRequest('http://localhost/api?noteId=note'), { params: Promise.resolve({ id: 'role' }) })).rejects.toMatchObject({ status: 409 })
     await expect(legacyDeleteNote(new NextRequest('http://localhost/api?id=note'))).rejects.toMatchObject({ status: 409 })
     expect(mocks.db.nota.create).not.toHaveBeenCalled()
     expect(mocks.db.nota.delete).not.toHaveBeenCalled()

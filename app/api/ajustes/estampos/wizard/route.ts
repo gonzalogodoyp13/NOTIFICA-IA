@@ -57,7 +57,7 @@ export async function GET(req: NextRequest) {
       },
     })
   } catch (error) {
-    console.error('Error en GET /api/ajustes/estampos/wizard:', error)
+    console.error('API operation failed')
     return NextResponse.json(
       { ok: false, error: 'Error al obtener estampos para el wizard' },
       { status: 500 }
