@@ -2,6 +2,10 @@
 
 This follows `SECURITY_AUDIT_2026-11-15.md`, which preserves the original findings. This is not certification that all twenty security areas are clear.
 
+## Administrator sign-in policy change
+
+On 15 November 2026, the user requested removal of the authenticator setup screen and redeployment. Mandatory administrator MFA enforcement and the enrollment UI were removed. `/mfa` redirects to `/dashboard`, whose existing protection still validates sign-in, active account status and server-side office permissions. Earlier MFA statements below describe the initial security release, not the current policy. Existing Supabase factors are not deleted by this application change.
+
 ## Production release completed
 
 On 15 November 2026 (America/Los_Angeles), deployed and promoted the tested production build to https://www.notificaia.cl.

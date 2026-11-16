@@ -13,7 +13,6 @@ export type AuthFailureCode =
   | 'USER_NOT_PROVISIONED'
   | 'ACCOUNT_DISABLED'
   | 'SERVICE_UNAVAILABLE'
-  | 'MFA_REQUIRED'
 
 export class AuthResolutionError extends Error {
   constructor(

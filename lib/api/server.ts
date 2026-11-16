@@ -36,7 +36,6 @@ export type ApiErrorCode =
   | 'REQUEST_TIMEOUT'
   | 'UNSUPPORTED_MEDIA_TYPE'
   | 'ORIGIN_NOT_CONFIGURED'
-  | 'MFA_REQUIRED'
 
 export type ApiSuccess<T> = { ok: true; data: T }
 export type ApiFailure = {

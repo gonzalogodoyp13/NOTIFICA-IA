@@ -38,14 +38,7 @@ export async function resolveProvisionedUser(): Promise<AuthUser> {
 }
 
 export async function resolveAuthenticatedUser(): Promise<AuthUser> {
-  const user = await resolveProvisionedUser()
-  if (user.isOfficeAdmin) {
-    const supabase = await createServerSupabaseClient()
-    const { data, error } = await supabase.auth.getClaims()
-    if (error || data?.claims.sub !== user.authUserId) throw new AuthResolutionError('UNAUTHORIZED', 'Sesion no valida', 401)
-    if (data.claims.aal !== 'aal2') throw new AuthResolutionError('MFA_REQUIRED', 'Verifica tu acceso con la aplicacion de autenticacion.', 403)
-  }
-  return user
+  return resolveProvisionedUser()
 }
 
 export const getCachedAuthenticatedUser = cache(resolveAuthenticatedUser)
