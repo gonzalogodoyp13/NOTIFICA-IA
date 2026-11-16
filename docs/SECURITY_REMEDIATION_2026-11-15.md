@@ -6,6 +6,8 @@ This follows `SECURITY_AUDIT_2026-11-15.md`, which preserves the original findin
 
 On 15 November 2026, the user requested removal of the authenticator setup screen and redeployment. Mandatory administrator MFA enforcement and the enrollment UI were removed. `/mfa` redirects to `/dashboard`, whose existing protection still validates sign-in, active account status and server-side office permissions. Earlier MFA statements below describe the initial security release, not the current policy. Existing Supabase factors are not deleted by this application change.
 
+Deployed source `be6d9d2` as `dpl_3hWBHRX16SGHSiWHekL9V1PeCdt2` and promoted it to the public domain. Verification: 395 regression tests and 25 security tests passed, type checking and the Vercel build passed, and the live `/mfa` route returns 307 to `/dashboard`. Live login/health return 200 and logged-out private API access returns 401. A protected-deployment share-link check was rejected by automatic review because it would create temporary access; no share link was created, and public-domain checks completed successfully after promotion.
+
 ## Production release completed
 
 On 15 November 2026 (America/Los_Angeles), deployed and promoted the tested production build to https://www.notificaia.cl.
