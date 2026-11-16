@@ -14,3 +14,16 @@ agents
 supabase
 *.log
 *.tsbuildinfo
+.tools
+.agents
+.codex
+.codex-doc-review
+.cursor
+.github
+e2e
+test-results
+playwright-report
+*.md
+*.ps1
+benchmark.js
+git
