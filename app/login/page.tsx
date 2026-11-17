@@ -3,6 +3,7 @@
 import { AlertTriangle, KeyRound, Landmark, ShieldCheck } from 'lucide-react'
 import { useState, use } from 'react';
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 import { signIn } from '@/lib/auth-client'
 
 const AUTH_MESSAGES: Record<string, string> = {
@@ -165,6 +166,9 @@ export default function LoginPage(props: { searchParams: Promise<{ error?: strin
                 >
                   {loading ? 'Iniciando sesion...' : 'Ingresar'}
                 </button>
+                <Link href="/forgot-password" className="mt-5 block rounded text-center text-sm font-semibold text-blue-700 underline underline-offset-4 focus:outline-none focus:ring-2 focus:ring-blue-600">
+                  ¿Olvidaste tu contraseña?
+                </Link>
               </form>
             </div>
           </section>
