@@ -12,7 +12,7 @@ export async function POST(req: NextRequest) {
 
     const sample = {
       nombre_ejecutado: "Juan Pérez",
-      direccion_ejecutado: "Av. Providencia 1100",
+      direccion_ejecutado: "Av. Providencia 1100, comuna de Providencia",
       solo_comuna_ejecutado: "Santiago",
       fecha_palabras_diligencia: "10 de noviembre de 2025",
       hora_diligencia: "10:30",

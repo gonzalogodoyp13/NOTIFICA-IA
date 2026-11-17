@@ -83,7 +83,7 @@ export function EstampoEditor({ estampo, onSaved }: EstampoEditorProps) {
           contenido,
           variables: {
             nombre_ejecutado: "Juan Pérez",
-            direccion_ejecutado: "Av. Providencia 1100",
+            direccion_ejecutado: "Av. Providencia 1100, comuna de Providencia",
             fecha_palabras_diligencia: "10 de noviembre de 2025",
             hora_diligencia: "10:30",
             rol: "C-1234-2025",

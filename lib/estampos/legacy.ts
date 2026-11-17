@@ -72,7 +72,7 @@ export function buildCustomEstampoVariables(
   return {
     nombre_ejecutado: ejecutado?.nombre ?? '',
     rut_ejecutado: ejecutado?.rut ?? '',
-    direccion_ejecutado: [ejecutado?.direccion, ejecutado?.comunas?.nombre]
+    direccion_ejecutado: [ejecutado?.direccion, ejecutado?.comunas?.nombre ? `comuna de ${ejecutado.comunas.nombre}` : null]
       .filter(Boolean)
       .join(', '),
     solo_direccion_ejecutado: ejecutado?.direccion ?? '',

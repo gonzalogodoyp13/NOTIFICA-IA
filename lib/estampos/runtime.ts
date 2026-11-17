@@ -128,7 +128,7 @@ export function buildInitialVariables({
           value = ejecutado?.rut ?? ''
           break
         case 'direccion_ejecutado':
-          value = [ejecutado?.direccion, ejecutado?.comunas?.nombre]
+          value = [ejecutado?.direccion, ejecutado?.comunas?.nombre ? `comuna de ${ejecutado.comunas.nombre}` : null]
             .filter(Boolean)
             .join(', ')
           break
