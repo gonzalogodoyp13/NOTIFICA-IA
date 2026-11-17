@@ -79,7 +79,7 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
       {
         nombre: ejecutado.nombre,
         direccion,
-        causa: [rol.tribunal?.nombre, rol.rol].filter(Boolean).join(' / '),
+        causa: rol.tribunal?.nombre ?? '',
         rol: rol.rol,
         caratulado: rol.demanda.caratula,
         abogado: rol.demanda.abogados?.nombre ?? '',

@@ -15,6 +15,7 @@
 # next.js
 /.next/
 /.next-security/
+/.next-local-preview/
 /out/
 
 # production

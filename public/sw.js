@@ -1,6 +1,7 @@
 // NOTIFICA IA service worker: public static assets only.
 const CACHE_VERSION = 'v1.1.0'
 const CACHE_NAME = `notifica-ia-static-${CACHE_VERSION}`
+const IS_LOCAL = ['localhost', '127.0.0.1', '[::1]'].includes(self.location.hostname)
 const PRECACHE_URLS = [
   '/manifest.json',
   '/icons/icon-192.png',
@@ -8,20 +9,20 @@ const PRECACHE_URLS = [
 ]
 
 self.addEventListener('install', event => {
-  event.waitUntil(caches.open(CACHE_NAME).then(cache => cache.addAll(PRECACHE_URLS)))
+  if (!IS_LOCAL) event.waitUntil(caches.open(CACHE_NAME).then(cache => cache.addAll(PRECACHE_URLS)))
   self.skipWaiting()
 })
 
 self.addEventListener('activate', event => {
   event.waitUntil(
     caches.keys()
-      .then(names => Promise.all(names.filter(name => name !== CACHE_NAME).map(name => caches.delete(name))))
+      .then(names => Promise.all(names.filter(name => name.startsWith('notifica-ia-static-') && (IS_LOCAL || name !== CACHE_NAME)).map(name => caches.delete(name))))
       .then(() => self.clients.claim())
   )
 })
 
 function isPublicStaticAsset(request, url) {
-  if (request.method !== 'GET' || url.origin !== self.location.origin) return false
+  if (IS_LOCAL || request.method !== 'GET' || url.origin !== self.location.origin) return false
   return PRECACHE_URLS.includes(url.pathname) || url.pathname.startsWith('/_next/static/')
 }
 

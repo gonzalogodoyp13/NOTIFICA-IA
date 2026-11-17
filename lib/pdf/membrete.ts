@@ -21,16 +21,16 @@ const PAGE_SIZES: Record<MembretePageSize, [number, number]> = {
 function resolveBlockPlacement(
   pageWidth: number,
   pageHeight: number,
-  placement: MembretePlacement
+  placement: MembretePlacement,
+  blockWidth: number,
+  blockHeight: number,
+  ascent: number
 ) {
-  const marginX = 42
-  const blockWidth = 252
-  const blockHeight = 176
-  const topY = pageHeight - 58
-  const middleY = pageHeight / 2 + blockHeight / 2
-  const bottomY = 238
-  const leftX = marginX
-  const rightX = pageWidth - marginX - blockWidth
+  const margin = 18
+  const topY = pageHeight - margin - ascent
+  const bottomY = margin + blockHeight - ascent
+  const leftX = margin
+  const rightX = pageWidth - margin - blockWidth
 
   switch (placement) {
     case '2':
@@ -40,9 +40,9 @@ function resolveBlockPlacement(
     case '4':
       return { x: rightX, y: bottomY, width: blockWidth, rotate: false }
     case '5':
-      return { x: 56, y: middleY + 92, width: blockWidth, rotate: true }
+      return { x: margin + ascent, y: (pageHeight - blockWidth) / 2, rotate: true }
     case '6':
-      return { x: pageWidth - 56, y: middleY - blockWidth + 92, width: blockWidth, rotate: true }
+      return { x: pageWidth - margin - blockHeight + ascent, y: (pageHeight - blockWidth) / 2, rotate: true }
     case '1':
     default:
       return { x: leftX, y: topY, width: blockWidth, rotate: false }
@@ -60,27 +60,49 @@ export async function buildMembretePdf(
   const fontBold = await doc.embedFont(StandardFonts.TimesRomanBold)
   const pageWidth = page.getSize().width
   const pageHeight = page.getSize().height
-  const block = resolveBlockPlacement(pageWidth, pageHeight, placement)
 
   const fields = [
     { label: 'NOMBRE', value: variables.nombre },
     { label: 'DIRECCIÓN', value: variables.direccion },
-    { label: 'CAUSA', value: variables.causa },
-    { label: 'ROL N°:', value: variables.rol },
+    { label: 'CAUSA:', value: `${variables.causa || '-'} / ROL N°:${variables.rol || '-'}` },
     { label: 'CARATULADO', value: variables.caratulado },
     { label: 'ABOGADO', value: variables.abogado },
   ]
 
-  const labelSize = 8.5
-  const valueSize = 8.5
-  const lineGap = 11
-  const labelWidth = 70
-  let y = block.y
+  const labelSize = 10.2
+  const valueSize = 10.2
+  const lineGap = 11.4
+  const labelWidth = 84
+  const rows = fields.map(field => ({
+    ...field,
+    lines: wrapText(field.value || '-', 360 - labelWidth, font, valueSize),
+  }))
+  const closingText = 'Notifico a ud. lo siguiente:'
+  const lineCount = rows.reduce((count, field) => count + field.lines.length, 0)
+  const ascent = Math.max(
+    font.heightAtSize(valueSize, { descender: false }),
+    fontBold.heightAtSize(labelSize, { descender: false })
+  )
+  const descent = Math.max(
+    font.heightAtSize(valueSize) - font.heightAtSize(valueSize, { descender: false }),
+    fontBold.heightAtSize(labelSize) - fontBold.heightAtSize(labelSize, { descender: false })
+  )
+  const blockWidth = Math.max(
+    font.widthOfTextAtSize(closingText, valueSize),
+    ...rows.flatMap(field => [
+      fontBold.widthOfTextAtSize(field.label, labelSize),
+      ...field.lines.map(line => labelWidth + font.widthOfTextAtSize(line === '__BLANK__' ? '' : line, valueSize)),
+    ])
+  )
+  const blockHeight = ascent + lineCount * lineGap + descent
+  const block = resolveBlockPlacement(pageWidth, pageHeight, placement, blockWidth, blockHeight, ascent)
+  let y = 0
 
   const drawText = (text: string, x: number, textY: number, options: { bold?: boolean } = {}) => {
     page.drawText(text, {
-      x,
-      y: textY,
+      // Rotate the entire local layout, including columns and row advances.
+      x: block.rotate ? block.x - textY : block.x + x,
+      y: block.rotate ? block.y + x : block.y + textY,
       size: options.bold ? labelSize : valueSize,
       font: options.bold ? fontBold : font,
       color: rgb(0, 0, 0),
@@ -92,22 +114,21 @@ export async function buildMembretePdf(
     y -= amount
   }
 
-  for (const field of fields) {
-    const valueX = block.x + labelWidth
-    drawText(field.label, block.x, y, { bold: true })
+  for (const field of rows) {
+    const valueX = labelWidth
+    drawText(field.label, 0, y, { bold: true })
 
-    const lines = wrapText(field.value || '-', block.width - labelWidth, font, valueSize)
+    const lines = field.lines
     lines.forEach((line, index) => {
       if (line !== '__BLANK__') {
         drawText(line, valueX, y - index * lineGap)
       }
     })
 
-    stepDown(Math.max(lineGap, lines.length * lineGap) + 2)
+    stepDown(lines.length * lineGap)
   }
 
-  stepDown(10)
-  drawText('Notifico a ud. lo siguiente:', block.x, y)
+  drawText(closingText, 0, y)
 
   const pdfBytes = await doc.save()
   return Buffer.from(pdfBytes).toString('base64')
