@@ -6,6 +6,7 @@ import { supabase } from '@/lib/supabaseClient'
 
 export default function SetPasswordPage() {
   const token = useRef<string | null>(null)
+  const tokenType = useRef<'invite' | 'recovery'>('invite')
   const verifiedUser = useRef<string | null>(null)
   const [ready, setReady] = useState(false)
   const [password, setPassword] = useState('')
@@ -18,7 +19,10 @@ export default function SetPasswordPage() {
     // Fragments stay out of HTTP requests and server logs. Do not consume the
     // invitation on page load: email scanners must not activate the account.
     const params = new URLSearchParams(window.location.hash.slice(1))
-    if (params.get('token_hash')) token.current = params.get('token_hash')
+    if (params.get('token_hash')) {
+      token.current = params.get('token_hash')
+      tokenType.current = params.get('type') === 'recovery' ? 'recovery' : 'invite'
+    }
     window.history.replaceState(null, '', window.location.pathname)
     setReady(Boolean(token.current))
   }, [])
@@ -32,15 +36,15 @@ export default function SetPasswordPage() {
     setBusy(true)
     try {
       if (!verifiedUser.current) {
-        if (!token.current) throw new Error('Abre el enlace de invitación que recibiste por correo.')
-        const { data, error: verifyError } = await supabase.auth.verifyOtp({ token_hash: token.current, type: 'invite' })
-        if (verifyError || !data.user) throw new Error('El enlace expiró o ya fue utilizado. Solicita una nueva invitación.')
+        if (!token.current) throw new Error('Abre el enlace para crear o restablecer tu contraseña que recibiste por correo.')
+        const { data, error: verifyError } = await supabase.auth.verifyOtp({ token_hash: token.current, type: tokenType.current })
+        if (verifyError || !data.user) throw new Error('El enlace expiró o ya fue utilizado. Solicita un nuevo enlace.')
         verifiedUser.current = data.user.id
         token.current = null
       }
       // A different tab could have changed the shared browser session.
       const { data, error: userError } = await supabase.auth.getUser()
-      if (userError || data.user?.id !== verifiedUser.current) throw new Error('La sesión cambió. Vuelve a abrir tu invitación o solicita una nueva.')
+      if (userError || data.user?.id !== verifiedUser.current) throw new Error('La sesión cambió. Vuelve a abrir tu enlace o solicita una nueva.')
       const { error: updateError } = await supabase.auth.updateUser({ password })
       if (updateError) throw new Error('No se pudo guardar la contraseña. Prueba una contraseña más larga y difícil de adivinar, o intenta nuevamente.')
       setPassword('')
@@ -67,7 +71,7 @@ export default function SetPasswordPage() {
         ) : (
           <>
             <p className="mt-4 text-slate-600">Activa tu acceso a la oficina. Elige una contraseña de al menos 12 caracteres.</p>
-            {!ready ? <p role="status" className="mt-6 text-slate-600">Abre el enlace de invitación que recibiste por correo. Si expiró o ya fue utilizado, solicita uno nuevo.</p> : (
+            {!ready ? <p role="status" className="mt-6 text-slate-600">Abre el enlace para crear o restablecer tu contraseña que recibiste por correo. Si expiró o ya fue utilizado, solicita uno nuevo.</p> : (
               <form onSubmit={submit} className="mt-8 space-y-5">
                 <div>
                   <label htmlFor="new-password" className="field-label">Nueva contraseña</label>
