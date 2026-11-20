@@ -4,6 +4,7 @@ import { FileText, NotebookPen, Printer, Receipt, Scale, TimerReset } from 'luci
 import { type RolWorkspaceData } from '@/lib/hooks/useRolWorkspace'
 import EjecutadoSelector from './EjecutadoSelector'
 import MembreteModal from './MembreteModal'
+import CartaCertificadaModal from './CartaCertificadaModal'
 import { formatDateCL, formatDateTimeCL } from '@/lib/utils/dateInput'
 
 interface RolOverviewProps {
@@ -28,6 +29,7 @@ const cards: Array<{
 
 export default function RolOverview({ rolData, isRolLoading, isRolError, rolId }: RolOverviewProps) {
   const [showMembreteModal, setShowMembreteModal] = useState(false)
+  const [showCartaModal, setShowCartaModal] = useState(false)
   const bancoLabel =
     rolData?.demanda?.caratula
       ? rolData.demanda.caratula
@@ -52,7 +54,7 @@ export default function RolOverview({ rolData, isRolLoading, isRolError, rolId }
             Resumen del ROL
           </h2>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {!isRolLoading && rolData?.demanda && (
             <>
               <button
@@ -63,6 +65,12 @@ export default function RolOverview({ rolData, isRolLoading, isRolError, rolId }
               >
                 <Printer className="h-4 w-4 text-blue-700" />
                 Generar Membrete
+              </button>
+              <button type="button" onClick={() => setShowCartaModal(true)}
+                disabled={!rolData.demanda.ejecutados?.length}
+                className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-800 shadow-sm transition hover:border-blue-200 hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-50">
+                <FileText className="h-4 w-4 text-blue-700" />
+                Carta Certificada
               </button>
               {rolData.rol.estado !== 'terminado' && rolData.rol.estado !== 'archivado' && <Link
                 href={`/roles/${rolId}/editar`}
@@ -181,6 +189,7 @@ export default function RolOverview({ rolData, isRolLoading, isRolError, rolId }
         </div>
       )}
 
+      {showCartaModal && rolData && <CartaCertificadaModal rolId={rolId} rolData={rolData} onClose={() => setShowCartaModal(false)} />}
       {showMembreteModal && rolData && (
         <MembreteModal
           rolId={rolId}
