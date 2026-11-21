@@ -10,6 +10,7 @@ datasource db {
 }
 
 model User {
+  platformGrant                        PlatformGrant?
   requestedSigningJobs                 SigningJob[]
   createdDeviceEnrollments             DeviceEnrollment[]
   id                                   String                            @id @default(cuid())
@@ -398,6 +399,7 @@ enum CustomReportDefinitionStatus {
 }
 
 model ReportJob {
+  diagnosticRequestId  String?
   id                   String                  @id @default(cuid())
   officeId             Int
   type                 ReportJobType
@@ -453,6 +455,66 @@ model ReportJob {
   @@index([retryOfJobId])
   @@index([customDefinitionId])
   @@map("report_jobs")
+}
+
+// Private technical index. No customer-facing read API; RLS denies browser roles.
+model DiagnosticIncident {
+  severity String @default("error")
+  assignedToUserId String?
+  impact String?
+  suspectedCause String?
+  confirmedCause String?
+  nextSteps String?
+  revision Int @default(0)
+  id String @id @default(cuid())
+  fingerprint String @unique
+  status String @default("OPEN")
+  firstSeen DateTime
+  lastSeen DateTime
+  occurrences Int @default(0)
+  resolvedAt DateTime?
+  events DiagnosticEvent[]
+  @@map("diagnostic_incidents")
+  @@index([status, lastSeen])
+}
+
+model PlatformGrant {
+  userId String @id
+  role String @default("OWNER")
+  createdAt DateTime @default(now())
+  revokedAt DateTime?
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "platform_grants_user_fkey")
+  @@map("platform_grants")
+}
+
+model PlatformAudit {
+  id String @id @default(cuid())
+  actorUserId String?
+  action String
+  targetId String
+  details Json
+  createdAt DateTime @default(now())
+  @@index([targetId, createdAt])
+  @@index([actorUserId, createdAt])
+  @@map("platform_audit")
+}
+
+model DiagnosticEvent {
+  reference String @id
+  incidentId String
+  occurredAt DateTime @default(now())
+  officeId Int?
+  userId String?
+  requestId String
+  jobId String?
+  evidence Json
+  incident DiagnosticIncident @relation(fields: [incidentId], references: [id], onDelete: Restrict)
+  @@index([incidentId, occurredAt])
+  @@index([officeId, userId, occurredAt])
+  @@index([requestId])
+  @@index([jobId])
+  @@index([occurredAt])
+  @@map("diagnostic_events")
 }
 
 model ReportJobRun {
