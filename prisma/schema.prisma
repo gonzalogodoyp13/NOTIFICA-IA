@@ -1920,3 +1920,25 @@ model OperationsNotification {
   @@index([status, availableAt])
   @@map("operations_notifications")
 }
+model OperationsRecovery {
+  id String @id @default(cuid())
+  idempotencyKey String @unique
+  intentKey String? @unique
+  action String
+  targetId String
+  officeId Int
+  actorId String
+  reason String
+  correlationId String
+  fingerprint String
+  status String @default("REQUESTED")
+  before Json
+  evidence Json?
+  resultId String?
+  safeCode String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@index([officeId, createdAt])
+  @@index([status, createdAt])
+  @@map("operations_recoveries")
+}
