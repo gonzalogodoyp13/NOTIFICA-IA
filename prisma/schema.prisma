@@ -1845,3 +1845,26 @@ model DocumentDelivery {
   @@index([deviceId, status, availableAt, id])
   @@map("document_deliveries")
 }
+// Fixed service/process keys only; latest state plus bounded historical observations.
+model OperationsPulse {
+  key           String @id
+  status        String
+  source        String
+  checkedAt     DateTime
+  lastSuccessAt DateTime?
+  durationMs    Int?
+  ttlSeconds    Int
+  @@map("operations_pulses")
+}
+
+model OperationsObservation {
+  id         String @id @default(cuid())
+  key        String
+  status     String
+  checkedAt  DateTime @default(now())
+  durationMs Int?
+  @@index([checkedAt])
+  @@index([key, checkedAt])
+  @@map("operations_observations")
+}
+
