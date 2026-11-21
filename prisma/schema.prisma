@@ -1868,3 +1868,55 @@ model OperationsObservation {
   @@map("operations_observations")
 }
 
+model OperationsPolicy {
+  key String @id
+  settings Json
+  revision Int @default(0)
+  updatedAt DateTime @updatedAt
+  @@map("operations_policies")
+}
+model OperationsMaintenance {
+  id String @id @default(cuid())
+  officeId Int?
+  startsAt DateTime
+  endsAt DateTime
+  reason String
+  cancelledAt DateTime?
+  @@index([endsAt, officeId])
+  @@map("operations_maintenance")
+}
+model OperationsAlert {
+  key String @id
+  kind String
+  referenceId String
+  officeId Int?
+  status String
+  severity String
+  firstObservedAt DateTime
+  lastObservedAt DateTime
+  lastNotifiedAt DateTime?
+  generation Int @default(1)
+  level Int @default(0)
+  revision Int @default(0)
+  evidence Json
+  @@index([status, lastObservedAt])
+  @@index([officeId, lastObservedAt])
+  @@map("operations_alerts")
+}
+model OperationsNotification {
+  id String @id @default(cuid())
+  dedupeKey String @unique
+  recipientId String
+  kind String
+  referenceId String?
+  status String @default("QUEUED")
+  content Json
+  attempts Int @default(0)
+  availableAt DateTime @default(now())
+  claimedAt DateTime?
+  createdAt DateTime @default(now())
+  completedAt DateTime?
+  safeCode String?
+  @@index([status, availableAt])
+  @@map("operations_notifications")
+}
