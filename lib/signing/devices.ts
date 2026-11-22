@@ -21,7 +21,7 @@ const signerRoles = ['SIGNER', 'SIGNER_RECEIVER']
 const receiverRoles = ['RECEIVER', 'SIGNER_RECEIVER']
 const sessionMs = 5 * 60_000
 const staleMs = 90_000
-export function createDeviceService(db: PrismaClient = prisma, artifactDependencies: ArtifactDependencies = {}) {
+export function createDeviceService(db: PrismaClient = prisma, artifactDependencies: ArtifactDependencies = {}, recoveryGuard?: (tx: Tx, context: SigningContext) => Promise<void>) {
   async function transaction<T>(officeId: number, fn: (tx: Tx, now: Date) => Promise<T>) {
     return db.$transaction(async tx => fn(tx, await lockSigningOffice(tx, officeId)), { timeout: 30_000, maxWait: 15_000 })
   }
@@ -192,7 +192,7 @@ export function createDeviceService(db: PrismaClient = prisma, artifactDependenc
     async revoke(context: SigningContext, id: string) {
       DeviceId.parse(id)
       return transaction(context.officeId, async (tx, now) => {
-        await admin(tx, context)
+        if (recoveryGuard) await recoveryGuard(tx, context); else await admin(tx, context)
         const device = await tx.signingDevice.findFirst({ where: { id, officeId: context.officeId } })
         if (!device) throw new DeviceError('NOT_FOUND', 404)
         if (!device.revokedAt) {

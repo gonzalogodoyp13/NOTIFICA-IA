@@ -5,6 +5,9 @@ import { z } from 'zod'
 import { ApiError, apiFailure, apiSuccess, handleApiError } from '@/lib/api/server'
 import { withRequestTiming } from '@/lib/api/requestTiming'
 import { runReportAutomationTick, runRequestedReportJob } from '@/lib/reports/jobs'
+import { pruneDiagnostics } from '@/lib/diagnostics/server'
+import { waitUntil } from '@vercel/functions'
+import { observeProcess } from '@/lib/operations/monitoring'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 300
@@ -27,10 +30,12 @@ export async function POST(request: NextRequest) {
   return withRequestTiming(request, 'internal.reports.tick', async () => {
     try {
       if (!authorized(request)) return apiFailure(new ApiError('UNAUTHORIZED', 'Credencial de automatización inválida.', 401))
+      try { waitUntil(pruneDiagnostics().catch(() => undefined)) } catch { /* retention cannot block the scheduler */ }
       const parsed = TickSchema.safeParse(await request.json().catch(() => null))
       if (!parsed.success) return apiFailure(new ApiError('VALIDATION_ERROR', 'Indica un trabajo y su oficina, o maxJobs.', 400))
       if ('jobId' in parsed.data) return apiSuccess(await runRequestedReportJob(parsed.data))
-      return apiSuccess(await runReportAutomationTick({ maxJobs: parsed.data.maxJobs ?? 5 }))
+      const maxJobs = parsed.data.maxJobs ?? 5
+      return apiSuccess(await observeProcess('reports', () => runReportAutomationTick({ maxJobs }), result => !result.outcomes.some(outcome => ['failed', 'retry_scheduled', 'queued'].includes(outcome.toLowerCase())) && result.recovered.failed === 0))
     } catch (error) {
       return handleApiError(error, { operation: 'reports.internal.tick', request })
     }

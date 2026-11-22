@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { maintainSigning, maintenanceAuthorized } from '@/lib/signing/maintenance'
 import { signingLog } from '@/lib/signing/telemetry'
 import { withRequestTiming } from '@/lib/api/requestTiming'
+import { observeProcess } from '@/lib/operations/monitoring'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 300
@@ -15,7 +16,7 @@ export async function GET(req: NextRequest) {
   }
   if (!maintenanceAuthorized(process.env.CRON_SECRET, req.headers.get('authorization'))) return reply({ ok: false }, 401)
   try {
-    const data = await maintainSigning()
+    const data = await observeProcess('signing', () => maintainSigning(), result => result.failures === 0)
     return reply({ ok: data.failures === 0, data }, data.failures ? 503 : 200)
   } catch { return reply({ ok: false, error: 'MAINTENANCE_UNAVAILABLE' }, 503) }
   })

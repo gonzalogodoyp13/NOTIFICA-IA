@@ -43,7 +43,15 @@ for (const file of checkedFiles) {
   if (auditTypeImport.test(source)) failures.push(`${file}: imports the retired AuditLog Prisma type`)
   if (file.startsWith(path.join('app', 'api')) && file.endsWith('route.ts')) {
     const hasHandler = /export async function (?:GET|POST|PUT|PATCH|DELETE)/.test(source)
-    const allowedWithoutUser = file.includes(path.join('api', 'internal'))
+    const diagnosticIntake = file === path.join('app', 'api', 'diagnostics', 'browser', 'route.ts')
+      && source.includes('requireSameOrigin(request)') && source.includes('boundRequestBody(request, 4096)')
+      && source.includes('resolveAuthenticatedUser()') && source.includes('quota.count > 120')
+    const operationsRoute = file === path.join('app', 'api', 'operaciones', '[[...path]]', 'route.ts')
+      && source.includes('requirePlatformOwner(') && source.includes('withRequestTiming(')
+    const publicHealth = file === path.join('app', 'api', 'health', 'route.ts') && source.includes('publicHealth()') && source.includes('withRequestTiming(')
+    const ownerVerification=file===path.join('app','api','auth','owner-verification','route.ts')&&source.includes('resolveProvisionedUser()')&&source.includes('ownerEmailIdentity(user,grant)')&&source.includes('requireSameOrigin(request)')&&source.includes('withRequestTiming(')
+    const passwordRecovery=file===path.join('app','api','auth','forgot-password','route.ts')&&source.includes('allowPasswordRecovery(')&&source.includes('requireSameOrigin(request)')&&source.includes('boundRequestBody(request)')&&source.includes('withRequestTiming(')
+    const allowedWithoutUser = diagnosticIntake || operationsRoute || publicHealth || ownerVerification || passwordRecovery || file.includes(path.join('api', 'internal'))
       || ['update-manifest', 'update-download'].some(name => file === path.join('app', 'api', 'signing', 'device', name, 'route.ts') && source.includes('withRequestTiming'))
       || file === path.join('app', 'api', 'ping', 'route.ts')
       || (file === path.join('app', 'api', 'signing', 'device', '[action]', 'route.ts')
@@ -52,7 +60,7 @@ for (const file of checkedFiles) {
     if (hasHandler && !allowedWithoutUser && !source.includes('withApiUser')) {
       failures.push(`${file}: protected route does not use withApiUser`)
     }
-    if (/from ['"]@\/lib\/auth-server['"]/.test(source)) {
+    if (!diagnosticIntake && !operationsRoute && !ownerVerification && /from ['"]@\/lib\/auth-server['"]/.test(source)) {
       failures.push(`${file}: protected route imports an authentication resolver directly`)
     }
   }

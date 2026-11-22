@@ -1,3 +1,4 @@
+import { reportUnexpected } from '@/lib/diagnostics/server'
 import { workflowTransaction } from '@/lib/signing/transaction'
 import 'server-only'
 
@@ -564,6 +565,7 @@ export async function generateReceipt(params: {
       })
     }
   } catch (error) {
+    await reportUnexpected(error, { module: 'recibos', operation: 'receipt.artifact', officeId: params.context.officeId, userId: params.context.id, recordType: 'ReceiptGenerationReservation', recordId: reservation.id })
     await markFailed(reservation, params.context, 'RECEIPT_ARTIFACT_FAILURE')
     throw new ApiError(
       'RECEIPT_GENERATION_FAILED',

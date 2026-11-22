@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 
 import { withRequestTiming } from '@/lib/api/requestTiming'
+import { observeProcess } from '@/lib/operations/monitoring'
 import { syncAllConfiguredOfficeReplies } from '@/lib/recibos/reply-sync'
 import { isReplySyncAuthorized } from '@/lib/recibos/reply-tracking-core'
 
@@ -15,7 +16,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false, error: { code: 'UNAUTHORIZED', message: 'No autorizado' } }, { status: 401 })
     }
     try {
-      return NextResponse.json({ ok: true, data: await syncAllConfiguredOfficeReplies(req.headers.get('x-request-id') ?? undefined) })
+      return NextResponse.json({ ok: true, data: await observeProcess('replies', () => syncAllConfiguredOfficeReplies(req.headers.get('x-request-id') ?? undefined), results => results.every(result => result.result.totals.failedProviders === 0)) })
     } catch {
       return NextResponse.json({ ok: false, error: { code: 'INTERNAL_ERROR', message: 'No se pudo sincronizar las respuestas' } }, { status: 500 })
     }

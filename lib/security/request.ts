@@ -20,10 +20,10 @@ export function requireSameOrigin(request: NextRequest) {
     throw new RequestSecurityError('FORBIDDEN', 403)
 }
 
-export async function boundRequestBody(request: NextRequest) {
+export async function boundRequestBody(request: NextRequest, maximumBytes?: number) {
   if (['GET', 'HEAD', 'OPTIONS'].includes(request.method) || !request.body) return
   const multipart = request.nextUrl.pathname === '/api/ajustes/pdf' && request.method === 'PUT'
-  const maximum = multipart ? 16 * 1024 * 1024 : 1024 * 1024
+  const maximum = maximumBytes ?? (multipart ? 16 * 1024 * 1024 : 1024 * 1024)
   const contentType = request.headers.get('content-type')?.split(';')[0].trim().toLowerCase()
   if (contentType !== 'application/json' && !(multipart && contentType === 'multipart/form-data'))
     throw new RequestSecurityError('UNSUPPORTED_MEDIA_TYPE', 415)

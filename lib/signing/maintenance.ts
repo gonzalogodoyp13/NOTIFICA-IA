@@ -5,6 +5,7 @@ import { prisma } from '../prisma'
 import { createSigningService } from './service'
 import { createArtifactService, type ArtifactDependencies } from './artifacts'
 import { recordCriticalEvent } from '../audit/activityEvent'
+import { reportUnexpected } from '../diagnostics/server'
 
 export function maintenanceAuthorized(expected: string | undefined, authorization: string | null) {
   if (!expected || expected.length < 32 || !authorization) return false
@@ -31,7 +32,7 @@ export async function maintainSigning(db: PrismaClient = prisma, dependencies: A
       await recordCriticalEvent(db, { officeId: office.officeId, actorType: 'SYSTEM', source: 'INTERNAL' }, {
         eventType: 'signing.maintenance_completed', module: 'documents', recordType: 'Office', recordId: String(office.officeId), metadata: { recovered: r, cleaned: c } })
       recovered += r; cleaned += c
-    } catch { failures++ }
+    } catch (error) { failures++; await reportUnexpected(error, { module: 'signing', operation: 'signing.maintenance', source: 'background', officeId: office.officeId }) }
   }
   // Short-lived authentication artifacts only. Signing evidence and canonical audit
   // are never purged by technical retention, including failed attempts.

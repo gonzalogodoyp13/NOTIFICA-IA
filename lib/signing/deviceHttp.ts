@@ -7,6 +7,7 @@ import { SigningError } from './core'
 import { MAX_SIGNING_PDF } from './pdfValidator'
 import { randomUUID } from 'node:crypto'
 import { signingLog, signingTrace } from './telemetry'
+import { reportUnexpected } from '../diagnostics/server'
 
 export function deviceResponse(data: unknown, status = 200) {
   return NextResponse.json({ ok: status < 400, ...(status < 400 ? { data } : { error: { code: data } }) },
@@ -138,6 +139,10 @@ export function createDeviceHandler(service = createDeviceService()) {
       return respond(data)
     } catch (error) {
       const response = deviceFailure(error)
+      if (response.status >= 500) {
+        const reference = await reportUnexpected(error, { module: 'signing', operation: `device.${action}`, requestId: correlationId })
+        response.headers.set('X-Support-Reference', reference)
+      }
       response.headers.set('X-Signing-Correlation-Id', correlationId)
       signingLog('device_request', correlationId, response.status, error instanceof SigningError ? error.code : 'UNKNOWN')
       return response

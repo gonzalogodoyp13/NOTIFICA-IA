@@ -1,3 +1,4 @@
+import { reportUnexpected } from '@/lib/diagnostics/server'
 import 'server-only'
 
 import { Buffer } from 'buffer'
@@ -63,6 +64,7 @@ export async function resendDispatch(params: { officeId: number; userId: string;
     await recordProviderSuccess({ officeId: params.officeId, provider: adapter.provider, mailboxAddress: adapter.fromAccount, kind: 'send' })
     return { batchId: batch.id, recipientId: recipient.id, unavailableCount, provider: adapter.provider }
   } catch (error) {
+    await reportUnexpected(error, { module: 'emails', operation: 'receipt.resend', officeId: params.officeId, userId: params.userId, requestId: params.requestId, recordType: 'RecibosDispatchRecipient', recordId: recipient.id })
     const message = sanitizeDispatchError(error)
     await prisma.$transaction([
       prisma.recibosDispatchRecipient.update({ where: { id: recipient.id }, data: { status: 'failed', attemptCount: 3, errorMessage: message, completedAt: new Date() } }),

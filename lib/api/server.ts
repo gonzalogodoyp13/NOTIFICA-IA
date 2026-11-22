@@ -13,11 +13,14 @@ import { debugLog, toSafeErrorMessage } from '@/lib/debugLog'
 import { createServerSupabaseClient } from '@/lib/supabaseServer'
 import { boundRequestBody, requireSameOrigin, RequestSecurityError } from '@/lib/security/request'
 import { enforceRequestQuota } from '@/lib/security/rateLimit'
+import { reportUnexpected } from '@/lib/diagnostics/server'
+import { withDiagnosticContext } from '@/lib/diagnostics/context'
 
 export type ApiErrorCode =
   | 'UNAUTHORIZED'
   | 'USER_NOT_PROVISIONED'
   | 'ACCOUNT_DISABLED'
+  | 'EMAIL_VERIFICATION_REQUIRED'
   | 'FORBIDDEN'
   | 'SERVICE_UNAVAILABLE'
   | 'VALIDATION_ERROR'
@@ -154,11 +157,17 @@ export async function handleApiError(
     return response
   }
   const known = error instanceof ApiError ? error : translateAuthError(error) ?? translatePrismaError(error)
+  const supportReference = !known || known.status >= 500 ? await reportUnexpected(error, {
+    module: moduleForOperation(context.operation), operation: context.operation,
+    requestId: context.request ? requestIdFor(context.request) : undefined, userId: context.user?.id, officeId: context.user?.officeId,
+    code: known?.code,
+  }) : undefined
   if (known) {
     if (context.user && known.code !== 'UNAUTHORIZED' && !requestEventWasRecorded()) {
       await recordActivityEvent({
         userId: context.user.id,
         officeId: context.user.officeId,
+        requestId: context.request ? requestIdFor(context.request) : undefined,
         eventType: 'api.failure',
         module: moduleForOperation(context.operation),
         result: known.status === 403 ? 'denied' : 'failure',
@@ -171,7 +180,7 @@ export async function handleApiError(
         },
       })
     }
-    return apiFailure(known)
+    return supportReference ? apiFailure(new ApiError(known.code, `No se pudo completar la operación. Referencia: ${supportReference}`, known.status, undefined, { supportReference })) : apiFailure(known)
   }
 
   debugLog(`[API] ${context.operation} failed`, {
@@ -182,7 +191,7 @@ export async function handleApiError(
     officeId: context.user?.officeId,
     operation: context.operation,
   })
-  return apiFailure(new ApiError('INTERNAL_ERROR', 'Ocurrió un error inesperado', 500))
+  return apiFailure(new ApiError('INTERNAL_ERROR', `Ocurrió un error inesperado. Referencia: ${supportReference}`, 500, undefined, { supportReference }))
 }
 
 export async function requireApiUser(request?: NextRequest): Promise<RequestContext> {
@@ -210,10 +219,17 @@ export async function withApiUser(
     await enforceRequestQuota(request.nextUrl.pathname, request.method, user)
     await boundRequestBody(request)
     const response = await runWithAuditRequestState(async () => {
-      let result = await timing.measureHandler(() => handler(user!))
+      let result = await withDiagnosticContext({ module: moduleForOperation(operation), operation, requestId, userId: user!.id, officeId: user!.officeId }, () => timing.measureHandler(() => handler(user!)))
       // Legacy handlers may serialize raw database errors. Fail closed at the
       // shared boundary as well as sanitizing the individual catch blocks.
-      if (result.status >= 500) result = apiFailure(new ApiError('INTERNAL_ERROR', 'No se pudo completar la operación.', result.status))
+      if (result.status >= 500) {
+        const body = await result.clone().json().catch(() => null)
+        const existingReference = body?.error?.details?.supportReference
+        const reference = typeof existingReference === 'string' && /^[a-f0-9-]{36}$/.test(existingReference)
+          ? existingReference
+          : await reportUnexpected(undefined, { module: moduleForOperation(operation), operation, requestId, userId: user!.id, officeId: user!.officeId, code: 'HANDLER_5XX' })
+        result = apiFailure(new ApiError('INTERNAL_ERROR', `No se pudo completar la operación. Referencia: ${reference}`, result.status, undefined, { supportReference: reference }))
+      }
       const isReadLikeOperation = /(?:^|[. ])(?:preview|lookup)(?:$|[. ])/i.test(operation)
       const isMutation = !['GET', 'HEAD', 'OPTIONS'].includes(request.method)
       if (!requestEventWasRecorded() && ((!isReadLikeOperation && isMutation) || result.status === 403)) {

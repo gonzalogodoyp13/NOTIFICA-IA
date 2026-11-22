@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 
 import { processActivityOutbox } from '@/lib/audit/outbox'
 import { withRequestTiming } from '@/lib/api/requestTiming'
+import { observeProcess } from '@/lib/operations/monitoring'
 import { bearerOrHeaderSecret, isSecretAuthorized } from '@/lib/security/secret'
 
 export const dynamic = 'force-dynamic'
@@ -14,7 +15,7 @@ export async function POST(request: NextRequest) {
     }
 
     try {
-      const result = await processActivityOutbox(50)
+      const result = await observeProcess('activity', () => processActivityOutbox(50), result => result.claimed === result.processed)
       return NextResponse.json({ ok: true, data: result })
     } catch {
       return NextResponse.json(

@@ -11,8 +11,10 @@ import {
 } from '@prisma/client'
 
 import { ApiError } from '@/lib/api/server'
-import { recordBestEffortEvent } from '@/lib/audit/activityEvent'
+import { recordBestEffortEvent, recordCriticalEvent } from '@/lib/audit/activityEvent'
 import { prisma } from '@/lib/prisma'
+import { diagnosticContext, withDiagnosticContext } from '@/lib/diagnostics/context'
+import { reportUnexpected } from '@/lib/diagnostics/server'
 import { createSystemMailAdapter } from '@/lib/email/system-mailer'
 import { asJsonObject } from '@/lib/utils/json'
 import {
@@ -92,18 +94,21 @@ export async function enqueueReportJob(input: {
   scheduledFor?: Date | null
   availableAt?: Date
   payload?: JobPayload
-}) {
+}, execution?: { db: Prisma.TransactionClient; deferred: true }) {
+  const store = execution?.db ?? prisma
+  const event: typeof recordBestEffortEvent = execution ? (context, input) => recordCriticalEvent(execution.db, context, input) : recordBestEffortEvent
   const key = validateReportIdempotencyKey(input.idempotencyKey)
-  const existing = await prisma.reportJob.findUnique({ where: { officeId_idempotencyKey: { officeId: input.officeId, idempotencyKey: key } } })
+  const existing = await store.reportJob.findUnique({ where: { officeId_idempotencyKey: { officeId: input.officeId, idempotencyKey: key } } })
   if (existing) {
     if (existing.type !== input.type || existing.reportKind !== input.reportKind || existing.requestedPeriodStart.getTime() !== input.periodStart.getTime() || existing.requestedPeriodEnd.getTime() !== input.periodEnd.getTime()) {
       throw new ApiError('IDEMPOTENCY_KEY_REUSED', 'La clave de idempotencia ya fue usada para otro trabajo.', 409)
     }
-    if (input.origin === 'MANUAL') startManualReportJob(existing)
+    if (input.origin === 'MANUAL' && !execution) startManualReportJob(existing)
     return existing
   }
   try {
-    const job = await prisma.reportJob.create({ data: {
+    const job = await store.reportJob.create({ data: {
+      diagnosticRequestId: diagnosticContext()?.requestId ?? crypto.randomUUID(),
       officeId: input.officeId,
       type: input.type === 'GENERATE' ? ReportJobType.GENERATE : ReportJobType.DELIVER,
       status: ReportJobStatus.QUEUED,
@@ -124,16 +129,16 @@ export async function enqueueReportJob(input: {
       completedUnits: 0,
       totalUnits: 1,
     } })
-    await recordBestEffortEvent({ id: input.requestedByUserId ?? undefined, officeId: input.officeId, actorType: input.requestedByUserId ? 'USER' : 'SYSTEM', source: input.requestedByUserId ? 'WEB' : 'SYSTEM' }, {
+    await event({ id: input.requestedByUserId ?? undefined, officeId: input.officeId, actorType: input.requestedByUserId ? 'USER' : 'SYSTEM', source: input.requestedByUserId ? 'WEB' : 'SYSTEM' }, {
       eventType: 'report.job.queued', module: 'reports', result: 'success', recordType: 'ReportJob', recordId: job.id,
       description: 'Trabajo durable de reportes encolado.', metadata: { type: job.type, origin: job.origin, reportKind: job.reportKind, period: job.requestedPeriodLabel },
     })
-    if (input.origin === 'MANUAL') startManualReportJob(job)
+    if (input.origin === 'MANUAL' && !execution) startManualReportJob(job)
     return job
   } catch (error) {
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
-      const existing = await prisma.reportJob.findUniqueOrThrow({ where: { officeId_idempotencyKey: { officeId: input.officeId, idempotencyKey: key } } })
-      if (input.origin === 'MANUAL') startManualReportJob(existing)
+      const existing = await store.reportJob.findUniqueOrThrow({ where: { officeId_idempotencyKey: { officeId: input.officeId, idempotencyKey: key } } })
+      if (input.origin === 'MANUAL' && !execution) startManualReportJob(existing)
       return existing
     }
     throw error
@@ -199,25 +204,39 @@ export async function getReportJob(officeId: number, jobId: string) {
   return job ? serializeReportJob(job) : null
 }
 
-export async function cancelReportJob(input: { officeId: number; jobId: string; actorUserId: string; requestId?: string }) {
-  const job = await prisma.reportJob.findFirst({ where: { id: input.jobId, officeId: input.officeId } })
+export async function cancelReportJob(input: { officeId: number; jobId: string; actorUserId: string; requestId?: string; queuedOnly?: boolean }, db?: Prisma.TransactionClient) {
+  const store = db ?? prisma
+  const job = await store.reportJob.findFirst({ where: { id: input.jobId, officeId: input.officeId } })
   if (!job) throw new ApiError('NOT_FOUND', 'El trabajo no existe.', 404)
+  if (input.queuedOnly && (job.status !== 'QUEUED' || job.attemptCount !== 0)) throw new ApiError('CONFLICT', 'El trabajo ya no está en cola sin ejecutar.', 409)
   if (TERMINAL_JOB_STATUSES.includes(job.status)) return job
   const now = new Date()
-  const updated = await prisma.reportJob.update({ where: { id: job.id }, data: job.status === 'QUEUED'
+  const changed = await store.reportJob.updateMany({ where: { id: job.id, officeId: input.officeId, status: job.status, attemptCount: job.attemptCount }, data: job.status === 'QUEUED'
     ? { status: 'CANCELLED', progressPhase: 'cancelled', cancelRequestedAt: now, completedAt: now, resultCode: 'CANCELLED' }
-    : { status: 'CANCEL_REQUESTED', progressPhase: 'cancelling', cancelRequestedAt: now }
-  })
-  await recordBestEffortEvent({ id: input.actorUserId, officeId: input.officeId, requestId: input.requestId }, { eventType: 'report.job.cancel_requested', module: 'reports', result: 'success', recordType: 'ReportJob', recordId: job.id, description: 'Cancelación de trabajo solicitada.', metadata: { previousStatus: job.status, status: updated.status } })
+    : { status: 'CANCEL_REQUESTED', progressPhase: 'cancelling', cancelRequestedAt: now } })
+  if (!changed.count) throw new ApiError('CONFLICT', 'El estado cambió durante la cancelación.', 409)
+  const updated = await store.reportJob.findUniqueOrThrow({ where: { id: job.id } })
+  const event: typeof recordBestEffortEvent = db ? (context, input) => recordCriticalEvent(db, context, input) : recordBestEffortEvent
+  await event({ id: input.actorUserId, officeId: input.officeId, requestId: input.requestId }, { eventType: 'report.job.cancel_requested', module: 'reports', result: 'success', recordType: 'ReportJob', recordId: job.id, description: 'Cancelación de trabajo solicitada.', metadata: { previousStatus: job.status, status: updated.status } })
   return updated
 }
 
-export async function retryReportJob(input: { officeId: number; jobId: string; actorUserId: string; idempotencyKey: string }) {
-  const job = await prisma.reportJob.findFirst({ where: { id: input.jobId, officeId: input.officeId } })
+export async function retryReportJob(input: { officeId: number; jobId: string; actorUserId: string; idempotencyKey: string }, execution?: { db: Prisma.TransactionClient; deferred: true }): Promise<ReportJob> {
+  if (!execution) {
+    const result = await prisma.$transaction(tx => retryReportJob(input, { db: tx, deferred: true }), { timeout: 30000 })
+    startManualReportJob(result)
+    return result
+  }
+  await execution.db.$queryRaw`SELECT id FROM report_jobs WHERE id = ${input.jobId} AND "officeId" = ${input.officeId} FOR UPDATE`
+  const store = execution?.db ?? prisma
+  const event: typeof recordBestEffortEvent = execution ? (context, input) => recordCriticalEvent(execution.db, context, input) : recordBestEffortEvent
+  const job = await store.reportJob.findFirst({ where: { id: input.jobId, officeId: input.officeId } })
   if (!job) throw new ApiError('NOT_FOUND', 'El trabajo no existe.', 404)
   if (!([ReportJobStatus.FAILED, ReportJobStatus.CANCELLED] as ReportJobStatus[]).includes(job.status)) throw new ApiError('CONFLICT', 'Solo se pueden reintentar trabajos fallidos o cancelados.', 409)
-  const retry = await enqueueReportJob({ officeId: job.officeId, type: job.type, origin: 'MANUAL', reportKind: job.reportKind as 'daily' | 'monthly' | 'custom', customDefinitionId: job.customDefinitionId, retryOfJobId: job.id, requestedByUserId: input.actorUserId, idempotencyKey: input.idempotencyKey, periodStart: job.requestedPeriodStart, periodEnd: job.requestedPeriodEnd, periodLabel: job.requestedPeriodLabel, payload: jobPayload(job) })
-  await recordBestEffortEvent({ id: input.actorUserId, officeId: input.officeId }, { eventType: 'report.job.retried', module: 'reports', result: 'success', recordType: 'ReportJob', recordId: retry.id, description: 'Reintento manual de trabajo encolado.', metadata: { retryOfJobId: job.id } })
+  const existingChild = await store.reportJob.findFirst({ where: { retryOfJobId: job.id, officeId: input.officeId }, orderBy: { createdAt: 'asc' } })
+  if (existingChild) return existingChild
+  const retry = await enqueueReportJob({ officeId: job.officeId, type: job.type, origin: 'MANUAL', reportKind: job.reportKind as 'daily' | 'monthly' | 'custom', customDefinitionId: job.customDefinitionId, retryOfJobId: job.id, requestedByUserId: input.actorUserId, idempotencyKey: input.idempotencyKey, periodStart: job.requestedPeriodStart, periodEnd: job.requestedPeriodEnd, periodLabel: job.requestedPeriodLabel, payload: jobPayload(job) }, execution)
+  await event({ id: input.actorUserId, officeId: input.officeId }, { eventType: 'report.job.retried', module: 'reports', result: 'success', recordType: 'ReportJob', recordId: retry.id, description: 'Reintento manual de trabajo encolado.', metadata: { retryOfJobId: job.id } })
   return retry
 }
 
@@ -310,6 +329,10 @@ async function updateScheduleForTerminal(job: ReportJob, success: boolean, safeE
 }
 
 async function processClaimedJob(job: ReportJob) {
+  return withDiagnosticContext({ module: 'reports', operation: `report.${job.type.toLowerCase()}`, source: 'background', requestId: job.diagnosticRequestId ?? job.id, officeId: job.officeId, userId: job.requestedByUserId, jobId: job.id }, () => processClaimedJobInContext(job))
+}
+
+async function processClaimedJobInContext(job: ReportJob) {
   try {
     const result = await executeClaimedJob(job)
     if (await cancellationRequested(job.id)) {
@@ -331,6 +354,7 @@ async function processClaimedJob(job: ReportJob) {
   } catch (error) {
     const safeError = safeReportError(error)
     const cancelled = await cancellationRequested(job.id)
+    if (!cancelled && !(error instanceof ApiError && error.status < 500)) await reportUnexpected(error, { module: 'reports', operation: `report.${job.type.toLowerCase()}` })
     const retryable = !cancelled && (error instanceof TransientDeliveryError || isTransientReportError(error)) && job.attemptCount < job.maxAttempts
     const now = new Date()
     if (retryable) {
@@ -414,7 +438,8 @@ export async function runRequestedReportJob(input: { officeId: number; jobId: st
 
 function startManualReportJob(job: ReportJob) {
   if (job.status !== 'QUEUED') return
-  waitUntil(runRequestedReportJob({ officeId: job.officeId, jobId: job.id }).catch(() => {
+  waitUntil(runRequestedReportJob({ officeId: job.officeId, jobId: job.id }).catch(async error => {
+    await reportUnexpected(error, { module: 'reports', operation: 'report.worker', source: 'background', jobId: job.id, officeId: job.officeId, userId: job.requestedByUserId, requestId: job.diagnosticRequestId ?? job.id })
     // Detailed execution failures are persisted by processClaimedJob. Do not log payloads.
     console.error('Report background worker failed', { jobId: job.id })
   }))

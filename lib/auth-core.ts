@@ -12,6 +12,7 @@ export type AuthFailureCode =
   | 'UNAUTHORIZED'
   | 'USER_NOT_PROVISIONED'
   | 'ACCOUNT_DISABLED'
+  | 'EMAIL_VERIFICATION_REQUIRED'
   | 'SERVICE_UNAVAILABLE'
 
 export class AuthResolutionError extends Error {

@@ -1,3 +1,4 @@
+import { reportUnexpected } from '@/lib/diagnostics/server'
 import 'server-only'
 
 import {
@@ -212,6 +213,7 @@ export async function executeReportDelivery(input: {
         },
       })
     } catch (error) {
+      await reportUnexpected(error, { module: 'reports', operation: 'report.delivery.prepare', officeId: input.officeId, userId: input.userId, recordType: 'ReportDeliveryAttempt', recordId: created.attempt.id })
       preparationError = sanitizeDeliveryError(error)
       await prisma.reportDeliveryAttemptRecipient.updateMany({
         where: {
@@ -271,6 +273,7 @@ export async function executeReportDelivery(input: {
           },
         })
       } catch (error) {
+        await reportUnexpected(error, { module: 'emails', operation: 'report.delivery.send', officeId: input.officeId, userId: input.userId, recordType: 'ReportDeliveryAttempt', recordId: created.attempt.id })
         await prisma.reportDeliveryAttemptRecipient.update({
           where: { id: recipient.id },
           data: {

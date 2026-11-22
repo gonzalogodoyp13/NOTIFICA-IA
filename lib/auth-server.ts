@@ -6,6 +6,7 @@ import { redirect } from 'next/navigation'
 import { AuthResolutionError, resolveCanonicalUser, type AuthFailureCode, type AuthUser } from './auth-core'
 import { prisma } from './prisma'
 import { createServerSupabaseClient } from './supabaseServer'
+import { OwnerEmailError, requireOwnerEmail } from './auth/ownerEmail'
 
 export { AuthResolutionError, type AuthFailureCode, type AuthUser }
 
@@ -38,7 +39,15 @@ export async function resolveProvisionedUser(): Promise<AuthUser> {
 }
 
 export async function resolveAuthenticatedUser(): Promise<AuthUser> {
-  return resolveProvisionedUser()
+  const user=await resolveProvisionedUser()
+  const grant=await prisma.platformGrant.findUnique({where:{userId:user.id}})
+  if(grant?.role==='OWNER'&&!grant.revokedAt&&grant.verificationMethod==='EMAIL') {
+    try {await requireOwnerEmail(user,false,grant)} catch(error) {
+      if(error instanceof OwnerEmailError)throw new AuthResolutionError('EMAIL_VERIFICATION_REQUIRED','Verifica el código enviado a tu correo.',403)
+      throw error
+    }
+  }
+  return user
 }
 
 export const getCachedAuthenticatedUser = cache(resolveAuthenticatedUser)

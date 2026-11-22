@@ -3,6 +3,7 @@ import { ipAddress } from '@vercel/functions'
 import { z } from 'zod'
 import { allowPasswordRecovery, passwordRecoverySender } from '@/lib/auth/passwordRecovery'
 import { boundRequestBody, requireSameOrigin, RequestSecurityError } from '@/lib/security/request'
+import { withRequestTiming } from '@/lib/api/requestTiming'
 
 export const runtime = 'nodejs'
 export const maxDuration = 60
@@ -10,6 +11,7 @@ const inputSchema = z.object({ email: z.string().trim().max(254).email().transfo
 const headers = { 'Cache-Control': 'private, no-store' }
 
 export async function POST(request: NextRequest) {
+  return withRequestTiming(request,'auth.password-recovery',async()=>{
   try {
     requireSameOrigin(request)
     await boundRequestBody(request)
@@ -34,4 +36,5 @@ export async function POST(request: NextRequest) {
     console.error('PASSWORD_RECOVERY_UNAVAILABLE')
     return NextResponse.json({ error: 'No pudimos procesar la solicitud. Intenta nuevamente en unos minutos.' }, { status: 503, headers })
   }
+  })
 }

@@ -1,3 +1,4 @@
+import { reportUnexpected } from '@/lib/diagnostics/server'
 import 'server-only'
 
 import { Prisma } from '@prisma/client'
@@ -196,6 +197,7 @@ async function syncProvider(officeId: number, adapter: ReplyProviderAdapter, can
     return result
   } catch (error) {
     const message = sanitizeDispatchError(error)
+    await reportUnexpected(error, { module: 'emails', operation: 'replies.sync', source: 'background', officeId, jobId: checkpoint.id })
     await prisma.recibosReplySyncCheckpoint.update({ where: { id: checkpoint.id }, data: { lockedAt: null, lastError: message } })
     return { ...result, error: message }
   }

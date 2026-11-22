@@ -14,5 +14,11 @@ const nextConfig = {
   },
 }
 
-module.exports = nextConfig
+module.exports = require('@sentry/nextjs/config').withSentryConfig(nextConfig, {
+  org: process.env.SENTRY_ORG,
+  project: process.env.SENTRY_PROJECT,
+  authToken: process.env.SENTRY_AUTH_TOKEN,
+  silent: true,
+  sourcemaps: { disable: !process.env.SENTRY_AUTH_TOKEN },
+})
 

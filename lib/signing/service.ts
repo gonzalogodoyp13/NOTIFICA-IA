@@ -1,3 +1,4 @@
+import { reportUnexpected } from '../diagnostics/server'
 import 'server-only'
 
 import { createHash, randomUUID } from 'node:crypto'
@@ -62,7 +63,8 @@ export async function createSigningJobInTransaction(tx: Tx, context: SigningCont
  * it creates and promotes its version atomically; PDF validation stays outside the transaction.
  */
 export function createSigningService(db: PrismaClient = prisma,
-  deviceGuard?: (tx: Tx, officeId: number, deviceId: string, now: Date) => Promise<void>) {
+  deviceGuard?: (tx: Tx, officeId: number, deviceId: string, now: Date) => Promise<void>,
+  recoveryGuard?: (tx: Tx, context: SigningContext, action: 'signing.retry' | 'signing.cancel') => Promise<void>) {
   async function transaction<T>(officeId: number, run: (tx: Tx, now: Date) => Promise<T>) {
     z.number().int().positive().parse(officeId)
     return db.$transaction(async tx => {
@@ -240,7 +242,7 @@ export function createSigningService(db: PrismaClient = prisma,
     async fail(lease: SigningLease, error: unknown) {
       LeaseSchema.parse(lease)
       const safe = safeSigningError(error)
-      return transaction(lease.officeId, async (tx, now) => {
+      const jobId = await transaction(lease.officeId, async (tx, now) => {
         const item = await ownedLease(tx, lease, now)
         const tokenMissing = safe.code === 'TOKEN_MISSING'
         if (tokenMissing) {
@@ -259,7 +261,12 @@ export function createSigningService(db: PrismaClient = prisma,
         await audit(tx, lease.officeId, 'signing.failed', { jobId: item.jobId, itemId: item.id, deviceId: lease.deviceId, errorCode: safe.code, status })
         if (status === 'RETRY_PENDING') await audit(tx, lease.officeId, 'signing.retry_scheduled', { jobId: item.jobId, itemId: item.id, deviceId: lease.deviceId, attemptNumber: item.attemptCount, errorCode: safe.code, status })
         await aggregate(tx, lease.officeId, item.jobId, now)
+        return item.jobId
       })
+      if (['UNKNOWN', 'STORAGE', 'VALIDATOR_UNAVAILABLE', 'TSA_UNAVAILABLE', 'REVOCATION_UNAVAILABLE'].includes(safe.code)) {
+        await reportUnexpected(undefined, { module: 'signing', operation: 'signing.attempt', source: 'background',
+          code: safe.code, officeId: lease.officeId, jobId, recordType: 'SigningItem', recordId: lease.itemId, requestId: signingTrace.getStore() })
+      }
     },
 
     async complete(lease: SigningLease, raw: ValidatedSigningEvidence,
@@ -318,7 +325,7 @@ export function createSigningService(db: PrismaClient = prisma,
     async retry(context: SigningContext, itemId: string, review?: { attemptCount: number; reviewed: boolean }) {
       SigningContextSchema.parse(context); Identifier.parse(itemId)
       return transaction(context.officeId, async (tx, now) => {
-        await user(tx, context, true)
+        if (recoveryGuard) await recoveryGuard(tx, context, 'signing.retry'); else await user(tx, context, true)
         const item = await tx.signingItem.findFirst({ where: { id: itemId, officeId: context.officeId } })
         if (!item) throw new SigningError('NOT_FOUND')
         if (review && (review.attemptCount !== item.attemptCount || !review.reviewed)) throw new SigningError('RECOVERY_REVIEW_REQUIRED')
@@ -343,7 +350,7 @@ export function createSigningService(db: PrismaClient = prisma,
     async cancel(context: SigningContext, itemId: string, guard?: { attemptCount: number; beforeSigningOnly: boolean }) {
       SigningContextSchema.parse(context); Identifier.parse(itemId)
       return transaction(context.officeId, async (tx, now) => {
-        await user(tx, context, true)
+        if (recoveryGuard) await recoveryGuard(tx, context, 'signing.cancel'); else await user(tx, context, true)
         const item = await tx.signingItem.findFirst({ where: { id: itemId, officeId: context.officeId } })
         if (!item) throw new SigningError('NOT_FOUND')
         if (item.status === 'CANCELLED') return

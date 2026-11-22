@@ -6,14 +6,15 @@ import { PrismaClient } from '@prisma/client'
  * schema. Independent connections can commit and race without adding synthetic
  * signatures or append-only audit history to any application office.
  */
-export async function createSigningTestDatabase() {
+export async function createSigningTestDatabase(extraTables: string[] = []) {
+  if (extraTables.some(table => !/^[a-zA-Z0-9_]+$/.test(table))) throw new Error('Invalid test table')
   loadEnvConfig(process.cwd())
   const url = new URL(process.env.DIRECT_URL ?? process.env.DATABASE_URL!)
   const admin = new PrismaClient({ datasourceUrl: url.toString() })
   const schema = `signing_test_${randomUUID().replaceAll('-', '')}`
   const tables = ['offices', 'users', 'Tribunal', 'RolCausa', 'DiligenciaTipo', 'Diligencia', 'notificaciones', 'Documento', 'DocumentoVersion',
     'signing_devices', 'device_enrollments', 'device_challenges', 'device_sessions', 'device_rate_limits', 'signing_jobs', 'signing_items', 'signing_attempts',
-    'document_signatures', 'document_deliveries', 'signing_artifacts', 'activity_events']
+    'document_signatures', 'document_deliveries', 'signing_artifacts', 'activity_events', ...extraTables]
   const functions = ['derive_document_office', 'check_signing_artifact', 'protect_signing_artifact', 'protect_signing_upload', 'prevent_activity_history_mutation']
   let created = false
   try {

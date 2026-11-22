@@ -1,3 +1,4 @@
+import { reportUnexpected } from '@/lib/diagnostics/server'
 import 'server-only'
 
 import { Prisma } from '@prisma/client'
@@ -286,6 +287,7 @@ export async function sendReceiptGroups(params: {
       activeDispatchRecipientId = null
     }
   } catch (error) {
+    await reportUnexpected(error, { module: 'emails', operation: 'receipt.dispatch', officeId: params.user.officeId, userId: params.user.id, recordType: 'RecibosDispatchRecipient', recordId: activeDispatchRecipientId ?? undefined })
     failedGroup = activeGroup
     const errorMessage = sanitizeDispatchError(error)
     if (activeDispatchRecipientId) {

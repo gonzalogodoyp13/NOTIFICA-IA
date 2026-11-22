@@ -1,0 +1,26 @@
+'use client'
+import { useState } from 'react'
+import Link from 'next/link'
+import type { previewRecovery } from '@/lib/operations/recovery'
+type Preview=Awaited<ReturnType<typeof previewRecovery>>
+export default function RecoveryControls({initial}:{initial:{officeId?:number;kind?:string;targetId?:string;actionId?:string}}) {
+  const [preview,setPreview]=useState<Preview|null>(null),[busy,setBusy]=useState(false),[message,setMessage]=useState(''),[result,setResult]=useState<{id:string;status:string;evidence?:unknown}|null>(null)
+  const [action,setAction]=useState('reconcile'),[key,setKey]=useState<string|null>(null)
+  async function call(mode:string,data:unknown) {
+    const response=await fetch('/api/operaciones/recuperacion',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode,data})})
+    if(!response.ok){const body=await response.json().catch(()=>({}));throw new Error(body.error?.code==='RECENT_MFA_REQUIRED'?'Vuelve a verificar MFA y consulta de nuevo el destino.':`Solicitud rechazada (${body.error?.code??response.status}). Revisa el registro antes de repetir.`)}
+    return response.json()
+  }
+  async function verify(id:string){setBusy(true);try{setResult(await call('verify',id));setMessage('Evidencia actual consultada.')}catch(error){setMessage((error as Error).message)}finally{setBusy(false)}}
+  return <section className="ops-panel"><h2>Inspeccionar antes de actuar</h2><p>La conciliación solo consulta evidencia. Recibos, correos y cuentas no admiten mutaciones desde este Centro. Para firma usa el ID del elemento, no el del trabajo.</p><p><Link href="/mfa">Verificar identidad nuevamente</Link> · Las mutaciones requieren la verificación configurada de los últimos 10 minutos.</p>
+    {initial.actionId&&<button disabled={busy} onClick={()=>void verify(initial.actionId!)}>Verificar acción registrada</button>}
+    <form className="ops-filters" onSubmit={async e=>{e.preventDefault();setBusy(true);setPreview(null);setResult(null);const form=new FormData(e.currentTarget);try{setPreview(await call('preview',{kind:form.get('kind'),targetId:form.get('targetId'),officeId:Number(form.get('officeId'))}));setKey(crypto.randomUUID());setAction('reconcile');setMessage('Revisa el destino, estado e impacto antes de confirmar.')}catch(error){setMessage((error as Error).message)}finally{setBusy(false)}}}>
+      <label>Tipo de destino<select name="kind" defaultValue={initial.kind??'signing'}><option value="signing">Elemento de firma</option><option value="report">Trabajo de reporte</option><option value="device">Equipo</option><option value="receipt">Reserva de recibo</option><option value="email">Destinatario de despacho</option></select></label><label>Oficina (ID)<input name="officeId" required type="number" min="1" defaultValue={initial.officeId}/></label><label>Referencia exacta<input name="targetId" required maxLength={160} defaultValue={initial.targetId}/></label><button disabled={busy}>Consultar elegibilidad</button>
+    </form>
+    {preview&&<><h3>Oficina {preview.officeId} · {preview.targetId}</h3><pre style={{whiteSpace:'pre-wrap',overflowWrap:'anywhere'}}>{JSON.stringify(preview.state,null,2)}</pre><form className="ops-editor" onSubmit={async e=>{e.preventDefault();setBusy(true);const form=new FormData(e.currentTarget);try{const row=await call('execute',{kind:preview.kind,targetId:preview.targetId,officeId:preview.officeId,action,fingerprint:preview.fingerprint,idempotencyKey:key,reason:form.get('reason'),confirmation:form.get('confirmation')});setResult(row);setMessage('Solicitud registrada. Verifica el resultado: aceptación no equivale a recuperación.')}catch(error){setMessage(`${(error as Error).message} Si hubo un timeout, conserva esta vista y vuelve a enviar con la misma clave; no crees otra solicitud.`)}finally{setBusy(false)}}}>
+      <label className="ops-wide">Acción<select value={action} onChange={e=>{setAction(e.target.value);setKey(crypto.randomUUID())}}>{preview.actions.map(a=><option key={a.action} value={a.action} disabled={!a.eligible}>{a.label}{a.eligible?'':' · No elegible'}</option>)}</select></label>
+      <p className="ops-wide">{preview.actions.find(a=>a.action===action)?.impact}</p><label className="ops-wide">Motivo (sin datos sensibles)<textarea name="reason" required minLength={10} maxLength={500}/></label><label className="ops-wide">Escribe exactamente: {preview.actions.find(a=>a.action===action)?.confirmation}<input name="confirmation" required autoComplete="off"/></label><button disabled={busy||!preview.actions.find(a=>a.action===action)?.eligible}>Confirmar acción</button>
+    </form><ul>{preview.actions.filter(a=>!a.eligible).map(a=><li key={a.action}>{a.label}: no cumple las precondiciones; consulta la matriz y concilia antes de reintentar.</li>)}</ul></>}
+    <p role="status" aria-live="polite">{message}</p>{result&&<div><p>Acción <Link href={`/operaciones/recuperacion/${result.id}`}>{result.id}</Link> · {result.status}</p><button disabled={busy} onClick={()=>void verify(result.id)}>Consultar evidencia posterior</button>{!!result.evidence&&<pre style={{whiteSpace:'pre-wrap',overflowWrap:'anywhere'}}>{JSON.stringify(result.evidence,null,2)}</pre>}</div>}
+  </section>
+}

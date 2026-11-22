@@ -9,6 +9,8 @@ import { toSafeErrorMessage } from '@/lib/debugLog'
 import { prisma } from '@/lib/prisma'
 import { markRequestEventRecorded } from '@/lib/audit/requestState'
 import { retryDelayMinutes } from '@/lib/audit/outboxCore'
+import { diagnosticContext } from '@/lib/diagnostics/context'
+import { reportUnexpected } from '@/lib/diagnostics/server'
 
 type OutboxDb = Pick<Prisma.TransactionClient, 'activityOutbox'>
 
@@ -48,7 +50,7 @@ export async function enqueueExternalEvent(
       source: context.source === 'SYSTEM' ? ActivitySource.SYSTEM : context.source === 'INTERNAL' ? ActivitySource.INTERNAL : ActivitySource.WEB,
       eventType: event.eventType,
       payload: payload as Prisma.InputJsonValue,
-      requestId: context.requestId ?? null,
+      requestId: context.requestId ?? diagnosticContext()?.requestId ?? null,
       deduplicationKey: event.deduplicationKey,
       nextAttemptAt: new Date(0),
     },
@@ -112,6 +114,7 @@ export async function processActivityOutbox(limit = 50, outboxId?: string) {
       })
       processed += 1
     } catch (error) {
+      await reportUnexpected(error, { module: 'audit', operation: 'outbox.process', source: 'background', requestId: row.requestId ?? row.id, officeId: row.officeId, userId: row.userId, jobId: row.id })
       const isDead = row.attempts >= 10
       await prisma.activityOutbox.update({
         where: { id: row.id },

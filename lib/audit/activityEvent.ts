@@ -7,6 +7,7 @@ import { validateCatalogEvent } from '@/lib/audit/catalog'
 import { debugLog, toSafeErrorMessage } from '@/lib/debugLog'
 import { prisma } from '@/lib/prisma'
 import { markRequestEventRecorded } from '@/lib/audit/requestState'
+import { diagnosticContext } from '@/lib/diagnostics/context'
 
 type ActivityEventDb = Pick<Prisma.TransactionClient, 'activityEvent'>
 
@@ -51,7 +52,7 @@ export function activityEventData(input: ActivityEventInput): Prisma.ActivityEve
     shortName: input.shortName ?? null,
     description: input.description?.trim() || defaultActivityDescription({ ...input, result }),
     metadata: sanitizeActivityMetadata(validatedMetadata as Record<string, unknown> | null | undefined) as Prisma.InputJsonValue,
-    requestId: input.requestId ?? null,
+    requestId: input.requestId ?? diagnosticContext()?.requestId ?? null,
     eventVersion: input.eventVersion ?? 1,
     deduplicationKey: input.deduplicationKey ?? null,
     occurredAt: input.occurredAt ?? new Date(),

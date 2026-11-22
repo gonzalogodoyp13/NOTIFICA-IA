@@ -1,6 +1,8 @@
 import 'server-only'
 
 import { NextRequest, NextResponse } from 'next/server'
+import { reportUnexpected } from '@/lib/diagnostics/server'
+import { withDiagnosticContext } from '@/lib/diagnostics/context'
 
 import {
   createRequestTiming,
@@ -9,11 +11,13 @@ import {
   type RequestTiming,
 } from '@/lib/api/requestTimingCore'
 
-const REQUEST_ID_PATTERN = /^[A-Za-z0-9._:-]{1,128}$/
+const requestIds = new WeakMap<object, string>()
 
 export function requestIdFor(request?: NextRequest) {
-  const supplied = request?.headers.get('x-request-id')?.trim()
-  return supplied && REQUEST_ID_PATTERN.test(supplied) ? supplied : crypto.randomUUID()
+  if (!request) return crypto.randomUUID()
+  let id = requestIds.get(request)
+  if (!id) { id = crypto.randomUUID(); requestIds.set(request, id) }
+  return id
 }
 
 export function finishTimedResponse(input: {
@@ -49,10 +53,11 @@ export async function withRequestTiming(
   const requestId = requestIdFor(request)
   let response: Response
   try {
-    response = await timing.measureHandler(handler)
-  } catch {
+    response = await withDiagnosticContext({ module: 'internal', operation, requestId }, () => timing.measureHandler(handler))
+  } catch (error) {
+    const supportReference = await reportUnexpected(error, { module: 'internal', operation, requestId })
     response = NextResponse.json(
-      { ok: false, error: { code: 'INTERNAL_ERROR', message: 'Ocurrió un error inesperado' } },
+      { ok: false, error: { code: 'INTERNAL_ERROR', message: `Ocurrió un error inesperado. Referencia: ${supportReference}`, supportReference } },
       { status: 500 }
     )
   }

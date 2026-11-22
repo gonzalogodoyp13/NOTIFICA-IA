@@ -34,6 +34,9 @@ export default function LoginPage(props: { searchParams: Promise<{ error?: strin
       const result = await signIn(email, password)
 
       if (result.success) {
+        const verification=await fetch('/api/auth/owner-verification',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'start'})})
+        if(!verification.ok){setError('No pudimos completar la verificación de acceso. Intenta nuevamente o abre /mfa si ya recibiste el código.');return}
+        if((await verification.json()).required){router.push('/mfa');router.refresh();return}
         try {
           await fetch('/api/activity/auth/login', {
             method: 'POST',
