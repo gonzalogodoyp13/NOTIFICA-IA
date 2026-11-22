@@ -1,6 +1,17 @@
 # Operations Center: prepared rollout
 
-Prepared 2026-11-22. No deployment or scheduler activation has been performed.
+Prepared 2026-11-22. The preparation sections below describe the original paused configuration; see the verified live status here for subsequent activation.
+
+## Verified live status — 2026-11-22
+
+- Production release `f8a5966e81d10ca63ab83f0611bb0ec4d50dc66a` deployed as `dpl_GiJFWSGRC9iE9hRi1GyW3BaDWpZw`; both `www.notificaia.cl` and `notificaia.cl` point to it. Rollback target: `dpl_C4AcBNUDv5cmZhcgCqKxFToPQoBC` (old scheduler credentials).
+- User completed real owner login and email verification; audit recorded `owner.email.requested` and `owner.email.verified`. Resend reports the login-code email delivered. No password or code was collected in chat.
+- Live unauthenticated private API/export requests returned 401; private page redirected to login; cross-origin verification POST returned 403; scheduler requests without credentials returned 401.
+- Owner browser verification passed for overview, token states, office filtering, service health, and alert policy/history. No recovery action was executed.
+- `notifica-health`, `notifica-notifications`, and `notifica-cron-retention` are active. App/database/auth/storage observations are healthy and `/api/health` returns 200. Notification tick returned 200; the first daily digest was accepted in one attempt and Resend independently reports delivered.
+- Sentry uptime monitor `11034838` and workflow `6388926` are active. At least one successful external check was observed. Production exception ingestion has not been deliberately tested; the earlier local controlled-error test remains the error-ingestion evidence.
+- Reports, signing maintenance, reply synchronization, and activity jobs remain paused during verification. Existing data includes seven queued reports, four enabled report schedules, and stale running/cancellation claims. Review that backlog before enabling business processing; do not use it as synthetic test data.
+- All 56 migrations are current. Production build succeeded. Pre-release verification: 52 targeted application tests and one restricted-runtime database test, plus UTF-8, auth/audit, and infrastructure checks.
 
 ## Configuration
 
