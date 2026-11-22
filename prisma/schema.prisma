@@ -481,10 +481,28 @@ model DiagnosticIncident {
 model PlatformGrant {
   userId String @id
   role String @default("OWNER")
+  verificationMethod String @default("TOTP")
+  verificationEmail String?
   createdAt DateTime @default(now())
   revokedAt DateTime?
   user User @relation(fields: [userId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "platform_grants_user_fkey")
   @@map("platform_grants")
+}
+
+model OwnerEmailSession {
+  id String @id
+  userId String
+  codeHash String?
+  codeExpiresAt DateTime?
+  attempts Int @default(0)
+  sentAt DateTime?
+  verifiedAt DateTime?
+  verifiedUntil DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@index([userId, createdAt])
+  @@index([updatedAt])
+  @@map("owner_email_sessions")
 }
 
 model PlatformAudit {
