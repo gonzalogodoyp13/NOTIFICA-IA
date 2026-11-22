@@ -1,5 +1,14 @@
+// One immutable release identifier for browser and server diagnostic evidence.
+// Vercel provides the deployed Git SHA; local builds use the checked-out commit.
+let release = process.env.APP_RELEASE || process.env.VERCEL_GIT_COMMIT_SHA
+if (!release) {
+  try { release = require('node:child_process').execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim() }
+  catch { release = 'unconfigured' }
+}
+if (!/^[a-zA-Z0-9_.:/@-]{1,160}$/.test(release)) throw new Error('Invalid application release identifier')
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  env: { APP_RELEASE: release, NEXT_PUBLIC_APP_RELEASE: release },
   distDir: process.env.NEXT_DIST_DIR || '.next',
   outputFileTracingRoot: __dirname,
   async headers() {
