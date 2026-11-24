@@ -8,6 +8,8 @@
 # testing
 /coverage
 /codex-backups/
+/reports/
+/supabase/.temp/
 *.log
 /tmp/
 /.auth
