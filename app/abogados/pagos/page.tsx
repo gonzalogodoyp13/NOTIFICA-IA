@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { CreditCard } from 'lucide-react'
+import { Fragment } from 'react'
 import { getAbogadoAccount } from '@/lib/auth/abogadoAccount'
 import { listarGastosPorCausa, listarPagos, registrosPorPagina, totalPagos } from '@/lib/encargos/listados'
 import { Busqueda, botonFiltro, dia, PaginasListado, pesos, RolTribunal, SinResultados, TablaListado, TituloListado } from '../_components/Listado'
@@ -26,12 +27,12 @@ export default async function PagosPage({ searchParams }: { searchParams: Promis
     vista ? listarPagos(account.authUserId, q, ventana) : [],
   ])
   const filas = vista ? pagos.slice(0, registrosPorPagina).map(pago => ({
-    id: pago.id, celdas: [<RolTribunal {...pago.asignacion.encargo} />, pago.asignacion.receptor.nombre, dia(pago.pagadoAt),
-      <><span className="block">{pago.medio}</span>{pago.referencia && <span className="mt-0.5 block text-slate-600">{pago.referencia}</span>}</>,
-      <span className="font-bold tabular-nums">{pesos(pago.montoClp)}</span>],
+    id: pago.id, celdas: [<RolTribunal key="causa" {...pago.asignacion.encargo} />, pago.asignacion.receptor.nombre, dia(pago.pagadoAt),
+      <Fragment key="medio"><span className="block">{pago.medio}</span>{pago.referencia && <span className="mt-0.5 block text-slate-600">{pago.referencia}</span>}</Fragment>,
+      <span key="monto" className="font-bold tabular-nums">{pesos(pago.montoClp)}</span>],
   })) : gastos.slice(0, registrosPorPagina).map(gasto => ({
-    id: JSON.stringify([gasto.rol, gasto.tribunal, gasto.corte]), celdas: [<RolTribunal rol={gasto.rol} tribunal={gasto.tribunal} />,
-      gasto.pagos, dia(gasto.ultimo), <span className="font-bold tabular-nums">{pesos(gasto.total)}</span>],
+    id: JSON.stringify([gasto.rol, gasto.tribunal, gasto.corte]), celdas: [<RolTribunal key="causa" rol={gasto.rol} tribunal={gasto.tribunal} />,
+      gasto.pagos, dia(gasto.ultimo), <span key="total" className="font-bold tabular-nums">{pesos(gasto.total)}</span>],
   }))
 
   return (

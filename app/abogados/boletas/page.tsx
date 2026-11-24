@@ -33,8 +33,8 @@ export default async function BoletasPage({ searchParams }: { searchParams: Prom
           <span className="rounded-full bg-blue-50 px-3 py-1 text-sm font-semibold text-blue-900">{total} {total === 1 ? 'boleta' : 'boletas'}</span>
         </div>
         {boletas.length ? <TablaListado etiqueta="Resultados de boletas" columnas={columnas} filas={boletas.slice(0, registrosPorPagina).map(boleta => ({
-          id: boleta.id, celdas: [<strong>{boleta.numero}</strong>, boleta.numeroRecibo || '—', <RolTribunal {...boleta.asignacion.encargo} />,
-            boleta.asignacion.receptor.nombre, dia(boleta.emitidoAt), <span className="font-bold tabular-nums">{pesos(boleta.montoClp)}</span>],
+          id: boleta.id, celdas: [<strong key="numero">{boleta.numero}</strong>, boleta.numeroRecibo || '—', <RolTribunal key="causa" {...boleta.asignacion.encargo} />,
+            boleta.asignacion.receptor.nombre, dia(boleta.emitidoAt), <span key="monto" className="font-bold tabular-nums">{pesos(boleta.montoClp)}</span>],
         }))} /> : <SinResultados icon={ReceiptText} titulo="No se encontraron boletas" descripcion={q
           ? 'Prueba con otro ROL, tribunal o número de documento.' : 'Aquí aparecerán las boletas emitidas para tus encargos.'} />}
       </section>

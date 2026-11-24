@@ -54,7 +54,7 @@ export default async function EstamposPage({ searchParams }: { searchParams: Pro
         </div>
         <TablaListado etiqueta="Resultados de estampos" columnas={columnas} filas={estampos.slice(0, registrosPorPagina).map(estampo => ({
           id: estampo.id,
-          celdas: [estampo.asignacion.receptor.nombre, <RolTribunal {...estampo.asignacion.encargo} />,
+          celdas: [estampo.asignacion.receptor.nombre, <RolTribunal key="causa" {...estampo.asignacion.encargo} />,
             estampo.notificado, estampo.resultado, dia(estampo.firmadoAt)],
         }))} />
         {!estampos.length && <SinResultados icon={Stamp} titulo="No se encontraron estampos" descripcion={q || receptor || desde || hasta
