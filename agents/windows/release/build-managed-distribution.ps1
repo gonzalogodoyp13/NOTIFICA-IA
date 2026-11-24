@@ -3,7 +3,8 @@ param(
     [Parameter(Mandatory)][string]$RuntimePayload,
     [Parameter(Mandatory)][string]$RuntimeSha256,
     [Parameter(Mandatory)][string]$Output,
-    [string]$Dotnet='dotnet'
+    [string]$Dotnet='dotnet',
+    [ValidatePattern('^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$')][string]$GithubRepository='gonzalogodoyp13/test-not-ia-sng'
 )
 $ErrorActionPreference='Stop'; Set-StrictMode -Version Latest
 Import-Module (Join-Path $PSScriptRoot 'ReleaseTools.psm1') -Force
@@ -38,7 +39,7 @@ if ($LASTEXITCODE -ne 0) { throw 'AGENT_BUILD_FAILED' }
 & (Join-Path $PSScriptRoot '../dss-engine/build.ps1') -Jdk (Join-Path $payload 'java') -Libraries (Join-Path $payload 'engine\lib')
 if (-not $?) { throw 'ENGINE_BUILD_FAILED' }
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot '../artifacts/dss-engine/notifica-dss-6.5.jar') -Destination (Join-Path $payload 'engine/notifica-dss-6.5.jar') -Force
-foreach ($file in @('README.md','INSTALACION.md','ACTUALIZACION.md','GUIA_GITHUB.md')) { Copy-Item -LiteralPath (Join-Path $PSScriptRoot ('managed/'+$file)) -Destination $repository }
+foreach ($file in @('README.md','INSTALACION.md','ACTUALIZACION.md','GUIA_GITHUB.md','SERVER-UPDATE-SETUP.md')) { Copy-Item -LiteralPath (Join-Path $PSScriptRoot ('managed/'+$file)) -Destination $repository }
 foreach ($file in @('Install-Notifica.ps1','ManagedDistribution.psm1','Update-Notifica.ps1','ManagedUpdate.psm1')) {
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot ('managed/'+$file)) -Destination (Join-Path $repository 'tools')
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot ('managed/'+$file)) -Destination $package
@@ -87,29 +88,46 @@ $updateGuide=(Get-Content (Join-Path $PSScriptRoot 'managed/ACTUALIZACION.md') -
 $updateGuide | Set-Content (Join-Path $assets 'ACTUALIZACION.md') -Encoding utf8
 $guideHash=(Get-FileHash (Join-Path $assets 'ACTUALIZACION.md') -Algorithm SHA256).Hash.ToLowerInvariant()
 "$guideHash  ACTUALIZACION.md" | Add-Content (Join-Path $assets 'SHA256SUMS.txt') -Encoding utf8
+$installGuide=(Get-Content (Join-Path $PSScriptRoot 'managed/INSTALACION.md') -Raw).
+    Replace('HASH-DE-DISTRIBUTION-JSON-PUBLICADO-EN-LAS-NOTAS',$manifestHash)
+$installGuide | Set-Content (Join-Path $assets 'INSTALACION.md') -Encoding utf8
+Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'managed/SERVER-UPDATE-SETUP.md') -Destination $assets
+@{version=$version;zipSha256=$zipHash;manifestSha256=$manifestHash;repository=$GithubRepository;tag="v$version-managed.1"} |
+    ConvertTo-Json | Set-Content (Join-Path $assets 'UPDATE-CHANNEL.json') -Encoding utf8
+foreach ($name in @('INSTALACION.md','SERVER-UPDATE-SETUP.md','UPDATE-CHANNEL.json')) {
+    $hash=(Get-FileHash (Join-Path $assets $name) -Algorithm SHA256).Hash.ToLowerInvariant()
+    "$hash  $name" | Add-Content (Join-Path $assets 'SHA256SUMS.txt') -Encoding utf8
+}
 @"
-# NOTIFICA Windows $version - nueva interfaz y logo N
+# NOTIFICA Windows $version - prueba de actualización desde 0.15.0
 
-Pre-release para instalación personal mediante control remoto. Sin firma de editor.
-Logo N blanco en el ejecutable, bandeja y ventanas. Panel sencillo en español con estado del servicio/token,
-sesión de firma remota, carpeta de la oficina, inscripción, actualización de estado y controles de bandeja.
-Abre el panel con doble clic en la N de la bandeja o con Abrir NOTIFICA en su menú.
-Incluye instalación nueva y actualización administrada desde 0.12.0 o 0.13.0 a $version,
-con conservación de inscripción, configuración y documentos.
-La carpeta compartida conserva los últimos 50 días y descarga los PDF al abrirlos; el historial sigue en Firmados.
-Utiliza el servidor compatible con la carpeta compartida de 0.13.0. Este cambio de interfaz no requiere nuevas migraciones.
-Incluye agente, .NET 10.0.12, Java 21.0.12, motor DSS 6.5 y avisos de dependencias.
-No incluye controlador USB, certificado FEA, datos de clientes ni configuración del servidor.
+Versión de prueba para comprobar el botón **Actualizar** desde un PC con 0.15.0.
+No introduce cambios funcionales en la aplicación: conserva sesión persistente,
+https://notificaia.cl/, inscripción, documentos y el actualizador existente.
+Repositorio de distribución público: **$GithubRepository**.
 
-Descarga **$zipName**. Para PCs existentes sigue ACTUALIZACION.md; para PCs nuevos sigue INSTALACION.md.
+1. Publica este paquete y sus guías con el tag **v$version-managed.1**.
+2. En el sitio configura SIGNING_DESKTOP_RELEASE con UPDATE-CHANNEL.json y redespliega.
+3. En el PC con 0.15.0, abre NOTIFICA, pulsa **Actualizar** y acepta el permiso de Windows.
+4. Comprueba versión $version, inscripción/documentos y reactiva la firma con el PIN.
+
+No instales manualmente esta versión en el PC piloto antes de probar el botón.
+Los PCs anteriores a 0.15.0 todavía requieren una actualización manual inicial.
+El dominio notificaia.cl sigue publicando los metadatos y resolviendo la descarga;
+esta versión no cambia a un mecanismo de actualización independiente del sitio.
+Un repositorio público no requiere un token GitHub para descargar este paquete.
+Publicar en GitHub por sí solo no activa el aviso: sigue SERVER-UPDATE-SETUP.md.
+
+Archivo: **$zipName**. Recuperación manual: **ACTUALIZACION.md**.
 SHA-256 del ZIP: **$zipHash**
 SHA-256 de distribution.json para ExpectedManifestSha256: **$manifestHash**
 
-Se han comprobado construcción e integridad. La instalación elevada y aceptación
-en PCs destino sigue pendiente. No se afirma un piloto de producción completado.
-El actualizador conserva la versión anterior y recupera un cambio fallido; bloquea trabajos de firma pendientes.
-No desinstales ni vuelvas a inscribir los PCs para actualizar. GitHub no instala la actualización automáticamente.
-No uses el ZIP automático Source code para instalar.
+Incluye .NET 10.0.12, Java 21.0.12 y DSS 6.5. No contiene PIN, datos de clientes,
+claves privadas, configuración personalizada ni controlador USB.
+Distribución administrada sin firma de editor. Publica como **pre-release**.
+La prueba real de descarga/UAC/servicio/token debe completarse en el PC piloto.
+Se conservan los trabajos pendientes; no se cancelan ni repiten firmas para actualizar.
+
 "@ | Set-Content (Join-Path $assets 'RELEASE-NOTES.md') -Encoding utf8
 @{repository=$repository;releaseAssets=$assets;package=$package;payload=$payload;manifestSha256=$manifestHash;zipSha256=$zipHash;version=$version} |
     ConvertTo-Json | Set-Content (Join-Path $work 'build-result.json') -Encoding utf8

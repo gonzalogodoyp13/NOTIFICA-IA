@@ -1,6 +1,6 @@
 # Instalación Windows administrada por Gonzalo
 
-Edición del 28 de octubre de 2026. Agente 0.14.0.
+Edición del 12 de noviembre de 2026. Agente 0.16.0.
 
 La N blanca identifica NOTIFICA en la bandeja y el ejecutable. Haz doble clic en
 ella para abrir el panel con estado del equipo, sesión de firma remota, carpeta
@@ -19,7 +19,7 @@ de firma de código. El certificado FEA del token sí sigue siendo necesario par
 firmar documentos; son certificados con funciones diferentes.
 
 **Install-Notifica.ps1** admite instalaciones nuevas y reanudación de su propia
-instalación interrumpida. Para PCs con la instalación administrada 0.12.0 o 0.13.0, usa
+instalación interrumpida. Para PCs con la instalación administrada 0.12.0, 0.13.0, 0.14.0 o 0.15.0, usa
 **Update-Notifica.ps1** y sigue [ACTUALIZACION.md](ACTUALIZACION.md). No desinstales
 ni vuelvas a inscribir los PCs para actualizar. El instalador de altas nuevas
 detecta instalaciones existentes y se detiene para preservar identidad, diarios y PDF.
@@ -42,14 +42,14 @@ independiente necesarios; instalar Windows no configura esos servicios.
 
 ## 2. Descargar y comprobar
 
-1. Accede a tu repositorio privado en GitHub y abre **Releases**.
-2. Descarga el ZIP `NOTIFICA-Windows-0.14.0-managed.zip`, `SHA256SUMS.txt` y lee las
+1. Accede a tu repositorio público en GitHub y abre **Releases**.
+2. Descarga el ZIP `NOTIFICA-Windows-0.16.0-managed.zip`, `SHA256SUMS.txt` y lee las
    notas de esa misma versión. No uses el ZIP automático llamado **Source code**.
 3. En PowerShell, calcula la huella del ZIP y compárala con el registro de publicación
    conservado por ti, antes de ejecutar scripts:
 
 ```powershell
-Get-FileHash -Algorithm SHA256 -LiteralPath 'C:\Descargas\NOTIFICA-Windows-0.14.0-managed.zip'
+Get-FileHash -Algorithm SHA256 -LiteralPath 'C:\Descargas\NOTIFICA-Windows-0.16.0-managed.zip'
 ```
 
 4. Extrae el paquete en una carpeta local dedicada, por ejemplo `C:\NotificaInstalacion`.
@@ -84,7 +84,7 @@ y completa los valores. El JSON de ejemplo prepara un receptor:
 
 ```json
 {
-  "serverUrl": "https://TU-SERVIDOR/",
+  "serverUrl": "https://notificaia.cl/",
   "allowedUserSid": "S-1-5-21-SID-REAL-DEL-USUARIO",
   "receiverDirectory": "C:\\NotificaFirmados",
   "pkcs11Library": "C:\\Windows\\System32\\eTPKCS11.dll",

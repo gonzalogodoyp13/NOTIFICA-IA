@@ -10,6 +10,12 @@ internal static class Program
         try
         {
             Signing.ProcessPrivacy.Apply();
+            if (args.Contains("--desktop-update-self-test")) return DesktopUpdateSelfTest.Run().GetAwaiter().GetResult();
+            if (args.Contains("--install-published-update")) {
+                ApplicationConfiguration.Initialize();
+                Application.Run(new DesktopUpdateForm(installer: true));
+                return 0;
+            }
             int dashboardTest = Array.IndexOf(args, "--dashboard-self-test");
             if (dashboardTest >= 0) return DashboardSelfTest.Run(false, dashboardTest + 1 < args.Length ? Path.GetFullPath(args[dashboardTest + 1]) : null);
             if (args.Contains("--dashboard-preview")) return DashboardSelfTest.Run(true);

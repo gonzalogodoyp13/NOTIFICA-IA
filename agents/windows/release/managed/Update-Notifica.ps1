@@ -14,7 +14,7 @@ try {
     if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) { throw 'ADMINISTRATOR_REQUIRED' }
     if (-not [Environment]::Is64BitProcess -or [Environment]::OSVersion.Version.Build -lt 22000) { throw 'WINDOWS_ELEVEN_X64_REQUIRED' }
     $package=Read-ManagedDistribution $PSScriptRoot $ExpectedManifestSha256
-    if ($package.format -ne 2 -or $package.version -cnotin @('0.13.0','0.14.0')) { throw 'UPDATE_PACKAGE_REQUIRED' }
+    if ($package.format -ne 2 -or [version]$package.version -lt [version]'0.13.0') { throw 'UPDATE_PACKAGE_REQUIRED' }
     $root=Assert-LocalPath (Join-Path ([Environment]::GetFolderPath('ProgramFiles')) 'NotificaIA\Agent')
     $data=Assert-LocalPath (Join-Path ([Environment]::GetFolderPath('CommonApplicationData')) 'NotificaIA\Agent')
     $state=Assert-LocalPath (Join-Path $data 'state')

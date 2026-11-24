@@ -23,7 +23,7 @@ internal sealed class RemoteTokenSession(Configuration config) : IRemoteTokenSes
         get {
             var current = Volatile.Read(ref link);
             return current is not null && current.Alive
-                ? new(true, current.Id, current.ExpiresAt, null) : new(false, null, null, error);
+                ? new(true, current.Id, null, null) : new(false, null, null, error);
         }
     }
     public async Task Enable(int officeId, PinBuffer pin, CancellationToken ct)
@@ -72,9 +72,8 @@ internal sealed class RemoteTokenSession(Configuration config) : IRemoteTokenSes
         private int signatures;
         private bool started, ready;
         internal Guid Id { get; } = Guid.NewGuid();
-        internal DateTimeOffset ExpiresAt { get; } = DateTimeOffset.UtcNow + OfficeTokenSession.MaximumLifetime;
         internal bool Alive {
-            get { try { return closed == 0 && ready && started && !process.HasExited && DateTimeOffset.UtcNow < ExpiresAt; }
+            get { try { return closed == 0 && ready && started && !process.HasExited; }
                 catch (InvalidOperationException) { return false; } }
         }
         internal async Task Open(RemoteSessionSetup setup, PinBuffer pin, CancellationToken ct)
@@ -86,7 +85,6 @@ internal sealed class RemoteTokenSession(Configuration config) : IRemoteTokenSes
             if (!started) throw new SigningFailure(SigningError.EngineFailure);
             job.Assign(process);
             _ = Drain(process.StandardError.BaseStream);
-            lifetime.CancelAfter(OfficeTokenSession.MaximumLifetime);
             using var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct, lifetime.Token);
             deadline.CancelAfter(TimeSpan.FromSeconds(20));
             await SigningFrames.Write(process.StandardInput.BaseStream, setup, deadline.Token);
@@ -129,12 +127,13 @@ internal sealed class RemoteTokenSession(Configuration config) : IRemoteTokenSes
     internal static async Task<int> RunWorker()
     {
         Pkcs11SigningToken? token = null;
-        using var lifetime = new CancellationTokenSource(OfficeTokenSession.MaximumLifetime);
+        using var lifetime = new CancellationTokenSource();
         try {
             var input = Console.OpenStandardInput(); var output = Console.OpenStandardOutput();
-            var setup = await SigningFrames.Read<RemoteSessionSetup>(input, lifetime.Token);
+            using var startup = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+            var setup = await SigningFrames.Read<RemoteSessionSetup>(input, startup.Token);
             setup.Engine.Validate(); LocalSigningFiles.RequireLocalPath(setup.Library);
-            using var pin = await PinTransfer.ReceiveAsync(input, lifetime.Token);
+            using var pin = await PinTransfer.ReceiveAsync(input, startup.Token);
             using var session = new OfficeTokenSession(setup.OfficeId, setup.Fingerprint, pin,
                 () => token = new Pkcs11SigningToken(setup.Library, setup.Fingerprint));
             await SigningFrames.Write(output, new SigningWorkResult(true, null, [], token!.LoginAttempts, token.SignatureOperations), lifetime.Token);

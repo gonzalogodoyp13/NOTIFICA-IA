@@ -1,19 +1,31 @@
-# Actualizar PCs de NOTIFICA Windows 0.12.0 / 0.13.0 a 0.14.0
+# Actualizar PCs de NOTIFICA Windows 0.12.0 / 0.13.0 / 0.14.0 / 0.15.0 a 0.16.0
 
-Usa el mismo ZIP `NOTIFICA-Windows-0.14.0-managed.zip` para todos los PCs.
+Usa el mismo ZIP `NOTIFICA-Windows-0.16.0-managed.zip` para todos los PCs.
 En un PC existente ejecuta **Update-Notifica.ps1**. En uno nuevo, ejecuta
 **Install-Notifica.ps1** y sigue INSTALACION.md. GitHub no instala actualizaciones automáticamente.
 
 El actualizador conserva inscripción, oficina, rol, clave del dispositivo,
 configuración del token/TSA, certificados públicos y documentos. En firmantes
-solo cambian las tres rutas de los runtimes incluidos. No pide un código de
+cambian las tres rutas de los runtimes incluidos y la dirección del servidor a https://notificaia.cl/. No pide un código de
 inscripción nuevo. La sesión de firma remota se cierra al reiniciar el servicio;
 tendrás que habilitarla nuevamente con el PIN.
+
+## Prueba recomendada: 0.15.0 → 0.16.0 desde la app
+
+No ejecutes la actualización manual descrita abajo antes de probar el botón.
+Conserva 0.15.0 en el PC piloto. Publica 0.16.0 y activa su UPDATE-CHANNEL.json
+siguiendo SERVER-UPDATE-SETUP.md. Abre NOTIFICA, pulsa **Actualizar**, acepta
+el permiso de administrador y espera. Comprueba 0.16.0 en el panel, inscripción
+y documentos conservados. Habilita de nuevo la sesión de firma con el PIN.
+Esta versión solo cambia el número de versión para probar ese recorrido.
+
+Los pasos manuales siguientes se conservan para recuperación y PCs anteriores
+a 0.15.0. No desinstales ni vuelvas a inscribir el dispositivo.
 
 ## 1. Preparación
 
 1. Confirma que el servidor ya admite la carpeta compartida de 0.13.0. Si vienes
-   de 0.12.0, despliega primero ese soporte. Esta actualización de interfaz no
+   de 0.12.0, despliega primero ese soporte. Esta actualización no
    requiere nuevas migraciones; publicar en GitHub no despliega el servidor.
 2. Empieza con un receptor y después el firmante. Valida ambos antes de actualizar
    el resto. Mantén la Release como pre-release durante este piloto.
@@ -22,15 +34,15 @@ tendrás que habilitarla nuevamente con el PIN.
 4. En el firmante, cierra la sesión de firma remota desde NOTIFICA y espera a que
    no haya firmas pendientes. Cierra PDF abiertos y elige **Salir de la bandeja**.
    Salir de la bandeja por sí solo no cierra la sesión de firma.
-5. Descarga el ZIP y SHA256SUMS.txt de esta Release privada. No uses **Source code**.
+5. Descarga el ZIP y SHA256SUMS.txt de esta Release pública. No uses **Source code**.
    Comprueba el ZIP contra la huella publicada y conservada por ti:
 
    ```powershell
-   Get-FileHash -Algorithm SHA256 -LiteralPath 'C:\Descargas\NOTIFICA-Windows-0.14.0-managed.zip'
+   Get-FileHash -Algorithm SHA256 -LiteralPath 'C:\Descargas\NOTIFICA-Windows-0.16.0-managed.zip'
    ```
 
    SHA-256 esperado: `HASH-ZIP-PUBLICADO-EN-LAS-NOTAS`.
-6. Extrae en una carpeta nueva, por ejemplo `C:\NotificaUpdate-0.14.0`. Dentro deben
+6. Extrae en una carpeta nueva, por ejemplo `C:\NotificaUpdate-0.16.0`. Dentro deben
    estar Update-Notifica.ps1, distribution.json y payload.zip. No extraigas encima
    de Program Files ni ProgramData.
 
@@ -39,7 +51,7 @@ tendrás que habilitarla nuevamente con el PIN.
 Abre **Windows PowerShell de 64 bits como administrador**:
 
 ```powershell
-Set-Location -LiteralPath 'C:\NotificaUpdate-0.14.0'
+Set-Location -LiteralPath 'C:\NotificaUpdate-0.16.0'
 $manifestHash = 'HASH-DE-DISTRIBUTION-JSON-PUBLICADO-EN-LAS-NOTAS'
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Update-Notifica.ps1 `
   -ExpectedManifestSha256 $manifestHash -Preflight
@@ -49,8 +61,8 @@ La guía adjunta a la Release ya tiene las huellas completadas. En la guía dent
 del ZIP, sustituye los marcadores por las huellas de las notas. No uses un hash
 calculado del manifiesto descargado como si fuera una referencia independiente.
 
-Resultado esperado: `PREFLIGHT_PASSED: 0.12.0 -> 0.14.0; no changes made`.
-Si el PC tiene 0.13.0, el resultado mostrará `0.13.0 -> 0.14.0`.
+Resultado esperado: `PREFLIGHT_PASSED: 0.12.0 -> 0.16.0; no changes made`.
+Si el PC tiene 0.13.0, el resultado mostrará `0.13.0 -> 0.16.0`.
 Revisa paquete, versión anterior, servicio, tarea de bandeja, configuración,
 disco y ausencia de diario de firma pendiente. Todavía no instala nada.
 
@@ -63,7 +75,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Update-Notifica.ps1 `
   -ExpectedManifestSha256 $manifestHash
 ```
 
-Resultado esperado: **UPDATED_TO_0_14_0_ENROLLMENT_PRESERVED**.
+Resultado esperado: **UPDATED_TO_0_16_0_ENROLLMENT_PRESERVED**.
 El script extrae una versión nueva, detiene el servicio y la tarea de bandeja,
 conserva identidad/configuración, activa la versión y comprueba su arranque.
 Deja la versión anterior intacta. No desinstales ni borres carpetas para actualizar.
@@ -81,10 +93,10 @@ Si una política corporativa lo bloquea, respeta esa política.
    (Get-Content 'C:\ProgramData\NotificaIA\Agent\managed-installation.json' -Raw | ConvertFrom-Json).version
    ```
 
-   Debe indicar `Running` y `0.14.0`. Si falta la bandeja, cierra e inicia la sesión
+   Debe indicar `Running` y `0.16.0`. Si falta la bandeja, cierra e inicia la sesión
    Windows del usuario configurado. No vuelvas a inscribir el PC.
 2. Haz doble clic en la nueva **N blanca** de la bandeja para abrir el panel.
-   Comprueba estado del servicio/token, versión 0.14.0 y sesión de firma.
+   Comprueba estado del servicio/token, versión 0.16.0 y sesión de firma.
    Pulsa **Abrir firmados de la oficina** y confirma que conserva dispositivo/oficina.
 3. `Oficina-<id>` muestra firmados FEA de los últimos 50 días; los PDF se descargan
    al abrirlos. Las copias antiguas siguen fuera de esa nueva subcarpeta.
@@ -100,7 +112,7 @@ Si una política corporativa lo bloquea, respeta esa política.
 | --- | --- |
 | ALREADY_INSTALLED | El mismo paquete ya figura instalado; comprueba servicio y carpeta. |
 | REVIEW_ACTIVE_WORK | Resuelve el intento pendiente en NOTIFICA. No borres signing-work.json ni vuelvas a firmar a ciegas. Después repite. |
-| MANAGED_INSTALLATION_REQUIRED / UNSUPPORTED_UPGRADE_SOURCE | No es una instalación administrada completa 0.12.0 o 0.13.0. Conserva error y versión para preparar su migración. No instales encima ni desinstales para forzarlo. |
+| MANAGED_INSTALLATION_REQUIRED / UNSUPPORTED_UPGRADE_SOURCE | No es una instalación administrada completa 0.12.0, 0.13.0, 0.14.0 o 0.15.0. Conserva error y versión para preparar su migración. No instales encima ni desinstales para forzarlo. |
 | SIGNED_INSTALLATION_REQUIRES_SIGNED_UPDATER | Usa el canal firmado de esa instalación. |
 | UPDATE_FAILED_PREVIOUS_VERSION_RESTORED | Falló y restauró la versión anterior. Comprueba servicio/bandeja y conserva el paquete para investigar. |
 | RECOVER_INTERRUPTED_UPDATE_FIRST / RECOVERY_REQUIRED_JOURNAL_PRESERVED | Con las firmas detenidas, recupera con el comando siguiente y el mismo paquete. |
@@ -132,3 +144,8 @@ fallos y conservación de datos. El agente tiene pruebas reales de Windows Cloud
 Files con dos dispositivos simulados. Durante la preparación no se ha reemplazado
 el servicio instalado de producción: la actualización elevada y la firma con token
 real deben aceptarse en el piloto descrito arriba.
+
+## Dirección del servidor
+
+La actualización configura `https://notificaia.cl/` como dirección principal.
+El respaldo conserva la dirección anterior para restaurarla si falla la actualización.

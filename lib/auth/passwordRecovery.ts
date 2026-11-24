@@ -1,22 +1,14 @@
 import 'server-only'
 
-import { createHash, randomUUID } from 'node:crypto'
+import { randomUUID } from 'node:crypto'
 import { prisma } from '@/lib/prisma'
 import { createServerSupabaseStorageClient } from '@/lib/supabaseServer'
 import { createSystemMailAdapter } from '@/lib/email/system-mailer'
 import { RequestSecurityError } from '@/lib/security/request'
+import { consumeFixedWindowQuota } from '@/lib/security/rateLimit'
 
 async function consumeQuota(identity: string, seconds: number, limit: number) {
-  const key = createHash('sha256').update(`password-recovery:${seconds}:${identity}`).digest('hex')
-  const rows = await prisma.$queryRaw<Array<{ count: number }>>`
-    INSERT INTO device_rate_limits (key, "windowAt", count)
-    VALUES (${key}, to_timestamp(floor(extract(epoch from statement_timestamp()) / ${seconds}::int) * ${seconds}::int), 1)
-    ON CONFLICT (key) DO UPDATE SET
-      count = CASE WHEN device_rate_limits."windowAt" = EXCLUDED."windowAt"
-        THEN LEAST(device_rate_limits.count + 1, 1000000) ELSE 1 END,
-      "windowAt" = EXCLUDED."windowAt" RETURNING count`
-  if (rows.length !== 1) throw new RequestSecurityError('SERVICE_UNAVAILABLE', 503)
-  return rows[0].count <= limit
+  return consumeFixedWindowQuota(`password-recovery:${seconds}:${identity}`, seconds, limit)
 }
 
 /** Persistent limits apply equally to registered and unregistered emails. */
@@ -43,9 +35,13 @@ export function passwordRecoverySender() {
   // This client requires the service credential and never reads browser cookies.
   const auth = createServerSupabaseStorageClient({ requireServiceRole: true, timeoutMs: 15_000 })
   return async (email: string) => {
-    const user = await prisma.user.findFirst({
-      where: { email: { equals: email, mode: 'insensitive' }, isActive: true },
-      select: { email: true, authUserId: true },
+    const officeUser = await prisma.user.findFirst({
+      where: { email: { equals: email, mode: 'insensitive' } },
+      select: { email: true, authUserId: true, isActive: true },
+    })
+    if (officeUser && !officeUser.isActive) return
+    const user = officeUser ?? await prisma.abogadoAccount.findUnique({
+      where: { email, desactivadoAt: null }, select: { email: true, authUserId: true },
     })
     if (!user) return
     const { data, error } = await auth.auth.admin.generateLink({ type: 'recovery', email: user.email })

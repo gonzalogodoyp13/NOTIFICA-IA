@@ -1,5 +1,14 @@
 # Windows signing agent
 
+## Persistent remote signing session
+
+Once enabled locally with consent and PIN, remote signing has no automatic time
+limit. It remains enabled while the service, worker and authenticated token stay
+available. Explicit close, service/computer restart, or token/engine failure ends
+it and requires local activation again. The PIN is cleared after login and is
+never saved or replayed. Individual signing operations retain their timeouts.
+An updated agent installation is required; already-running sessions are unchanged.
+
 ## Desktop dashboard — 0.14.0
 
 The white N identifies the executable, tray and dialogs. Double-click the tray
@@ -103,7 +112,7 @@ The direct NuGet dependency is Microsoft's `System.ServiceProcess.ServiceControl
 NuGet packages. `--self-test` exercises Windows CNG,
 key persistence/export denial, local IPC/DACL, and certificate-health boundaries.
 
-From an administrator PowerShell 7, run `./install.ps1 -ServerUrl https://your-host/
+From an administrator PowerShell 7, run `./install.ps1 -ServerUrl https://notificaia.cl/
 -AllowedUserSid <interactive-user-SID> [-CertificateFingerprint <SHA-256>]`.
 The installer creates the `NotificaSigningAgent` virtual service account,
 protects the binary/configuration/state directories, sets automatic recovery,

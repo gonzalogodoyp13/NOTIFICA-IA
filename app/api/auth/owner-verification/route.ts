@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { prisma } from '@/lib/prisma'
 import { resolveProvisionedUser, AuthResolutionError } from '@/lib/auth-server'
+import { getAbogadoProfile } from '@/lib/auth/abogadoAccount'
+import { createServerSupabaseClient } from '@/lib/supabaseServer'
 import { ownerEmailIdentity, ownerEmailService, OwnerEmailError } from '@/lib/auth/ownerEmail'
 import { withRequestTiming } from '@/lib/api/requestTiming'
 import { boundRequestBody, requireSameOrigin, RequestSecurityError } from '@/lib/security/request'
@@ -15,9 +17,23 @@ async function handle(request:NextRequest) {
     try {
       if(request.method==='POST'){requireSameOrigin(request);await boundRequestBody(request,1024)}
       // Deliberately password-authenticated only: this is the narrow route that completes verification.
-      const user=await resolveProvisionedUser()
-      const grant=await prisma.platformGrant.findUnique({where:{userId:user.id}})
       const body=request.method==='POST'?input.parse(await request.json()):null
+      const user=await resolveProvisionedUser().catch(async error => {
+        if (body?.action === 'start' && error instanceof AuthResolutionError && error.code === 'USER_NOT_PROVISIONED') return null
+        throw error
+      })
+      if (!user) {
+        const account = await getAbogadoProfile()
+        const headers = { 'Cache-Control': 'private, no-store' }
+        if (!account) return NextResponse.json({ error: { code: 'USER_NOT_PROVISIONED' } }, { status: 403, headers })
+        if (account.desactivadoAt) {
+          const supabase = await createServerSupabaseClient()
+          await supabase.auth.signOut({ scope: 'local' }).catch(() => undefined)
+          return NextResponse.json({ error: { code: 'ABOGADO_ACCOUNT_DISABLED' } }, { status: 403, headers })
+        }
+        return NextResponse.json({ portal: 'abogados' }, { headers })
+      }
+      const grant=await prisma.platformGrant.findUnique({where:{userId:user.id}})
       if(!grant||grant.revokedAt||grant.role!=='OWNER'||grant.verificationMethod!=='EMAIL') {
         if(body?.action==='verify')throw new OwnerEmailError('PLATFORM_ACCESS_DENIED')
         return NextResponse.json({required:false},{headers:{'Cache-Control':'private, no-store'}})

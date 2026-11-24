@@ -4,21 +4,17 @@ namespace Notifica.Agent.Signing;
 
 // One explicit local login enables requests for this office/certificate only.
 // The PIN is destroyed after login; the native token session is kept in memory.
+// No elapsed-time expiry: explicit close, service shutdown or token failure ends it.
 internal sealed class OfficeTokenSession : IDisposable
 {
-    internal static readonly TimeSpan MaximumLifetime = TimeSpan.FromHours(8);
     private readonly ISigningToken token;
     private readonly int officeId;
     private readonly string fingerprint;
-    private readonly TimeProvider clock;
-    private readonly long started;
     private bool disposed;
     private readonly SemaphoreSlim serial = new(1);
-    internal OfficeTokenSession(int officeId, string fingerprint, PinBuffer pin, Func<ISigningToken> open,
-        TimeProvider? clock = null)
+    internal OfficeTokenSession(int officeId, string fingerprint, PinBuffer pin, Func<ISigningToken> open)
     {
-        this.officeId = officeId; this.fingerprint = fingerprint; this.clock = clock ?? TimeProvider.System;
-        started = this.clock.GetTimestamp();
+        this.officeId = officeId; this.fingerprint = fingerprint;
         ISigningToken? opened = null;
         try {
             if (officeId < 1 || !SigningBatch.IsSha256(fingerprint)) throw new SigningFailure(SigningError.InvalidBatch);
@@ -32,7 +28,7 @@ internal sealed class OfficeTokenSession : IDisposable
     }
     internal void Check()
     {
-        if (disposed || clock.GetElapsedTime(started) >= MaximumLifetime) throw new SigningFailure(SigningError.SessionExpired);
+        if (disposed) throw new SigningFailure(SigningError.SessionExpired);
         if (token is Pkcs11SigningToken native) native.CheckAuthenticated();
     }
     internal async Task<IReadOnlyList<SignedPdf>> Sign(SigningBatch batch, IPdfSignerAdapter adapter, CancellationToken ct)

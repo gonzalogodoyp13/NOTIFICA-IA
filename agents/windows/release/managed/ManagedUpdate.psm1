@@ -16,7 +16,10 @@ function Assert-ManagedTarget([string]$Target, [string]$Root, [string]$Version) 
 function Assert-ManagedUpdateSource($Record, $Configuration, [string]$Root, [string]$Data, [string]$NewVersion) {
     if ($Record.mode -cne 'operator-managed-unsigned' -or $Record.status -cne 'installed') { throw 'MANAGED_INSTALLATION_REQUIRED' }
     $supported = ($Record.version -ceq '0.12.0' -and $NewVersion -ceq '0.13.0') -or
-        ($Record.version -cin @('0.12.0','0.13.0') -and $NewVersion -ceq '0.14.0')
+        ($Record.version -cin @('0.12.0','0.13.0') -and $NewVersion -ceq '0.14.0') -or
+        ($Record.version -cmatch '^\d+\.\d+\.\d+$' -and $NewVersion -cmatch '^\d+\.\d+\.\d+$' -and
+         [version]$Record.version -ge [version]'0.12.0' -and [version]$NewVersion -ge [version]'0.15.0' -and
+         [version]$Record.version -lt [version]$NewVersion)
     if (-not $supported) { throw 'UNSUPPORTED_UPGRADE_SOURCE' }
     Assert-ManagedTarget $Record.target $Root $Record.version | Out-Null
     $state=Join-Path $Data 'state'
@@ -34,6 +37,7 @@ function New-ManagedUpdateConfiguration($Configuration, [string]$Target) {
     # Clone so rollback retains the complete original configuration, including
     # identity, server, trust, token settings and the user's document directory.
     $next=$Configuration | ConvertTo-Json -Depth 20 | ConvertFrom-Json
+    $next.serverUrl='https://notificaia.cl/'
     if ($next.PSObject.Properties.Name -contains 'signingEngine' -and $next.signingEngine) {
         $next.signingEngine.javaExecutable=Join-Path $Target 'java\bin\java.exe'
         $next.signingEngine.bridgeJar=Join-Path $Target 'engine\notifica-dss-6.5.jar'

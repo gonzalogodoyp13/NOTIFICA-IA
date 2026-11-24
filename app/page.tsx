@@ -1,6 +1,7 @@
 import { ArrowRight, BriefcaseBusiness, Files, Landmark, ShieldCheck } from 'lucide-react'
 import { redirect } from 'next/navigation'
 import { getSession } from '@/lib/auth-server'
+import { getAbogadoAccount } from '@/lib/auth/abogadoAccount'
 import Link from 'next/link'
 
 export const dynamic = 'force-dynamic'
@@ -29,6 +30,7 @@ export default async function Home() {
   if (session) {
     redirect('/dashboard')
   }
+  if (await getAbogadoAccount()) redirect('/abogados')
 
   return (
     <div className="app-shell">
@@ -57,9 +59,9 @@ export default async function Home() {
                   Ingresar al sistema
                   <ArrowRight className="h-4 w-4" />
                 </Link>
-                <div className="rounded-full border border-slate-200 bg-white/90 px-4 py-3 text-sm text-slate-600 shadow-sm">
-                  Operacion diaria enfocada en casos, diligencias, documentos y recibos.
-                </div>
+                <Link href="/crear-cuenta" className="rounded-full border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-blue-800 shadow-sm hover:bg-blue-50">
+                  Crear cuenta
+                </Link>
               </div>
             </div>
 

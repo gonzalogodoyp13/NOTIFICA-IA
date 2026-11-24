@@ -11,6 +11,11 @@ type AuthStatus = 'loading' | 'authenticated' | 'anonymous'
 
 export default function Navbar() {
   const pathname = usePathname()
+  if (pathname === '/abogados' || pathname.startsWith('/abogados/')) return null
+  return <PublicNavbar pathname={pathname} />
+}
+
+function PublicNavbar({ pathname }: { pathname: string }) {
   const [authStatus, setAuthStatus] = useState<AuthStatus>('loading')
 
   useEffect(() => {

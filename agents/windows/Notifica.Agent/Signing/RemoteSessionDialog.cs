@@ -23,7 +23,7 @@ internal sealed class RemoteSessionDialog : Form
         var layout = new FlowLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(24), FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoScroll = true };
         layout.Controls.Add(new Label { Text = "Habilitar el token para la cuenta de la oficina", AutoSize = true, Font = new Font("Segoe UI", 14, FontStyle.Bold) });
         layout.Controls.Add(identity);
-        layout.Controls.Add(new Label { Text = "Cualquier usuario activo de la oficina podrá solicitar firmas desde otra computadora. No se pedirá aprobación local por documento. La sesión dura hasta 8 horas y se cierra al detener el servicio, por error del token o al pulsar Cerrar sesión. El PIN se usa una vez y no se guarda.", AutoSize = true, MaximumSize = new Size(590, 0), Margin = new Padding(3, 15, 3, 15) });
+        layout.Controls.Add(new Label { Text = "Cualquier usuario activo de la oficina podrá solicitar firmas desde otra computadora. No se pedirá aprobación local por documento. La sesión permanece activa sin límite de tiempo y se cierra al detener el servicio, por error del token o al pulsar Cerrar sesión. El PIN se usa una vez y no se guarda.", AutoSize = true, MaximumSize = new Size(590, 0), Margin = new Padding(3, 15, 3, 15) });
         layout.Controls.Add(new Label { Text = "PIN local del token (sin pegar)", AutoSize = true });
         pin.Width = 580; pin.Dock = DockStyle.None; layout.Controls.Add(pin);
         layout.Controls.Add(consent);
@@ -54,7 +54,7 @@ internal sealed class RemoteSessionDialog : Form
             loaded = response.GetProperty("officeId").ValueKind == JsonValueKind.Number;
             identity.Text = "Oficina: " + response.GetProperty("officeId") + "\nCertificado SHA-256: " + response.GetProperty("fingerprint").GetString();
             active = view.Enabled;
-            status.Text = active ? "Firma remota habilitada hasta " + view.ExpiresAt?.ToLocalTime().ToString("g")
+            status.Text = active ? (view.ExpiresAt is { } expires ? "Firma remota habilitada hasta " + expires.ToLocalTime().ToString("g") : "Firma remota habilitada · sin vencimiento automático")
                 : view.Error switch {
                     "PinIncorrect" => "PIN incorrecto. No se reintentó. Comprueba el PIN con el titular antes de habilitar otra vez.",
                     "PinLocked" => "PIN bloqueado. Sigue el procedimiento de desbloqueo del proveedor.",

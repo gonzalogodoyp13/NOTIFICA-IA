@@ -70,7 +70,7 @@ export default function SetPasswordPage() {
           </div>
         ) : (
           <>
-            <p className="mt-4 text-slate-600">Activa tu acceso a la oficina. Elige una contraseña de al menos 12 caracteres.</p>
+            <p className="mt-4 text-slate-600">Elige una contraseña de al menos 12 caracteres para acceder a tu cuenta.</p>
             {!ready ? <p role="status" className="mt-6 text-slate-600">Abre el enlace para crear o restablecer tu contraseña que recibiste por correo. Si expiró o ya fue utilizado, solicita uno nuevo.</p> : (
               <form onSubmit={submit} className="mt-8 space-y-5">
                 <div>

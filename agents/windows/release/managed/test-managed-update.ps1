@@ -36,6 +36,15 @@ $config=[pscustomobject]@{serverUrl='https://test.invalid/';allowedUserSid='S-1-
         timestampPolicyOid='1.2.3';trustedCertificateFiles=@('C:\Trust\public.cer')}}
 Check 'known managed 0.12 signer accepted' { Assert-ManagedUpdateSource $record $config $root $data '0.13.0' }
 Check 'managed 0.12 signer accepted for 0.14' { Assert-ManagedUpdateSource $record $config $root $data '0.14.0' }
+Check '0.12 through 0.14 upgrade to 0.15 and future newer releases' {
+    foreach ($version in @('0.12.0','0.13.0','0.14.0','0.15.0')) {
+        $previous=$record | ConvertTo-Json | ConvertFrom-Json
+        $previous.version=$version; $previous.target=Join-Path $root ('versions\'+$version+'-'+('a'*32))
+        $copy=New-ManagedUpdateConfiguration $config $previous.target
+        if ($version -ne '0.15.0') { Assert-ManagedUpdateSource $previous $copy $root $data '0.15.0' }
+        Assert-ManagedUpdateSource $previous $copy $root $data '0.16.0'
+    }
+}
 Check 'managed 0.13 signer and receiver accepted for 0.14' {
     $previous=$record | ConvertTo-Json | ConvertFrom-Json
     $previous.version='0.13.0'; $previous.target=$newTarget
@@ -68,19 +77,24 @@ Check 'custom engine rejected' {
     $copy=$config | ConvertTo-Json -Depth 20 | ConvertFrom-Json; $copy.signingEngine.javaExecutable='C:\Other\java.exe'
     Reject { Assert-ManagedUpdateSource $record $copy $root $data '0.13.0' } 'CUSTOM_SIGNING_ENGINE_REQUIRES_REVIEW'
 }
-Check 'signer update changes only three runtime paths' {
+Check 'signer update migrates domain and three runtime paths, preserving rollback' {
     $before=$config | ConvertTo-Json -Depth 20 -Compress
     $next=New-ManagedUpdateConfiguration $config $newTarget
+    if ($next.serverUrl -cne 'https://notificaia.cl/') { throw 'SERVER_NOT_MIGRATED' }
+    $next.serverUrl=$config.serverUrl
     if ($next.signingEngine.javaExecutable -cne (Join-Path $newTarget 'java\bin\java.exe')) { throw 'RUNTIME_NOT_MOVED' }
     $next.signingEngine.javaExecutable=$config.signingEngine.javaExecutable
     $next.signingEngine.bridgeJar=$config.signingEngine.bridgeJar
     $next.signingEngine.librariesDirectory=$config.signingEngine.librariesDirectory
     if (($next | ConvertTo-Json -Depth 20 -Compress) -cne $before -or ($config | ConvertTo-Json -Depth 20 -Compress) -cne $before) { throw 'SETTINGS_CHANGED' }
 }
-Check 'receiver update preserves full configuration' {
+Check 'receiver update migrates domain and preserves other settings' {
     $receiver=$config | ConvertTo-Json -Depth 20 | ConvertFrom-Json; $receiver.PSObject.Properties.Remove('signingEngine')
     Assert-ManagedUpdateSource $record $receiver $root $data '0.13.0'
-    if (((New-ManagedUpdateConfiguration $receiver $newTarget) | ConvertTo-Json -Depth 20 -Compress) -cne ($receiver | ConvertTo-Json -Depth 20 -Compress)) { throw 'RECEIVER_CHANGED' }
+    $next=New-ManagedUpdateConfiguration $receiver $newTarget
+    if ($next.serverUrl -cne 'https://notificaia.cl/') { throw 'SERVER_NOT_MIGRATED' }
+    $next.serverUrl=$receiver.serverUrl
+    if (($next | ConvertTo-Json -Depth 20 -Compress) -cne ($receiver | ConvertTo-Json -Depth 20 -Compress)) { throw 'RECEIVER_CHANGED' }
 }
 Check 'unfinished signing journal preserved and blocks update' {
     $work=Join-Path $state 'signing-work.json'; [IO.File]::WriteAllText($work,'original signing journal')

@@ -215,12 +215,12 @@ internal static class SigningSelfTest
         }
         checks.Add("Remote session rejects a foreign office, a changed certificate and multiple documents per claim");
         using (var pin = new PinBuffer("synthetic"u8)) {
-            var token = new FakeToken(certificate); var elapsed = new TestClock();
-            using var session = new OfficeTokenSession(1, fingerprint, pin, () => token, elapsed);
-            elapsed.Advance(TimeSpan.FromHours(8));
-            await RejectAsync(() => session.Sign(single, new FakeAdapter(), CancellationToken.None), SigningError.SessionExpired);
-            Require(token.Signatures == 0 && token.Disposed, "REMOTE_EXPIRY");
-            checks.Add("Eight-hour remote session expiry prevents a native operation and closes the token");
+            var token = new FakeToken(certificate);
+            using var session = new OfficeTokenSession(1, fingerprint, pin, () => token);
+            for (int i = 0; i < 100; i++) session.Check();
+            await session.Sign(single, new FakeAdapter(), CancellationToken.None);
+            Require(token.Signatures == 1 && token.LoginAttempts == 1 && !token.Disposed && pin.IsCleared, "REMOTE_HEALTH_CHECKS_KEEP_LOGIN");
+            checks.Add("Repeated idle health checks preserve the authenticated session without retaining the PIN");
         }
         foreach (var failure in new[] { SigningError.PinIncorrect, SigningError.PinLocked, SigningError.PinExpired }) {
             using var pin = new PinBuffer("synthetic"u8); var token = new FakeToken(certificate) { LoginFailure = failure };

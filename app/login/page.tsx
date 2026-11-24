@@ -11,6 +11,8 @@ const AUTH_MESSAGES: Record<string, string> = {
   user_not_provisioned: 'Tu cuenta no está provisionada en NOTIFICA IA.',
   service_unavailable: 'El servicio de acceso no está disponible. Intenta nuevamente en unos minutos.',
   invalid_session: 'Tu sesión no es válida o expiró. Inicia sesión nuevamente.',
+  abogado_confirmation: 'Si ya confirmaste tu correo, inicia sesión para continuar. Si el enlace sigue pendiente, ábrelo desde el navegador donde creaste la cuenta.',
+  abogado_disabled: 'Tu cuenta está desactivada. Contacta a soporte si quieres reactivarla.',
 }
 
 export default function LoginPage(props: { searchParams: Promise<{ error?: string }> }) {
@@ -35,8 +37,18 @@ export default function LoginPage(props: { searchParams: Promise<{ error?: strin
 
       if (result.success) {
         const verification=await fetch('/api/auth/owner-verification',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'start'})})
-        if(!verification.ok){setError('No pudimos completar la verificación de acceso. Intenta nuevamente o abre /mfa si ya recibiste el código.');return}
-        if((await verification.json()).required){router.push('/mfa');router.refresh();return}
+        const access = await verification.json().catch(() => null)
+        if (!verification.ok || !access) {
+          setError(access?.error?.code === 'ABOGADO_ACCOUNT_DISABLED' ? AUTH_MESSAGES.abogado_disabled
+            : 'No pudimos completar la verificación de acceso. Intenta nuevamente o abre /mfa si ya recibiste el código.')
+          return
+        }
+        if (access.portal === 'abogados') {
+          router.push('/abogados')
+          router.refresh()
+          return
+        }
+        if(access.required){router.push('/mfa');router.refresh();return}
         try {
           await fetch('/api/activity/auth/login', {
             method: 'POST',
@@ -117,7 +129,7 @@ export default function LoginPage(props: { searchParams: Promise<{ error?: strin
                 </div>
               )}
 
-              <form className="app-panel p-6 sm:p-7" onSubmit={handleSubmit}>
+              <form method="post" className="app-panel p-6 sm:p-7" onSubmit={handleSubmit}>
                 <div className="space-y-5">
                   <div>
                     <label htmlFor="email" className="field-label">
@@ -157,8 +169,9 @@ export default function LoginPage(props: { searchParams: Promise<{ error?: strin
                 </div>
 
                 {error && (
-                  <div className="mt-5 rounded-[22px] border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+                  <div role="alert" className="mt-5 rounded-[22px] border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
                     {error}
+                    {error === AUTH_MESSAGES.abogado_disabled && <a className="mt-2 block font-semibold underline underline-offset-4" href="mailto:contacto@notificaia.cl">Contactar a soporte</a>}
                   </div>
                 )}
 
@@ -171,6 +184,9 @@ export default function LoginPage(props: { searchParams: Promise<{ error?: strin
                 </button>
                 <Link href="/forgot-password" className="mt-5 block rounded text-center text-sm font-semibold text-blue-700 underline underline-offset-4 focus:outline-none focus:ring-2 focus:ring-blue-600">
                   ¿Olvidaste tu contraseña?
+                </Link>
+                <Link href="/crear-cuenta" className="mt-3 block rounded text-center text-sm font-semibold text-blue-700 underline underline-offset-4 focus:outline-none focus:ring-2 focus:ring-blue-600">
+                  Crear cuenta
                 </Link>
               </form>
             </div>

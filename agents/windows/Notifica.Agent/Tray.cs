@@ -14,12 +14,39 @@ internal sealed class Tray : ApplicationContext
     private DashboardForm? details;
     private AgentStatus? lastStatus;
     private readonly CancellationTokenSource lifetime = new();
+    private DesktopRelease? update;
+    private readonly SemaphoreSlim updateCheck = new(1);
+    private bool showingUpdate, initialUpdateChecked;
+    private DateTimeOffset nextUpdateCheck;
+    private async Task<bool> CheckUpdate(bool prompt)
+    {
+        await updateCheck.WaitAsync();
+        try {
+        if (DateTimeOffset.UtcNow >= nextUpdateCheck) {
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token);
+            timeout.CancelAfter(TimeSpan.FromSeconds(12));
+            try { update = await DesktopUpdate.Check(timeout.Token); }
+            catch { /* Keep a previously known required update; network errors never erase it. */ }
+            finally { nextUpdateCheck = DateTimeOffset.UtcNow.AddMinutes(5); }
+        }
+        } finally { updateCheck.Release(); }
+        if (lifetime.IsCancellationRequested) return false;
+        if (update is not { IsNewer: true }) return true;
+        if (prompt && !showingUpdate) {
+            showingUpdate = true;
+            try { using var dialog = new DesktopUpdateForm(update); dialog.ShowDialog(details); }
+            finally { showingUpdate = false; }
+        }
+        return false;
+    }
     internal void ShowStatus()
     {
-        if (details is { IsDisposed: false }) { details.WindowState = FormWindowState.Normal; details.Activate(); return; }
+        initialUpdateChecked = true;
+        if (details is { IsDisposed: false }) { details.WindowState = FormWindowState.Normal; details.Activate(); _ = CheckUpdate(true); return; }
         details = new DashboardForm(config, Enroll, OpenOfficeFolder, ShowSigning, Refresh, ExitThread);
         if (lastStatus is not null) details.UpdateStatus(lastStatus);
         details.Show();
+        _ = CheckUpdate(true);
         _ = Refresh();
     }
     internal Tray(Configuration config)
@@ -37,7 +64,10 @@ internal sealed class Tray : ApplicationContext
         menu.Items.Add("Salir de la bandeja", null, (_, _) => ExitThread());
         icon.ContextMenuStrip = menu;
         icon.DoubleClick += (_, _) => ShowStatus();
-        timer.Tick += async (_, _) => await Refresh();
+        timer.Tick += async (_, _) => {
+            await Refresh();
+            if (!initialUpdateChecked) { initialUpdateChecked = true; await CheckUpdate(true); }
+        };
         timer.Start();
         // First poll runs on the message loop; ShowStatus also refreshes immediately.
     }
@@ -76,6 +106,7 @@ internal sealed class Tray : ApplicationContext
     }
     internal async Task ShowSigning()
     {
+        if (!await CheckUpdate(true)) return;
         if (config.SigningEngine is not null) { using var remote = new Signing.RemoteSessionDialog(config); remote.ShowDialog(details); await Refresh(); return; }
         try
         {

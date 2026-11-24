@@ -10,6 +10,7 @@ datasource db {
 }
 
 model User {
+  receptorPortal                       ReceptorPortal?
   platformGrant                        PlatformGrant?
   requestedSigningJobs                 SigningJob[]
   createdDeviceEnrollments             DeviceEnrollment[]
@@ -45,6 +46,129 @@ model User {
   @@index([officeId])
   @@map("users")
   @@unique([id, officeId])
+}
+
+model AbogadoAccount {
+  authUserId      String   @id @db.Uuid
+  email           String   @unique
+  nombre          String
+  apellidos       String
+  termsVersion    String
+  termsAcceptedAt DateTime
+  createdAt       DateTime @default(now())
+  datosContacto   Json?
+  datosBoleta     Json?
+  desactivadoAt   DateTime?
+  motivoBaja      String?
+  encargos        AbogadoEncargo[]
+
+  @@map("abogado_accounts")
+}
+
+model ReceptorPortal {
+  userId     String                    @id
+  nombre     String
+  cortes     String[]                  @default([])
+  tribunales String[]                  @default([])
+  disponible Boolean                   @default(false)
+  user       User                      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  encargos   AbogadoEncargoReceptor[]
+
+  @@index([cortes], type: Gin)
+  @@index([tribunales], type: Gin)
+  @@map("receptor_portal_profiles")
+}
+
+model AbogadoEncargo {
+  id          String                    @id @db.Uuid
+  abogadoId   String                    @db.Uuid
+  corte       String
+  tribunal    String
+  rol         String
+  datos       Json
+  creadoAt    DateTime                  @default(now())
+  actualizadoAt DateTime                @updatedAt
+  enviadoAt   DateTime?
+  finalizadoAt DateTime?
+  abogado     AbogadoAccount            @relation(fields: [abogadoId], references: [authUserId], onDelete: Cascade)
+  receptores  AbogadoEncargoReceptor[]
+
+  @@index([abogadoId, actualizadoAt])
+  @@map("abogado_encargos")
+}
+
+model AbogadoEncargoReceptor {
+  encargoId  String         @db.Uuid
+  receptorId String
+  respuesta  RespuestaEncargo @default(PENDIENTE)
+  encargo    AbogadoEncargo @relation(fields: [encargoId], references: [id], onDelete: Cascade)
+  receptor   ReceptorPortal @relation(fields: [receptorId], references: [userId], onDelete: Restrict)
+  estampos   AbogadoEstampo[]
+  pagos      AbogadoPago[]
+  boletas    AbogadoBoleta[]
+
+  @@id([encargoId, receptorId])
+  @@index([receptorId])
+  @@map("abogado_encargo_receptores")
+}
+
+enum RespuestaEncargo {
+  PENDIENTE
+  ACEPTADA
+  RECHAZADA
+}
+
+model AbogadoEstampo {
+  id         String @id @default(uuid()) @db.Uuid
+  encargoId  String @db.Uuid
+  receptorId String
+  notificado String
+  resultado  String
+  firmadoAt  DateTime
+  asignacion AbogadoEncargoReceptor @relation(fields: [encargoId, receptorId], references: [encargoId, receptorId], onDelete: Cascade)
+
+  @@index([encargoId, firmadoAt])
+  @@map("abogado_estampos")
+}
+
+model AbogadoPago {
+  id         String @id @default(uuid()) @db.Uuid
+  encargoId  String @db.Uuid
+  receptorId String
+  montoClp   Int
+  medio      String
+  referencia String?
+  pagadoAt   DateTime
+  asignacion AbogadoEncargoReceptor @relation(fields: [encargoId, receptorId], references: [encargoId, receptorId], onDelete: Cascade)
+
+  @@index([encargoId, pagadoAt])
+  @@map("abogado_pagos")
+}
+
+model AbogadoBoleta {
+  id           String @id @default(uuid()) @db.Uuid
+  encargoId    String @db.Uuid
+  receptorId   String
+  numero       String
+  numeroRecibo String?
+  montoClp     Int
+  emitidoAt    DateTime
+  asignacion   AbogadoEncargoReceptor @relation(fields: [encargoId, receptorId], references: [encargoId, receptorId], onDelete: Cascade)
+
+  @@unique([receptorId, numero])
+  @@index([encargoId, emitidoAt])
+  @@map("abogado_boletas")
+}
+
+model ReceptorConsultation {
+  id        String   @id @default(uuid()) @db.Uuid
+  email     String
+  nombre    String
+  celular   String
+  createdAt DateTime @default(now())
+
+  @@unique([email, nombre, celular])
+  @@map("receptor_consultations")
 }
 
 model Office {

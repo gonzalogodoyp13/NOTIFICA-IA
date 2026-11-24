@@ -3,6 +3,19 @@ import { createHash } from 'node:crypto'
 import { prisma } from '@/lib/prisma'
 import { RequestSecurityError } from './request'
 
+export async function consumeFixedWindowQuota(identity: string, seconds: number, limit: number) {
+  const key = createHash('sha256').update(identity).digest('hex')
+  const rows = await prisma.$queryRaw<Array<{ count: number }>>`
+    INSERT INTO device_rate_limits (key, "windowAt", count)
+    VALUES (${key}, to_timestamp(floor(extract(epoch from statement_timestamp()) / ${seconds}::int) * ${seconds}::int), 1)
+    ON CONFLICT (key) DO UPDATE SET
+      count = CASE WHEN device_rate_limits."windowAt" = EXCLUDED."windowAt"
+        THEN LEAST(device_rate_limits.count + 1, 1000000) ELSE 1 END,
+      "windowAt" = EXCLUDED."windowAt" RETURNING count`
+  if (rows.length !== 1) throw new RequestSecurityError('SERVICE_UNAVAILABLE', 503)
+  return rows[0].count <= limit
+}
+
 export function requestQuota(path: string, method: string) {
   if (method === 'POST' && path === '/api/recibos/send/test') return { group: 'test-email', seconds: 600, user: 5, office: 25 }
   if (!['GET', 'HEAD', 'OPTIONS'].includes(method) && /\/(send|resend|retry)$/.test(path))
